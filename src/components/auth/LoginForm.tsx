@@ -52,13 +52,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
       await signInWithEmailAndPassword(auth, targetEmail, password);
       onLoginSuccess();
     } catch (err: any) {
-      console.error(err);
+      console.error('Login error:', err);
       let msg = 'Invalid email/mobile or password. Please try again.';
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        msg = 'Invalid email/mobile or password. Please try again.';
+      if (
+        err.code === 'auth/invalid-credential' ||
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/invalid-email'
+      ) {
+        msg = 'Invalid email/mobile or password. Please try again or click Register below.';
       } else if (err.code === 'auth/too-many-requests') {
-        msg = 'Access to this account has been temporarily disabled due to many failed login attempts. You can try again later.';
-      } else if (err.message) {
+        msg = 'Access to this account has been temporarily disabled due to many failed login attempts. Please try again later.';
+      } else if (err.message && !err.message.includes('auth/')) {
         msg = err.message;
       }
       setError(msg);

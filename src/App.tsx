@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { UserProfile } from './types';
 import { LoginForm } from './components/auth/LoginForm';
@@ -19,22 +19,51 @@ export default function App() {
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [loading, setLoading] = useState(true);
 
+  const fetchOrCreateUserProfile = async (currentUser: any): Promise<UserProfile | null> => {
+    if (!currentUser) return null;
+    try {
+      const docRef = doc(db, 'users', currentUser.uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return docSnap.data() as UserProfile;
+      } else {
+        // Auto-heal missing profile document so user isn't stuck
+        const fallbackProfile: UserProfile = {
+          uid: currentUser.uid,
+          fullName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Reseller User',
+          shopName: 'Sky Reseller Shop',
+          mobile: '01700000000',
+          email: currentUser.email || '',
+          division: 'Dhaka',
+          district: 'Dhaka',
+          upazila: 'Tejgaon',
+          address: 'Main Market, Dhaka',
+          profilePhotoUrl: '',
+          shopPhotoUrl: '',
+          nidUrl: '',
+          role: 'reseller',
+          status: 'pending',
+          rejectReason: null,
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(docRef, {
+          ...fallbackProfile,
+          createdAt: serverTimestamp(),
+        });
+        return fallbackProfile;
+      }
+    } catch (err) {
+      console.error('Error fetching/creating user profile:', err);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setFirebaseUser(currentUser);
       if (currentUser) {
-        try {
-          const docRef = doc(db, 'users', currentUser.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
-          } else {
-            setUserProfile(null);
-          }
-        } catch (err) {
-          console.error('Error fetching user profile:', err);
-          setUserProfile(null);
-        }
+        const profile = await fetchOrCreateUserProfile(currentUser);
+        setUserProfile(profile);
       } else {
         setUserProfile(null);
       }
@@ -73,13 +102,9 @@ export default function App() {
         <RegisterForm
           onSwitchToLogin={() => setAuthView('login')}
           onRegistered={async () => {
-            // Re-fetch user profile after successful registration
             if (auth.currentUser) {
-              const docRef = doc(db, 'users', auth.currentUser.uid);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) {
-                setUserProfile(docSnap.data() as UserProfile);
-              }
+              const profile = await fetchOrCreateUserProfile(auth.currentUser);
+              setUserProfile(profile);
             }
           }}
         />
@@ -90,11 +115,8 @@ export default function App() {
         onSwitchToRegister={() => setAuthView('register')}
         onLoginSuccess={async () => {
           if (auth.currentUser) {
-            const docRef = doc(db, 'users', auth.currentUser.uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              setUserProfile(docSnap.data() as UserProfile);
-            }
+            const profile = await fetchOrCreateUserProfile(auth.currentUser);
+            setUserProfile(profile);
           }
         }}
       />

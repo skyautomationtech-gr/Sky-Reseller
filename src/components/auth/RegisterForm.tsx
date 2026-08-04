@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { auth, db, storage } from '../../lib/firebase';
 import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
@@ -9,6 +9,47 @@ interface RegisterFormProps {
   onSwitchToLogin: () => void;
   onRegistered: () => void;
 }
+
+// Utility to compress image to canvas data URL (~20-50KB) to prevent Firestore 1MB doc size error
+const compressImage = (file: File, maxWidth = 600, maxHeight = 600, quality = 0.65): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } else {
+          resolve(e.target?.result as string || '');
+        }
+      };
+      img.onerror = () => resolve(e.target?.result as string || '');
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+};
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onRegistered }) => {
   const [fullName, setFullName] = useState('');
@@ -40,29 +81,28 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const districts = division ? Object.keys(BANGLADESH_GEO[division] || {}) : [];
   const upazilas = (division && district) ? (BANGLADESH_GEO[division][district] || []) : [];
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'shop' | 'nid') => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'profile' | 'shop' | 'nid') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
+    try {
+      const compressedDataUrl = await compressImage(file, 600, 600, 0.65);
       if (type === 'profile') {
         setProfileFile(file);
-        setProfilePreview(result);
+        setProfilePreview(compressedDataUrl);
       } else if (type === 'shop') {
         setShopFile(file);
-        setShopPreview(result);
+        setShopPreview(compressedDataUrl);
       } else if (type === 'nid') {
         setNidFile(file);
-        setNidPreview(result);
+        setNidPreview(compressedDataUrl);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Image compression error:', err);
+    }
   };
 
   const validateBangladeshMobile = (num: string) => {
-    // Bangladeshi mobile regex: 01[3-9] followed by 8 digits (total 11 digits) or +8801[3-9]...
     const cleanNum = num.trim();
     const bdRegex = /^(?:\+88|88)?01[3-9]\d{8}$/;
     return bdRegex.test(cleanNum);
@@ -103,16 +143,31 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       const role: 'super_admin' | 'admin' | 'reseller' = 'reseller';
       const status: 'pending' | 'approved' = 'pending';
 
-      // Create Firebase Auth user
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = userCredential.user.uid;
+      let uid = '';
+      try {
+        // Create Firebase Auth user
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        uid = userCredential.user.uid;
+      } catch (authErr: any) {
+        // If email already exists, try logging in to write the missing document
+        if (authErr.code === 'auth/email-already-in-use') {
+          try {
+            const loginRes = await signInWithEmailAndPassword(auth, email, password);
+            uid = loginRes.user.uid;
+          } catch (loginErr) {
+            throw authErr;
+          }
+        } else {
+          throw authErr;
+        }
+      }
 
-      // Use data URLs as fallback or upload (data URLs are fully reliable and persistent in Firestore for prototyping)
+      // Compressed image base64 strings
       const profilePhotoUrl = profilePreview;
       const shopPhotoUrl = shopPreview;
       const nidUrl = nidPreview || '';
 
-      // Create Firestore user doc
+      // Create or update Firestore user doc
       await setDoc(doc(db, 'users', uid), {
         uid,
         fullName,
@@ -134,10 +189,10 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
 
       onRegistered();
     } catch (err: any) {
-      console.error(err);
+      console.error('Registration submit error:', err);
       let msg = 'Failed to register account. Please try again.';
       if (err.code === 'auth/email-already-in-use') {
-        msg = 'This email address is already registered. Please sign in or use a different email.';
+        msg = 'This email address is already registered. If you registered before, please sign in.';
       } else if (err.code === 'auth/invalid-email') {
         msg = 'The email address is invalid.';
       } else if (err.code === 'auth/weak-password') {

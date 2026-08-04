@@ -73,7 +73,17 @@ export const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, o
       }, 1500);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to create admin account.');
+      let msg = 'Failed to create admin account.';
+      if (err.code === 'auth/email-already-in-use') {
+        msg = 'An account with this email address already exists.';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'The email address is invalid.';
+      } else if (err.code === 'auth/weak-password') {
+        msg = 'Password must be at least 6 characters.';
+      } else if (err.message) {
+        msg = err.message;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
