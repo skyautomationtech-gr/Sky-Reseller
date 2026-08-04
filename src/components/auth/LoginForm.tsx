@@ -1,0 +1,183 @@
+import React, { useState } from 'react';
+import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { Eye, EyeOff, Store, Mail, Lock, Phone, AlertCircle, ArrowRight } from 'lucide-react';
+
+interface LoginFormProps {
+  onSwitchToRegister: () => void;
+  onLoginSuccess: () => void;
+}
+
+export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLoginSuccess }) => {
+  const [identifier, setIdentifier] = useState(''); // Email or Mobile
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identifier || !password) {
+      setError('Please enter your email/mobile and password.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Set Auth persistence
+      await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+
+      let targetEmail = identifier.trim();
+
+      // Check if identifier is a mobile number (not containing @)
+      if (!targetEmail.includes('@')) {
+        // Query users collection for matching mobile number
+        const q = query(collection(db, 'users'), where('mobile', '==', targetEmail), limit(1));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) {
+          setError('No user found with this mobile number. Please check or use your email.');
+          setLoading(false);
+          return;
+        }
+        const userData = querySnapshot.docs[0].data();
+        targetEmail = userData.email;
+      }
+
+      await signInWithEmailAndPassword(auth, targetEmail, password);
+      onLoginSuccess();
+    } catch (err: any) {
+      console.error(err);
+      let msg = 'Invalid email/mobile or password. Please try again.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        msg = 'Invalid email/mobile or password. Please try again.';
+      } else if (err.code === 'auth/too-many-requests') {
+        msg = 'Access to this account has been temporarily disabled due to many failed login attempts. You can try again later.';
+      } else if (err.message) {
+        msg = err.message;
+      }
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 py-8 px-8 text-white text-center">
+          <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-3 backdrop-blur-sm shadow-inner">
+            <Store className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">Sky Reseller</h1>
+          <p className="text-blue-100 text-xs mt-1">Sky Automation Tech • Reseller Management System</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="p-8 space-y-5">
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-xl text-xs flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Email Address or Mobile Number
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Mail className="w-4 h-4" />
+              </div>
+              <input
+                type="text"
+                required
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="name@example.com or 01712345678"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsForgotPasswordOpen(true)}
+                className="text-xs font-medium text-blue-600 hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Lock className="w-4 h-4" />
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+              />
+              <span className="text-xs text-slate-600 font-medium">Remember Me on this device</span>
+            </label>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+          >
+            <span>{loading ? 'Signing In...' : 'Sign In to Portal'}</span>
+            {!loading && <ArrowRight className="w-4 h-4" />}
+          </button>
+
+          <div className="text-center pt-3 border-t border-slate-100">
+            <span className="text-xs text-slate-500">Don't have a reseller account? </span>
+            <button
+              type="button"
+              onClick={onSwitchToRegister}
+              className="text-xs font-semibold text-blue-600 hover:underline"
+            >
+              Register Now
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+      />
+    </div>
+  );
+};
