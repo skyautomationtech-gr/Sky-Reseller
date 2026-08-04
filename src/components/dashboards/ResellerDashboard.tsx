@@ -12,6 +12,7 @@ interface ResellerDashboardProps {
 
 export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -150,10 +151,22 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
 
   return (
     <div className="min-h-screen flex bg-slate-100">
-      <Sidebar user={user} activeTab={activeTab} setActiveTab={setActiveTab} onLogout={onLogout} />
+      <Sidebar 
+        user={user} 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        onLogout={onLogout}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
+      />
       <div className="flex-1 flex flex-col min-w-0">
-        <Navbar user={user} onLogout={onLogout} title={`Reseller • ${activeTab.replace('_', ' ').toUpperCase()}`} />
-        <main className="flex-1 p-8 overflow-y-auto">
+        <Navbar 
+          user={user} 
+          onLogout={onLogout} 
+          title={`Reseller • ${activeTab.replace('_', ' ').toUpperCase()}`}
+          onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        />
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {renderContent()}
         </main>
       </div>

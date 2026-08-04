@@ -19,6 +19,7 @@ interface SuperAdminDashboardProps {
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -150,10 +151,17 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
         setActiveTab={setActiveTab}
         onLogout={onLogout}
         onOpenAddAdmin={() => setIsAddAdminOpen(true)}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
       <div className="flex-1 flex flex-col min-w-0">
-        <Navbar user={user} onLogout={onLogout} title={`Super Admin • ${activeTab.replace('_', ' ').toUpperCase()}`} />
-        <main className="flex-1 p-8 overflow-y-auto">
+        <Navbar 
+          user={user} 
+          onLogout={onLogout} 
+          title={`Super Admin • ${activeTab.replace('_', ' ').toUpperCase()}`}
+          onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        />
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {renderContent()}
         </main>
       </div>

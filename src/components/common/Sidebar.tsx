@@ -3,7 +3,7 @@ import { UserProfile, UserRole } from '../../types';
 import { 
   LayoutDashboard, Shield, Users, CheckCircle2, Package, 
   Layers, Tag, ShoppingBag, Wallet, Percent, BarChart3, 
-  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut 
+  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X 
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -12,9 +12,19 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
   onLogout: () => void;
   onOpenAddAdmin?: () => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogout, onOpenAddAdmin }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ 
+  user, 
+  activeTab, 
+  setActiveTab, 
+  onLogout, 
+  onOpenAddAdmin,
+  isMobileOpen = false,
+  onCloseMobile
+}) => {
   const role: UserRole = user.role;
 
   const getMenuItems = () => {
@@ -70,9 +80,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab,
 
   const menuItems = getMenuItems();
 
-  return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 min-h-screen border-r border-slate-800">
-      <div className="p-6 border-b border-slate-800">
+  const sidebarContent = (
+    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 min-h-screen border-r border-slate-800 h-full">
+      <div className="p-6 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md shadow-blue-600/30">
             SR
@@ -82,6 +92,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab,
             <p className="text-[11px] text-slate-400 capitalize">{role.replace('_', ' ')} Portal</p>
           </div>
         </div>
+        {onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            className="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       <div className="p-4 border-b border-slate-800/60 bg-slate-950/40">
@@ -113,6 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab,
                 } else {
                   setActiveTab(item.id);
                 }
+                if (onCloseMobile) onCloseMobile();
               }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors ${
                 isActive
@@ -137,5 +156,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab,
         </button>
       </div>
     </aside>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <div className="hidden md:block shrink-0">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile Drawer */}
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Overlay */}
+          <div 
+            className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs transition-opacity" 
+            onClick={onCloseMobile}
+          />
+          {/* Content */}
+          <div className="relative z-10 w-64 h-full shadow-2xl animate-in slide-in-from-left duration-200">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
