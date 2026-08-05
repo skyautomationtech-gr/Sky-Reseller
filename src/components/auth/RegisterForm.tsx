@@ -3,6 +3,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'fire
 import { doc, setDoc, serverTimestamp, collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { auth, db, storage } from '../../lib/firebase';
 import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
+import { SkyLogo } from '../common/SkyLogo';
 import { Eye, EyeOff, Upload, ShieldCheck, Store, MapPin, Phone, Mail, Lock, User, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface RegisterFormProps {
@@ -209,12 +210,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 py-6 px-8 text-white text-center">
-          <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-3 backdrop-blur-sm">
-            <Store className="w-6 h-6 text-white" />
+        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 py-6 px-8 text-white text-center flex flex-col items-center justify-center border-b border-slate-800">
+          <div className="mb-2">
+            <SkyLogo size="lg" showText={true} />
           </div>
-          <h2 className="text-2xl font-bold">Sky Reseller Registration</h2>
-          <p className="text-blue-100 text-xs mt-1">Sky Automation Tech • Mobile Accessories Business Network</p>
+          <p className="text-blue-200/80 text-xs font-medium">B2B Reseller Portal • Registration Form</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">

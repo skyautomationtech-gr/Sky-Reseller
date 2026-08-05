@@ -11,6 +11,10 @@ import { SuspendedScreen } from './components/auth/SuspendedScreen';
 import { SuperAdminDashboard } from './components/dashboards/SuperAdminDashboard';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { ResellerDashboard } from './components/dashboards/ResellerDashboard';
+import { logUserSession } from './lib/auditLogger';
+import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from './lib/versionService';
+import { WhatsNewModal } from './components/version/WhatsNewModal';
+import { ChangelogEntry } from './types';
 import { Store, Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -19,13 +23,19 @@ export default function App() {
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [loading, setLoading] = useState(true);
 
+  // Version pop-up state
+  const [whatsNewChangelog, setWhatsNewChangelog] = useState<ChangelogEntry | null>(null);
+  const [currentAppVersion, setCurrentAppVersion] = useState<string>('');
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+
   const fetchOrCreateUserProfile = async (currentUser: any): Promise<UserProfile | null> => {
     if (!currentUser) return null;
     try {
       const docRef = doc(db, 'users', currentUser.uid);
       const docSnap = await getDoc(docRef);
+      let profile: UserProfile;
       if (docSnap.exists()) {
-        return docSnap.data() as UserProfile;
+        profile = docSnap.data() as UserProfile;
       } else {
         // Auto-heal missing profile document so user isn't stuck
         const fallbackProfile: UserProfile = {
@@ -50,8 +60,13 @@ export default function App() {
           ...fallbackProfile,
           createdAt: serverTimestamp(),
         });
-        return fallbackProfile;
+        profile = fallbackProfile;
       }
+
+      // Log login session for device history
+      logUserSession(profile.uid, profile.fullName, profile.role);
+
+      return profile;
     } catch (err) {
       console.error('Error fetching/creating user profile:', err);
       return null;
@@ -64,6 +79,10 @@ export default function App() {
       if (currentUser) {
         const profile = await fetchOrCreateUserProfile(currentUser);
         setUserProfile(profile);
+
+        if (profile && profile.status === 'approved') {
+          checkVersionPopup(profile);
+        }
       } else {
         setUserProfile(null);
       }
@@ -72,6 +91,31 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  const checkVersionPopup = async (profile: UserProfile) => {
+    try {
+      const appVerConfig = await getCurrentAppVersion();
+      const currentVerStr = appVerConfig.version || '1.0.0';
+      setCurrentAppVersion(currentVerStr);
+
+      if (profile.lastSeenVersion !== currentVerStr) {
+        const logs = await getChangelogs();
+        const latestLog = logs.find((l) => l.version === currentVerStr) || logs[0] || null;
+        setWhatsNewChangelog(latestLog);
+        setShowWhatsNew(true);
+      }
+    } catch (err) {
+      console.error('Error checking version popup:', err);
+    }
+  };
+
+  const handleDismissWhatsNew = async () => {
+    setShowWhatsNew(false);
+    if (userProfile && currentAppVersion) {
+      await updateUserLastSeenVersion(userProfile.uid, currentAppVersion);
+      setUserProfile((prev) => prev ? { ...prev, lastSeenVersion: currentAppVersion } : null);
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -137,13 +181,24 @@ export default function App() {
   }
 
   // Approved role-based dashboards
-  if (userProfile.role === 'super_admin') {
-    return <SuperAdminDashboard user={userProfile} onLogout={handleLogout} />;
-  }
+  return (
+    <>
+      {userProfile.role === 'super_admin' && (
+        <SuperAdminDashboard user={userProfile} onLogout={handleLogout} />
+      )}
+      {userProfile.role === 'admin' && (
+        <AdminDashboard user={userProfile} onLogout={handleLogout} />
+      )}
+      {userProfile.role === 'reseller' && (
+        <ResellerDashboard user={userProfile} onLogout={handleLogout} />
+      )}
 
-  if (userProfile.role === 'admin') {
-    return <AdminDashboard user={userProfile} onLogout={handleLogout} />;
-  }
-
-  return <ResellerDashboard user={userProfile} onLogout={handleLogout} />;
+      <WhatsNewModal
+        isOpen={showWhatsNew}
+        onClose={handleDismissWhatsNew}
+        changelog={whatsNewChangelog}
+        currentVersion={currentAppVersion || '1.0.0'}
+      />
+    </>
+  );
 }

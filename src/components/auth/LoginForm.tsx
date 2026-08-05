@@ -3,7 +3,8 @@ import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, br
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { Eye, EyeOff, Store, Mail, Lock, Phone, AlertCircle, ArrowRight } from 'lucide-react';
+import { SkyLogo } from '../common/SkyLogo';
+import { Eye, EyeOff, Mail, Lock, Phone, AlertCircle, ArrowRight } from 'lucide-react';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -75,12 +76,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 py-8 px-8 text-white text-center">
-          <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-3 backdrop-blur-sm shadow-inner">
-            <Store className="w-7 h-7 text-white" />
+        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 py-8 px-8 text-white text-center flex flex-col items-center justify-center border-b border-slate-800">
+          <div className="mb-2">
+            <SkyLogo size="lg" showText={true} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Sky Reseller</h1>
-          <p className="text-blue-100 text-xs mt-1">Sky Automation Tech • Reseller Management System</p>
+          <p className="text-blue-200/80 text-xs font-medium">B2B Reseller Portal • Official Storefront</p>
         </div>
 
         <form onSubmit={handleLogin} className="p-8 space-y-5">

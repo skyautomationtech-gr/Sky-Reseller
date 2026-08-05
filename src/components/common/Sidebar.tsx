@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../../types';
+import { getCurrentAppVersion } from '../../lib/versionService';
+import { ChangelogModal } from '../version/ChangelogModal';
+import { SkyLogo } from './SkyLogo';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { 
   LayoutDashboard, Shield, Users, CheckCircle2, Package, 
   Layers, Tag, ShoppingBag, Wallet, Percent, BarChart3, 
-  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X 
+  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X, Store, Sparkles
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -26,6 +31,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile
 }) => {
   const role: UserRole = user.role;
+  const [currentVersion, setCurrentVersion] = useState('1.0.0');
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string>('Sky Reseller');
+
+  useEffect(() => {
+    getCurrentAppVersion().then((v) => {
+      if (v?.version) setCurrentVersion(v.version);
+    });
+
+    const fetchLogo = async () => {
+      try {
+        const sSnap = await getDoc(doc(db, 'settings', 'general'));
+        if (sSnap.exists()) {
+          const sData = sSnap.data();
+          if (sData.logoUrl) setCompanyLogo(sData.logoUrl);
+          if (sData.companyName) setCompanyName(sData.companyName);
+        }
+      } catch (err) {
+        console.error('Error fetching logo in sidebar:', err);
+      }
+    };
+    fetchLogo();
+  }, []);
 
   const getMenuItems = () => {
     if (role === 'super_admin') {
@@ -65,6 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } else {
       // Reseller
       return [
+        { id: 'home', label: 'Home', icon: Store },
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'products', label: 'Products', icon: Package },
         { id: 'orders', label: 'Orders', icon: ShoppingBag },
@@ -82,20 +112,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const sidebarContent = (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 min-h-screen border-r border-slate-800 h-full">
-      <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md shadow-blue-600/30">
-            SR
-          </div>
-          <div>
-            <h1 className="font-bold text-white text-base">Sky Reseller</h1>
-            <p className="text-[11px] text-slate-400 capitalize">{role.replace('_', ' ')} Portal</p>
-          </div>
-        </div>
+      <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+        <SkyLogo size="md" showText={true} customLogoUrl={companyLogo} />
         {onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+            className="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -146,7 +168,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      <div className="p-4 border-t border-slate-800">
+      <div className="p-4 border-t border-slate-800 space-y-2">
+        <button
+          onClick={() => setIsChangelogOpen(true)}
+          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors group"
+        >
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+            <span className="font-medium">App Version</span>
+          </div>
+          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+            v{currentVersion}
+          </span>
+        </button>
+
         <button
           onClick={onLogout}
           className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition-colors"
@@ -179,6 +214,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       )}
+
+      <ChangelogModal
+        isOpen={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
+        currentVersion={currentVersion}
+      />
     </>
   );
 };
