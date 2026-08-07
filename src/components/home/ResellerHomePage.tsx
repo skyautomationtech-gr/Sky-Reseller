@@ -3,14 +3,15 @@ import {
   collection, query, where, getDocs, doc, getDoc 
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Product, ProductVariant, UserProfile, Wallet, Category, CompanySettings } from '../../types';
+import { Product, ProductVariant, UserProfile, Wallet, Category, CompanySettings, CartItem } from '../../types';
 import { ProductDetailModal } from '../inventory/ProductDetailModal';
 import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { SkyLogo } from '../common/SkyLogo';
 import { 
   Store, Search, Wallet as WalletIcon, ShoppingBag, Clock, ArrowRight, 
   Sparkles, Layers, ChevronRight, AlertCircle, Headphones, Watch, Zap, 
-  Cable, Speaker, BatteryCharging, Smartphone, Package, Check, ChevronLeft
+  Cable, Speaker, BatteryCharging, Smartphone, Package, Check, ChevronLeft,
+  ShoppingCart, Trash2, Plus, Minus, AlertTriangle
 } from 'lucide-react';
 
 interface ResellerHomePageProps {
@@ -55,6 +56,31 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
 
   // Variant selector modal if product has multiple variants
   const [variantModalProduct, setVariantModalProduct] = useState<Product | null>(null);
+  const [variantActionType, setVariantActionType] = useState<'buy_now' | 'add_to_cart' | null>(null);
+
+  // Shopping Cart States
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [checkoutCartItems, setCheckoutCartItems] = useState<CartItem[] | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const savedCart = localStorage.getItem(`cart_${user.uid}`);
+      if (savedCart) {
+        setCart(JSON.parse(savedCart));
+      }
+    } catch (e) {
+      console.error('Failed to load cart:', e);
+    }
+  }, [user.uid]);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   useEffect(() => {
     fetchInitialData();
@@ -126,13 +152,99 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
     }
   };
 
-  // Helper to handle clicking "Order Now" on a product card
-  const handleOrderClick = (product: Product) => {
+  const addToCart = (product: Product, variant: ProductVariant | null) => {
+    const cartItemId = `${product.id}_${variant ? variant.id : 'default'}`;
+    const stockLimit = variant ? variant.stock : product.stock;
+
+    if (stockLimit <= 0) {
+      setToastMessage('This item is currently out of stock.');
+      return;
+    }
+
+    setCart((prevCart) => {
+      const existingItemIndex = prevCart.findIndex((item) => item.id === cartItemId);
+      let updatedCart;
+
+      if (existingItemIndex > -1) {
+        updatedCart = [...prevCart];
+        const currentItem = updatedCart[existingItemIndex];
+        if (currentItem.quantity < stockLimit) {
+          currentItem.quantity += 1;
+          setToastMessage(`Increased "${product.name}" quantity in cart.`);
+        } else {
+          setToastMessage(`Cannot add more. Stock limit of ${stockLimit} reached.`);
+        }
+      } else {
+        const vAdj = variant ? (variant.priceAdjustment || 0) : 0;
+        const defaultSellingPrice = product.retailPrice + vAdj;
+
+        const newItem: CartItem = {
+          id: cartItemId,
+          product,
+          variant,
+          quantity: 1,
+          sellingPrice: defaultSellingPrice
+        };
+        updatedCart = [...prevCart, newItem];
+        setToastMessage(`Added "${product.name}" to cart.`);
+      }
+
+      localStorage.setItem(`cart_${user.uid}`, JSON.stringify(updatedCart));
+      return updatedCart;
+    });
+
+    setIsCartOpen(true);
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart((prevCart) => {
+      const updatedCart = prevCart.filter((item) => item.id !== id);
+      localStorage.setItem(`cart_${user.uid}`, JSON.stringify(updatedCart));
+      return updatedCart;
+    });
+    setToastMessage('Item removed from cart.');
+  };
+
+  const updateCartQuantity = (id: string, newQty: number) => {
+    setCart((prevCart) => {
+      const updatedCart = prevCart.map((item) => {
+        if (item.id === id) {
+          const limit = item.variant ? item.variant.stock : item.product.stock;
+          const qty = Math.max(1, Math.min(limit, newQty));
+          return { ...item, quantity: qty };
+        }
+        return item;
+      });
+      localStorage.setItem(`cart_${user.uid}`, JSON.stringify(updatedCart));
+      return updatedCart;
+    });
+  };
+
+  const updateCartSellingPrice = (id: string, newPrice: number) => {
+    setCart((prevCart) => {
+      const updatedCart = prevCart.map((item) => {
+        if (item.id === id) {
+          return { ...item, sellingPrice: Math.max(0, newPrice) };
+        }
+        return item;
+      });
+      localStorage.setItem(`cart_${user.uid}`, JSON.stringify(updatedCart));
+      return updatedCart;
+    });
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    localStorage.removeItem(`cart_${user.uid}`);
+  };
+
+  const handleBuyNowClick = (product: Product) => {
     if ((product.stock || 0) <= 0) return;
 
     if (product.hasVariants && product.variants && product.variants.length > 0) {
       const activeVariants = product.variants.filter((v) => v.status === 'active');
       if (activeVariants.length > 1) {
+        setVariantActionType('buy_now');
         setVariantModalProduct(product);
         return;
       } else if (activeVariants.length === 1) {
@@ -146,6 +258,24 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
     setOrderProduct(product);
     setOrderVariant(null);
     setIsOrderOpen(true);
+  };
+
+  const handleAddToCartClick = (product: Product) => {
+    if ((product.stock || 0) <= 0) return;
+
+    if (product.hasVariants && product.variants && product.variants.length > 0) {
+      const activeVariants = product.variants.filter((v) => v.status === 'active');
+      if (activeVariants.length > 1) {
+        setVariantActionType('add_to_cart');
+        setVariantModalProduct(product);
+        return;
+      } else if (activeVariants.length === 1) {
+        addToCart(product, activeVariants[0]);
+        return;
+      }
+    }
+
+    addToCart(product, null);
   };
 
   // Build full list of categories combining defaults and custom DB categories
@@ -240,7 +370,7 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
       </div>
 
       {/* 2. QUICK STATS STRIP */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Wallet Balance Card */}
         <div 
           onClick={() => onNavigateTab('wallet')}
@@ -284,6 +414,29 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
             <Clock className="w-5 h-5" />
           </div>
+        </div>
+
+        {/* Shopping Cart Card */}
+        <div 
+          onClick={() => setIsCartOpen(true)}
+          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden"
+        >
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Shopping Cart</span>
+            <span className="text-xl font-extrabold text-slate-900 block">
+              {cart.reduce((acc, item) => acc + item.quantity, 0)} Items
+            </span>
+            <span className="text-[10px] font-semibold text-[#f57224] group-hover:underline">View & Place Order →</span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#f57224] flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+            <ShoppingCart className="w-5 h-5" />
+          </div>
+          {cart.length > 0 && (
+            <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#f57224]"></span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -427,7 +580,8 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                             setDetailProduct(product);
                             setIsDetailOpen(true);
                           }}
-                          onOrderClick={() => handleOrderClick(product)}
+                          onAddToCart={(prod) => handleAddToCartClick(prod)}
+                          onBuyNow={(prod) => handleBuyNowClick(prod)}
                         />
                       ))}
                     </div>
@@ -473,7 +627,8 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                           setDetailProduct(product);
                           setIsDetailOpen(true);
                         }}
-                        onOrderClick={() => handleOrderClick(product)}
+                        onAddToCart={(prod) => handleAddToCartClick(prod)}
+                        onBuyNow={(prod) => handleBuyNowClick(prod)}
                       />
                     ))}
                 </div>
@@ -500,14 +655,20 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           setIsOrderOpen(false);
           setOrderProduct(null);
           setOrderVariant(null);
+          setCheckoutCartItems(null);
         }}
         user={user}
         initialProduct={orderProduct}
         initialVariant={orderVariant}
+        cartItems={checkoutCartItems || undefined}
         onOrderCreated={() => {
           setIsOrderOpen(false);
           setOrderProduct(null);
           setOrderVariant(null);
+          if (checkoutCartItems) {
+            clearCart();
+          }
+          setCheckoutCartItems(null);
           onNavigateTab('orders');
         }}
       />
@@ -539,9 +700,14 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                     onClick={() => {
                       const prod = variantModalProduct;
                       setVariantModalProduct(null);
-                      setOrderProduct(prod);
-                      setOrderVariant(v);
-                      setIsOrderOpen(true);
+                      if (variantActionType === 'add_to_cart') {
+                        addToCart(prod, v);
+                      } else {
+                        setOrderProduct(prod);
+                        setOrderVariant(v);
+                        setIsOrderOpen(true);
+                      }
+                      setVariantActionType(null);
                     }}
                     disabled={v.stock <= 0}
                     className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition-all text-xs text-left disabled:opacity-40"
@@ -562,6 +728,293 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           </div>
         </div>
       )}
+
+      {/* FLOATING CART FAB BUTTON */}
+      {cart.length > 0 && !isCartOpen && (
+        <button
+          onClick={() => setIsCartOpen(true)}
+          className="fixed bottom-22 right-6 z-40 bg-[#f57224] hover:bg-[#e0651d] text-white p-3.5 rounded-full shadow-2xl transition-all scale-100 hover:scale-105 active:scale-95 flex items-center justify-center group cursor-pointer select-none ring-2 ring-white"
+          title="View Shopping Cart"
+        >
+          <div className="relative">
+            <ShoppingCart className="w-6 h-6" />
+            <span className="absolute -top-3 -right-3 bg-white text-[#f57224] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border-2 border-[#f57224] shadow-md">
+              {cart.reduce((acc, item) => acc + item.quantity, 0)}
+            </span>
+          </div>
+        </button>
+      )}
+
+      {/* TOAST MESSAGE POPUP */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-6 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-slate-800 animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* SHOPPING CART DRAWER OVERLAY */}
+      {isCartOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Backdrop overlay */}
+          <div 
+            onClick={() => setIsCartOpen(false)}
+            className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300"
+          />
+
+          {/* Sliding Drawer Container */}
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between z-10 animate-in slide-in-from-right duration-250 ease-out">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#f57224] flex items-center justify-center">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-sm font-bold text-slate-900">Your Cart</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    {cart.reduce((acc, item) => acc + item.quantity, 0)} Items Selected
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {cart.length > 0 && (
+                  <button
+                    onClick={clearCart}
+                    className="text-[10px] text-rose-600 hover:text-rose-700 font-extrabold flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer select-none"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Clear</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsCartOpen(false)}
+                  className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center text-xs font-bold transition-all cursor-pointer select-none"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Items list */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {cart.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center space-y-4 p-8">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-50 text-slate-300 flex items-center justify-center">
+                    <ShoppingCart className="w-8 h-8" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-800">Your cart is empty</h4>
+                    <p className="text-xs text-slate-500 max-w-[220px]">
+                      Add products from the marketplace to bundle them into a single custom order.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIsCartOpen(false)}
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/10 transition-all active:scale-95 cursor-pointer select-none"
+                  >
+                    Start Shopping
+                  </button>
+                </div>
+              ) : (
+                cart.map((item) => {
+                  const itemCostPrice = item.product.resellerPrice + (item.variant ? (item.variant.priceAdjustment || 0) : 0);
+                  const limit = item.variant ? item.variant.stock : item.product.stock;
+                  const itemProfit = item.sellingPrice - itemCostPrice;
+                  const totalLineProfit = itemProfit * item.quantity;
+
+                  return (
+                    <div 
+                      key={item.id}
+                      className="bg-white border border-slate-200/80 rounded-xl p-3 space-y-3 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between relative text-left"
+                    >
+                      {/* Product details info row */}
+                      <div className="flex items-start gap-3">
+                        {/* Image */}
+                        <div className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-lg overflow-hidden shrink-0">
+                          {item.product.images?.[0]?.url ? (
+                            <img 
+                              src={item.product.images[0].url} 
+                              alt={item.product.name} 
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50">
+                              <Package className="w-5 h-5" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Title and Category */}
+                        <div className="flex-1 space-y-0.5 min-w-0">
+                          <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">
+                            {item.product.categoryName || 'Others'}
+                          </span>
+                          <h4 className="text-xs font-extrabold text-slate-900 leading-tight truncate">
+                            {item.product.name}
+                          </h4>
+                          {item.variant && (
+                            <div className="flex items-center gap-1">
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                                style={{ backgroundColor: item.variant.colorName.toLowerCase() }}
+                              />
+                              <span className="text-[10px] font-bold text-slate-600">{item.variant.colorName}</span>
+                            </div>
+                          )}
+                          <div className="text-[10px] font-semibold text-slate-500">
+                            Available Stock: <span className="text-slate-800 font-extrabold">{limit} items</span>
+                          </div>
+                        </div>
+
+                        {/* Quick Trash */}
+                        <button
+                          onClick={() => removeFromCart(item.id)}
+                          className="text-slate-300 hover:text-rose-600 transition-colors p-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Controls and prices */}
+                      <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-slate-100 items-end">
+                        
+                        {/* Qty Counter */}
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Quantity</span>
+                          <div className="flex items-center border border-slate-200 rounded-lg max-w-[100px] h-8 bg-slate-50 overflow-hidden">
+                            <button
+                              onClick={() => {
+                                if (item.quantity > 1) {
+                                  updateCartQuantity(item.id, item.quantity - 1);
+                                } else {
+                                  removeFromCart(item.id);
+                                }
+                              }}
+                              className="w-8 h-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer select-none"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="flex-1 text-center text-xs font-bold text-slate-800 select-none">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() => {
+                                if (item.quantity < limit) {
+                                  updateCartQuantity(item.id, item.quantity + 1);
+                                } else {
+                                  setToastMessage(`Limit reached. Only ${limit} in stock.`);
+                                }
+                              }}
+                              className="w-8 h-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer select-none"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Customer Selling Price Input */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span>Selling Price</span>
+                            <span className="text-[9px] font-semibold text-slate-400 lowercase italic">min: ৳{itemCostPrice}</span>
+                          </div>
+                          <div className="relative h-8">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">৳</span>
+                            <input
+                              type="number"
+                              value={item.sellingPrice}
+                              onChange={(e) => updateCartSellingPrice(item.id, parseFloat(e.target.value) || 0)}
+                              className="w-full h-full pl-6 pr-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* Profit Estimation strip */}
+                      <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500 font-medium">Estimated Commission:</span>
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <span className="text-slate-400 font-semibold">
+                            (৳{item.sellingPrice} - ৳{itemCostPrice}) × {item.quantity} =
+                          </span>
+                          <span className={totalLineProfit >= 0 ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}>
+                            ৳{totalLineProfit}
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer Summary & Checkout */}
+            {cart.length > 0 && (
+              <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-4 shadow-inner text-left">
+                {/* Math breakdown */}
+                <div className="space-y-1.5 text-xs text-slate-600">
+                  <div className="flex justify-between">
+                    <span>Subtotal Wholesale Cost (You Pay):</span>
+                    <span className="font-bold text-slate-800">
+                      ৳{cart.reduce((acc, item) => {
+                        const itemCost = item.product.resellerPrice + (item.variant ? (item.variant.priceAdjustment || 0) : 0);
+                        return acc + (itemCost * item.quantity);
+                      }, 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Subtotal Selling Price (Customer Pays):</span>
+                    <span className="font-bold text-slate-800">
+                      ৳{cart.reduce((acc, item) => acc + (item.sellingPrice * item.quantity), 0)}
+                    </span>
+                  </div>
+                  
+                  {/* Total Profit */}
+                  <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
+                    <span className="text-sm font-bold text-slate-900">Estimated Total Profit:</span>
+                    <span className="text-base font-extrabold text-emerald-600">
+                      ৳{cart.reduce((acc, item) => {
+                        const itemCost = item.product.resellerPrice + (item.variant ? (item.variant.priceAdjustment || 0) : 0);
+                        return acc + ((item.sellingPrice - itemCost) * item.quantity);
+                      }, 0)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Submit button */}
+                <button
+                  onClick={() => {
+                    // Check if any selling price is lower than reseller price
+                    const invalidItems = cart.filter(item => {
+                      const cost = item.product.resellerPrice + (item.variant ? (item.variant.priceAdjustment || 0) : 0);
+                      return item.sellingPrice < cost;
+                    });
+
+                    if (invalidItems.length > 0) {
+                      setToastMessage(`Error: "${invalidItems[0].product.name}" selling price cannot be lower than cost price.`);
+                      return;
+                    }
+
+                    setCheckoutCartItems(cart);
+                    setIsCartOpen(false);
+                    setIsOrderOpen(true);
+                  }}
+                  className="w-full py-3 bg-[#f57224] hover:bg-[#e0651d] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20 active:scale-98 transition-all cursor-pointer select-none"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Checkout & Place Order</span>
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -570,14 +1023,16 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
 interface ProductCardProps {
   product: Product;
   onDetailClick: () => void;
-  onOrderClick: () => void;
+  onAddToCart: (product: Product) => void;
+  onBuyNow: (product: Product) => void;
   isGridMode?: boolean;
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({
   product,
   onDetailClick,
-  onOrderClick,
+  onAddToCart,
+  onBuyNow,
   isGridMode = false
 }) => {
   const coverImage = product.images?.[0]?.url;
@@ -691,18 +1146,30 @@ const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* Card Actions Footer */}
-      <div className="p-3.5 pt-0">
+      <div className="p-3 pt-0 grid grid-cols-2 gap-2">
         <button
-          onClick={onOrderClick}
+          onClick={() => onAddToCart(product)}
           disabled={isOutOfStock}
-          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 ${
+          className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer select-none ${
             isOutOfStock
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 active:scale-98'
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200'
+              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300 active:scale-95'
+          }`}
+        >
+          <ShoppingCart className="w-3.5 h-3.5" />
+          <span className="whitespace-nowrap">Add Cart</span>
+        </button>
+        <button
+          onClick={() => onBuyNow(product)}
+          disabled={isOutOfStock}
+          className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none ${
+            isOutOfStock
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'bg-[#f57224] hover:bg-[#e0651d] text-white active:scale-95'
           }`}
         >
           <ShoppingBag className="w-3.5 h-3.5" />
-          <span>{isOutOfStock ? 'Out of Stock' : 'Order Now'}</span>
+          <span className="whitespace-nowrap">Buy Now</span>
         </button>
       </div>
     </div>

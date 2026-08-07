@@ -135,7 +135,7 @@ export interface Wallet {
   updatedAt: any;
 }
 
-export type TransactionType = 'commission' | 'withdrawal' | 'adjustment';
+export type TransactionType = 'commission' | 'withdrawal' | 'adjustment' | 'deposit';
 export type TransactionStatus = 'pending' | 'approved' | 'rejected';
 export type PaymentMethod = 'bkash' | 'nagad' | 'bank_transfer';
 
@@ -151,6 +151,7 @@ export interface WalletTransaction {
   orderNumber?: string | null;
   paymentMethod?: PaymentMethod | null;
   accountNumber?: string | null;
+  transactionId?: string | null;
   rejectReason?: string | null;
   createdAt: any;
   updatedAt?: any;
@@ -277,6 +278,14 @@ export interface AppVersionConfig {
   version: string;
   releasedAt: any;
   releaseNotes?: string;
+}
+
+export interface CartItem {
+  id: string; // generated client-side: e.g. productId_variantId
+  product: Product;
+  variant: ProductVariant | null;
+  quantity: number;
+  sellingPrice: number; // custom reseller-defined price
 }
 
 

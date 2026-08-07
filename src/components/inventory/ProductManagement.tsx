@@ -387,7 +387,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
         brandId,
         brandName: selectedBrand?.name || 'Generic',
         name: name.trim(),
-        costPrice: isSuperAdmin ? parseFloat(costPrice) || 0 : (editingProduct ? editingProduct.costPrice : 0),
+        costPrice: isAdmin ? parseFloat(costPrice) || 0 : (editingProduct ? editingProduct.costPrice : 0),
         resellerPrice: parseFloat(resellerPrice) || 0,
         retailPrice: parseFloat(retailPrice) || 0,
         stock: finalStock,
@@ -567,7 +567,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                 <th className="px-6 py-4">Product</th>
                 {!isReseller && <th className="px-6 py-4">SKU</th>}
                 <th className="px-6 py-4">Category / Brand</th>
-                {isSuperAdmin && <th className="px-6 py-4">Cost Price</th>}
+                {isAdmin && <th className="px-6 py-4">Cost Price</th>}
                 <th className="px-6 py-4">Reseller Price</th>
                 <th className="px-6 py-4">Retail Price</th>
                 <th className="px-6 py-4">Stock</th>
@@ -633,7 +633,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                       <p className="text-slate-500 text-[11px]">{p.brandName}</p>
                     </td>
 
-                    {isSuperAdmin && (
+                    {isAdmin && (
                       <td className="px-6 py-4 font-mono text-xs text-slate-700 font-bold">
                         ৳ {p.costPrice?.toFixed(2)}
                       </td>
@@ -1046,11 +1046,41 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 text-slate-500">
+                    Barcode (Auto-Generated)
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value={editingProduct ? (editingProduct.barcodeValue || 'Auto-generated on save') : 'Auto-generated on save'}
+                    placeholder="Auto-generated barcode"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-sm font-mono cursor-not-allowed"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Unique barcode value generated automatically on save.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 text-slate-500">
+                    QR Code (Auto-Generated)
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value={editingProduct ? (editingProduct.qrValue || 'Auto-generated on save') : 'Auto-generated on save'}
+                    placeholder="Auto-generated QR code"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-sm font-mono cursor-not-allowed"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Unique QR value pointing to the product SKU page.</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {isSuperAdmin && (
+                {isAdmin && (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Cost Price (BDT) *
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 text-rose-600">
+                      Cost Price (BDT) * <span className="text-[9px] text-rose-500/80 lowercase">(reseller dakbe na)</span>
                     </label>
                     <input
                       type="number"
@@ -1059,7 +1089,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                       value={costPrice}
                       onChange={(e) => setCostPrice(e.target.value)}
                       placeholder="0.00"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm font-mono"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-mono"
                     />
                   </div>
                 )}
@@ -1081,7 +1111,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Retail Price (BDT) *
+                    Retail Price (Suggested) (BDT) *
                   </label>
                   <input
                     type="number"

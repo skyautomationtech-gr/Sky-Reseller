@@ -21,6 +21,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
   const [allWallets, setAllWallets] = useState<(Wallet & { resellerName?: string; shopName?: string })[]>([]);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [pendingWithdrawals, setPendingWithdrawals] = useState<WalletTransaction[]>([]);
+  const [pendingDeposits, setPendingDeposits] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Withdraw Modal State (Reseller)
@@ -30,6 +31,15 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
   const [accountNumber, setAccountNumber] = useState('');
   const [withdrawError, setWithdrawError] = useState('');
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
+
+  // Deposit Modal State (Reseller)
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [depositAmount, setDepositAmount] = useState<string>('');
+  const [depositPaymentMethod, setDepositPaymentMethod] = useState<PaymentMethod>('bkash');
+  const [depositAccountNumber, setDepositAccountNumber] = useState('');
+  const [depositTransactionId, setDepositTransactionId] = useState('');
+  const [depositError, setDepositError] = useState('');
+  const [submittingDeposit, setSubmittingDeposit] = useState(false);
 
   // Reject Modal State (Admin)
   const [selectedTxToReject, setSelectedTxToReject] = useState<WalletTransaction | null>(null);
@@ -75,6 +85,19 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
           pendingList.push(Object.assign({ id: d.id }, d.data()) as unknown as WalletTransaction);
         });
         setPendingWithdrawals(pendingList);
+
+        // Fetch pending deposit requests
+        const depQuery = query(
+          collection(db, 'transactions'),
+          where('type', '==', 'deposit'),
+          where('status', '==', 'pending')
+        );
+        const depSnap = await getDocs(depQuery);
+        const pendingDepList: WalletTransaction[] = [];
+        depSnap.forEach((d) => {
+          pendingDepList.push(Object.assign({ id: d.id }, d.data()) as unknown as WalletTransaction);
+        });
+        setPendingDeposits(pendingDepList);
 
         // Fetch recent transactions history across system
         const allTxSnap = await getDocs(collection(db, 'transactions'));
@@ -168,6 +191,108 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
       setWithdrawError(err.message || 'Failed to submit withdrawal request.');
     } finally {
       setSubmittingWithdraw(false);
+    }
+  };
+
+  // Submit Deposit Request (Reseller)
+  const handleRequestDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const numAmount = parseFloat(depositAmount);
+
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setDepositError('Enter a valid positive amount.');
+      return;
+    }
+
+    if (!depositAccountNumber.trim()) {
+      setDepositError('Sender Account / Mobile number is required.');
+      return;
+    }
+
+    if (!depositTransactionId.trim()) {
+      setDepositError('Transaction ID (TxID) is required.');
+      return;
+    }
+
+    setSubmittingDeposit(true);
+    setDepositError('');
+
+    try {
+      const newTxRef = doc(collection(db, 'transactions'));
+      await setDoc(newTxRef, {
+        resellerId: user.uid,
+        resellerName: user.fullName,
+        resellerShopName: user.shopName || user.fullName,
+        type: 'deposit',
+        amount: numAmount,
+        status: 'pending',
+        paymentMethod: depositPaymentMethod,
+        accountNumber: depositAccountNumber.trim(),
+        transactionId: depositTransactionId.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      setIsDepositOpenModal(false);
+      setDepositAmount('');
+      setDepositAccountNumber('');
+      setDepositTransactionId('');
+      fetchWalletData();
+    } catch (err: any) {
+      console.error('Deposit request error:', err);
+      setDepositError(err.message || 'Failed to submit deposit request.');
+    } finally {
+      setSubmittingDeposit(false);
+    }
+  };
+
+  // Helper because we used setIsDepositOpenModal by mistake or need to make sure we match the state name
+  const setIsDepositOpenModal = (open: boolean) => {
+    setIsDepositModalOpen(open);
+  };
+
+  // Approve Deposit Request (Admin / Super Admin)
+  const handleApproveDeposit = async (tx: WalletTransaction) => {
+    setProcessingTxId(tx.id);
+    setActionError('');
+    try {
+      await runTransaction(db, async (transaction) => {
+        const txRef = doc(db, 'transactions', tx.id);
+        const walletRef = doc(db, 'wallets', tx.resellerId);
+
+        const walletSnap = await transaction.get(walletRef);
+        let balance = 0;
+        let totalEarned = 0;
+        let totalWithdrawn = 0;
+
+        if (walletSnap.exists()) {
+          const wData = walletSnap.data() as Wallet;
+          balance = wData.balance || 0;
+          totalEarned = wData.totalEarned || 0;
+          totalWithdrawn = wData.totalWithdrawn || 0;
+        }
+
+        // Update/Create Wallet balance: add the deposit amount
+        transaction.set(walletRef, {
+          resellerId: tx.resellerId,
+          balance: balance + tx.amount,
+          totalEarned: totalEarned,
+          totalWithdrawn: totalWithdrawn,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+
+        // Update tx status
+        transaction.update(txRef, {
+          status: 'approved',
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      fetchWalletData();
+    } catch (err: any) {
+      console.error('Deposit Approval error:', err);
+      setActionError(err.message || 'Failed to approve deposit request.');
+    } finally {
+      setProcessingTxId(null);
     }
   };
 
@@ -273,21 +398,33 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
               </div>
             </div>
 
-            <div className="pt-6 mt-4 border-t border-slate-800/80 flex items-center justify-between">
+            <div className="pt-6 mt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <p className="text-xs text-slate-400">
                 Reseller ID: <span className="text-slate-200 font-mono font-semibold">{user.uid.substring(0, 8)}</span>
               </p>
-              <button
-                onClick={() => {
-                  setWithdrawError('');
-                  setIsWithdrawModalOpen(true);
-                }}
-                disabled={(wallet?.balance || 0) <= 0}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50"
-              >
-                <ArrowUpRight className="w-4 h-4" />
-                <span>Request Withdraw</span>
-              </button>
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => {
+                    setDepositError('');
+                    setIsDepositModalOpen(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-emerald-600/30 flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Request Deposit</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setWithdrawError('');
+                    setIsWithdrawModalOpen(true);
+                  }}
+                  disabled={(wallet?.balance || 0) <= 0}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <ArrowUpRight className="w-4 h-4" />
+                  <span>Request Withdraw</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -380,6 +517,93 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                             <div className="flex items-center justify-center gap-2">
                               <button
                                 onClick={() => handleApproveWithdrawal(tx)}
+                                disabled={isProc}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-xs disabled:opacity-50"
+                              >
+                                {isProc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                <span>Approve</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedTxToReject(tx);
+                                  setRejectReason('');
+                                }}
+                                disabled={isProc}
+                                className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Reject</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Admin View: Pending Deposit Requests */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-emerald-500" />
+                  <span>Pending Deposit Requests</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Approve or reject wallet balance top-up requests submitted by resellers
+                </p>
+              </div>
+              <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1 rounded-full">
+                {pendingDeposits.length} Pending
+              </span>
+            </div>
+
+            {pendingDeposits.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
+                No pending deposit requests at this time.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                      <th className="px-4 py-3">Reseller / Shop</th>
+                      <th className="px-4 py-3">Method</th>
+                      <th className="px-4 py-3">Sender Account</th>
+                      <th className="px-4 py-3">Transaction ID (TxID)</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {pendingDeposits.map((tx) => {
+                      const isProc = processingTxId === tx.id;
+                      return (
+                        <tr key={tx.id} className="hover:bg-emerald-50/40 transition-colors">
+                          <td className="px-4 py-3">
+                            <p className="font-bold text-slate-900">{tx.resellerShopName || 'Reseller'}</p>
+                            <p className="text-[10px] text-slate-500">{tx.resellerName}</p>
+                          </td>
+                          <td className="px-4 py-3 uppercase font-bold text-emerald-600">
+                            {tx.paymentMethod}
+                          </td>
+                          <td className="px-4 py-3 font-mono font-bold text-slate-800">
+                            {tx.accountNumber}
+                          </td>
+                          <td className="px-4 py-3 font-mono font-bold text-blue-700">
+                            {tx.transactionId || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-right font-extrabold text-emerald-600 text-sm">
+                            ৳{tx.amount}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => handleApproveDeposit(tx)}
                                 disabled={isProc}
                                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-xs disabled:opacity-50"
                               >
@@ -506,10 +730,10 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                       {/* Amount */}
                       <td
                         className={`px-4 py-3 text-right font-extrabold text-sm ${
-                          isComm ? 'text-emerald-600' : 'text-slate-900'
+                          isComm || tx.type === 'deposit' ? 'text-emerald-600' : 'text-slate-900'
                         }`}
                       >
-                        {isComm ? '+' : '-'}৳{tx.amount}
+                        {isComm || tx.type === 'deposit' ? '+' : '-'}৳{tx.amount}
                       </td>
 
                       {/* Status */}
@@ -528,19 +752,24 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                       </td>
 
                       {/* Details */}
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className="px-4 py-3 text-slate-600 font-medium">
                         {tx.orderNumber && (
                           <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mr-2">
                             Order {tx.orderNumber}
                           </span>
                         )}
                         {tx.paymentMethod && (
-                          <span className="uppercase font-bold text-slate-700">
+                          <span className="uppercase font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 mr-2">
                             {tx.paymentMethod} ({tx.accountNumber})
                           </span>
                         )}
+                        {tx.transactionId && (
+                          <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mr-2">
+                            TxID: {tx.transactionId}
+                          </span>
+                        )}
                         {tx.rejectReason && (
-                          <p className="text-[10px] text-rose-600 font-medium mt-0.5">Reason: {tx.rejectReason}</p>
+                          <p className="text-[10px] text-rose-600 font-medium mt-1">Reason: {tx.rejectReason}</p>
                         )}
                       </td>
                     </tr>
@@ -650,18 +879,131 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
         </div>
       )}
 
+      {/* Modal: Request Deposit (Reseller) */}
+      {isDepositModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
+              <div className="flex items-center gap-2">
+                <WalletIcon className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold">Request Balance Deposit</h3>
+              </div>
+              <button
+                onClick={() => setIsDepositModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRequestDeposit} className="p-6 space-y-4">
+              {depositError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{depositError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Deposit Amount (BDT)
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 1000"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['bkash', 'nagad', 'bank_transfer'] as PaymentMethod[]).map((m) => (
+                    <button
+                      type="button"
+                      key={m}
+                      onClick={() => setDepositPaymentMethod(m)}
+                      className={`p-2.5 rounded-xl border text-center text-xs font-bold uppercase transition-all ${
+                        depositPaymentMethod === m
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {m === 'bank_transfer' ? 'Bank' : m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Sender Account / Mobile Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 01700000000 or Bank A/C Number"
+                  value={depositAccountNumber}
+                  onChange={(e) => setDepositAccountNumber(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Transaction ID (TxID) / Ref
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 9K27B6X19W"
+                  value={depositTransactionId}
+                  onChange={(e) => setDepositTransactionId(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsDepositModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingDeposit}
+                  className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {submittingDeposit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Submit Request</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Reject Reason Prompt (Admin) */}
       {selectedTxToReject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
           <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Reject Withdrawal Request</h3>
+            <h3 className="text-base font-bold text-slate-900">
+              Reject {selectedTxToReject.type === 'deposit' ? 'Deposit' : 'Withdrawal'} Request
+            </h3>
             <p className="text-xs text-slate-500">
-              Specify reason for rejecting ৳{selectedTxToReject.amount} payout request for {selectedTxToReject.resellerShopName}.
+              Specify reason for rejecting ৳{selectedTxToReject.amount} {selectedTxToReject.type === 'deposit' ? 'deposit' : 'payout'} request for {selectedTxToReject.resellerShopName}.
             </p>
 
             <textarea
               rows={3}
-              placeholder="e.g. Invalid bKash account number or wrong credentials"
+              placeholder="e.g. Invalid Transaction ID, mismatch sender details, or insufficient credentials."
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none"

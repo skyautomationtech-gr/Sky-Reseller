@@ -411,7 +411,7 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                   <th className="px-5 py-3.5">Customer Info</th>
                   <th className="px-5 py-3.5 text-center">Qty</th>
                   <th className="px-5 py-3.5 text-right">Total Amount</th>
-                  <th className="px-5 py-3.5 text-right">Profit / Commission</th>
+                  <th className="px-5 py-3.5 text-right">Your Sell Amount (Profit)</th>
                   <th className="px-5 py-3.5">Status</th>
                   <th className="px-5 py-3.5 text-center">Actions</th>
                 </tr>
@@ -593,6 +593,18 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                       </span>
                     )}
                   </p>
+                </div>
+              </div>
+
+              {/* Order Metadata */}
+              <div className="grid grid-cols-2 gap-4 bg-blue-50/50 p-3.5 rounded-xl border border-blue-200 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Order Number Auto</span>
+                  <span className="font-mono font-bold text-blue-700">{selectedOrderForDetails.orderNumber}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">order Created name Auto</span>
+                  <span className="font-semibold text-slate-800">{selectedOrderForDetails.resellerName}</span>
                 </div>
               </div>
 

@@ -35,6 +35,60 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
     };
   }, [isOpen]);
 
+  const configureCameraTrack = async () => {
+    try {
+      const videoElement = document.querySelector(`#${readerElementId} video`) as HTMLVideoElement | null;
+      if (!videoElement) return;
+
+      // Apply FIT_CENTER style directly to video element to prevent crop or zoom
+      videoElement.style.objectFit = 'contain';
+      videoElement.style.width = '100%';
+      videoElement.style.height = '100%';
+      videoElement.style.transform = 'none';
+
+      if (videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream;
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+          const advancedConstraints: any = {};
+
+          // 1. Force zoom ratio to exactly 1.0x (Disable all digital zoom)
+          if ('zoom' in capabilities) {
+            advancedConstraints.zoom = 1.0;
+          }
+
+          // 2. Keep continuous autofocus enabled
+          if ('focusMode' in capabilities) {
+            advancedConstraints.focusMode = 'continuous';
+          }
+
+          // 3. Enable auto exposure
+          if ('exposureMode' in capabilities) {
+            advancedConstraints.exposureMode = 'continuous';
+          }
+
+          // 4. Enable auto white balance
+          if ('whiteBalanceMode' in capabilities) {
+            advancedConstraints.whiteBalanceMode = 'continuous';
+          }
+
+          if (Object.keys(advancedConstraints).length > 0) {
+            try {
+              await track.applyConstraints({
+                advanced: [advancedConstraints],
+              });
+            } catch (err) {
+              console.warn('Track constraints apply fallback:', err);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to configure camera track settings:', err);
+    }
+  };
+
   const startScanner = async () => {
     try {
       if (scannerRef.current) {
@@ -46,12 +100,29 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
       const html5Qrcode = new Html5Qrcode(readerElementId);
       scannerRef.current = html5Qrcode;
 
-      await html5Qrcode.start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: { width: 220, height: 220 },
+      const cameraConstraints: MediaTrackConstraints = {
+        facingMode: { ideal: 'environment' }, // Back camera only
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        aspectRatio: { ideal: 1.333333 }, // Standard 4:3 camera aspect ratio
+      };
+
+      const qrConfig = {
+        fps: 15,
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const minDim = Math.min(viewfinderWidth, viewfinderHeight);
+          const boxSize = Math.max(180, Math.floor(minDim * 0.7));
+          return { width: boxSize, height: boxSize };
         },
+        aspectRatio: 1.333333, // Prevents stretching or aspect distortion
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true, // Hardware accelerated QR/Barcode detection
+        },
+      };
+
+      await html5Qrcode.start(
+        cameraConstraints,
+        qrConfig,
         (decodedText) => {
           handleScanSuccess(decodedText);
         },
@@ -59,11 +130,33 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
           // ignore transient scan frame errors
         }
       );
+
+      // Force 1.0x zoom ratio, continuous focus, auto exposure/WB, and FIT_CENTER styling
+      await configureCameraTrack();
     } catch (err: any) {
-      console.warn('Camera access / scanner start failed:', err);
-      setPermissionError(
-        'Camera access is needed to scan QR codes. Please allow camera permission in your browser settings.'
-      );
+      console.warn('Camera access / scanner start failed, trying simple environment facingMode:', err);
+      try {
+        if (scannerRef.current) {
+          await scannerRef.current.start(
+            { facingMode: 'environment' },
+            {
+              fps: 15,
+              qrbox: { width: 220, height: 220 },
+              aspectRatio: 1.333333,
+            },
+            (decodedText) => {
+              handleScanSuccess(decodedText);
+            },
+            () => {}
+          );
+          await configureCameraTrack();
+        }
+      } catch (fallbackErr: any) {
+        console.error('Camera fallback start failed:', fallbackErr);
+        setPermissionError(
+          'Camera access is needed to scan QR codes. Please allow camera permission in your browser settings.'
+        );
+      }
     }
   };
 
@@ -162,8 +255,12 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
                 </p>
                 <div
                   id={readerElementId}
-                  className="w-full h-64 bg-slate-900 rounded-2xl overflow-hidden border-2 border-dashed border-slate-300 relative flex items-center justify-center"
+                  className="w-full min-h-[280px] sm:min-h-[320px] bg-slate-950 rounded-2xl overflow-hidden relative flex items-center justify-center border border-slate-800 shadow-inner"
                 />
+                <div className="flex items-center justify-between px-1 text-[10px] text-slate-400 font-medium">
+                  <span>Sensor View: Full Frame (FIT_CENTER)</span>
+                  <span>Zoom: 1.0x • Autofocus: ON</span>
+                </div>
               </div>
             )}
 

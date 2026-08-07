@@ -23,10 +23,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const activeMedia = images[activeMediaIndex];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
+      <div className="relative w-full max-w-2xl max-h-[92vh] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-slate-900 text-white shrink-0">
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-blue-400" />
             <span className="font-bold text-sm">Product Detail View</span>
@@ -40,7 +40,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 md:p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
           {/* Top Section: Media + Key Details */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Gallery */}
@@ -171,7 +171,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-100 border-t border-slate-200 flex justify-end">
+        <div className="px-4 sm:px-6 py-4 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0">
           <button
             onClick={onClose}
             className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors"

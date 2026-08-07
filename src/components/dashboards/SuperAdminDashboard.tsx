@@ -22,7 +22,8 @@ import { SecurityPage } from '../security/SecurityPage';
 import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { 
   LayoutDashboard, Users, CheckCircle2, Shield, ShoppingBag, Wallet, Percent, 
-  Sparkles, DollarSign, TrendingUp, Clock, PackageCheck
+  Sparkles, DollarSign, TrendingUp, Clock, PackageCheck, AlertTriangle, 
+  UserCheck, UserX, Package, CalendarDays, BarChart3, HelpCircle
 } from 'lucide-react';
 
 interface SuperAdminDashboardProps {
@@ -35,44 +36,139 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Real Stats State
+  // Real Stats States
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [totalResellersCount, setTotalResellersCount] = useState(0);
+  const [activeResellersCount, setActiveResellersCount] = useState(0);
+  const [suspendedCount, setSuspendedCount] = useState(0);
+  const [totalAdminsCount, setTotalAdminsCount] = useState(0);
+  const [totalProductsCount, setTotalProductsCount] = useState(0);
   const [totalOrdersCount, setTotalOrdersCount] = useState(0);
-  const [deliveredOrdersCount, setDeliveredOrdersCount] = useState(0);
+  const [todaysOrdersCount, setTodaysOrdersCount] = useState(0);
+  const [monthlyOrdersCount, setMonthlyOrdersCount] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [totalCommission, setTotalCommission] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   useEffect(() => {
     fetchDashboardMetrics();
   }, []);
 
   const fetchDashboardMetrics = async () => {
+    setLoadingMetrics(true);
     try {
-      // Pending Approvals
-      const pendingSnap = await getDocs(query(collection(db, 'users'), where('status', '==', 'pending')));
-      setPendingApprovalsCount(pendingSnap.size);
+      // 1. Fetch Users & calculate counts
+      const usersSnap = await getDocs(collection(db, 'users'));
+      let resellers = 0;
+      let activeResellers = 0;
+      let pendingApprovals = 0;
+      let suspended = 0;
+      let admins = 0;
 
-      // Total Resellers
-      const resellersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'reseller')));
-      setTotalResellersCount(resellersSnap.size);
+      usersSnap.forEach((docSnap) => {
+        const u = docSnap.data();
+        if (u.role === 'reseller') {
+          resellers++;
+          if (u.status === 'approved') {
+            activeResellers++;
+          } else if (u.status === 'pending') {
+            pendingApprovals++;
+          }
+        }
+        if (u.status === 'suspended') {
+          suspended++;
+        }
+        if (u.role === 'admin' || u.role === 'super_admin') {
+          admins++;
+        }
+      });
 
-      // Orders & Revenue
+      setTotalResellersCount(resellers);
+      setActiveResellersCount(activeResellers);
+      setPendingApprovalsCount(pendingApprovals);
+      setSuspendedCount(suspended);
+      setTotalAdminsCount(admins);
+
+      // 2. Fetch Products & calculate counts
+      const productsSnap = await getDocs(collection(db, 'products'));
+      let prodCount = 0;
+      let lowStock = 0;
+      productsSnap.forEach((docSnap) => {
+        const p = docSnap.data();
+        if (p.status !== 'deleted') {
+          prodCount++;
+          const threshold = p.lowStockThreshold || 5;
+          if (p.stock <= threshold) {
+            lowStock++;
+          }
+        }
+      });
+      setTotalProductsCount(prodCount);
+      setLowStockCount(lowStock);
+
+      // 3. Fetch Orders & calculate counts
       const ordersSnap = await getDocs(collection(db, 'orders'));
       setTotalOrdersCount(ordersSnap.size);
 
-      let rev = 0;
-      let delivered = 0;
+      let revenueSum = 0;
+      let commissionSum = 0;
+      let todayCount = 0;
+      let monthCount = 0;
+
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+
       ordersSnap.forEach((docSnap) => {
         const o = docSnap.data();
+        
+        // Determine date
+        let orderDate: Date | null = null;
+        if (o.createdAt) {
+          if (o.createdAt.toDate) {
+            orderDate = o.createdAt.toDate();
+          } else if (o.createdAt.seconds) {
+            orderDate = new Date(o.createdAt.seconds * 1000);
+          } else {
+            orderDate = new Date(o.createdAt);
+          }
+        }
+
+        if (orderDate) {
+          // Check Today
+          if (
+            orderDate.getDate() === today.getDate() &&
+            orderDate.getMonth() === currentMonth &&
+            orderDate.getFullYear() === currentYear
+          ) {
+            todayCount++;
+          }
+
+          // Check Month
+          if (
+            orderDate.getMonth() === currentMonth &&
+            orderDate.getFullYear() === currentYear
+          ) {
+            monthCount++;
+          }
+        }
+
+        // Revenue & Commission (credited/earned on delivered)
         if (o.status === 'delivered') {
-          delivered++;
-          rev += o.totalAmount || 0;
+          revenueSum += o.totalAmount || 0;
+          commissionSum += o.sellAmount || 0;
         }
       });
-      setDeliveredOrdersCount(delivered);
-      setTotalRevenue(rev);
+
+      setTodaysOrdersCount(todayCount);
+      setMonthlyOrdersCount(monthCount);
+      setTotalRevenue(revenueSum);
+      setTotalCommission(commissionSum);
     } catch (err) {
       console.error('Error fetching dashboard metrics:', err);
+    } finally {
+      setLoadingMetrics(false);
     }
   };
 
@@ -148,63 +244,234 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
             {/* Low Stock Alert Widget */}
             <LowStockAlertWidget onNavigateToProducts={() => setActiveTab('products')} />
 
-            {/* Quick Metrics Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div
-                onClick={() => setActiveTab('approvals')}
-                className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-amber-500 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Approvals</span>
-                  <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <CheckCircle2 className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold text-slate-900">{pendingApprovalsCount} Accounts</div>
-                <p className="text-[11px] text-amber-600 font-medium mt-1">Review pending reseller queue →</p>
-              </div>
+            {/* Super Admin Dashboard Metrics Title */}
+            <div>
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <LayoutDashboard className="w-5 h-5 text-blue-600" />
+                <span>Super Admin Dashboard Metrics</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Real-time statistics across users, products, orders, and financial summaries.</p>
+            </div>
 
-              <div
-                onClick={() => setActiveTab('orders')}
-                className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-500 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Orders</span>
-                  <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <ShoppingBag className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold text-slate-900">{totalOrdersCount} Total</div>
-                <p className="text-[11px] text-blue-600 font-medium mt-1">{deliveredOrdersCount} Delivered • Manage orders →</p>
-              </div>
-
-              <div
-                onClick={() => setActiveTab('wallet')}
-                className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-emerald-500 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Gross Delivered Revenue</span>
-                  <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <TrendingUp className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold text-slate-900">৳{totalRevenue.toLocaleString()}</div>
-                <p className="text-[11px] text-emerald-600 font-medium mt-1">View wallet balances & payouts →</p>
-              </div>
-
+            {/* Quick Metrics Grid - 12 Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              
+              {/* Card 1: Total Resellers */}
               <div
                 onClick={() => setActiveTab('resellers')}
-                className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-purple-500 transition-all cursor-pointer group"
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Resellers</span>
-                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Users className="w-5 h-5" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Resellers</span>
+                  <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Users className="w-4 h-4" />
                   </div>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">{totalResellersCount} Registered</div>
-                <p className="text-[11px] text-purple-600 font-medium mt-1">View reseller network →</p>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{totalResellersCount} Accounts</div>
+                  <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage entire reseller directory →</p>
+                </div>
               </div>
+
+              {/* Card 2: Active Resellers */}
+              <div
+                onClick={() => setActiveTab('resellers')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Resellers</span>
+                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <UserCheck className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{activeResellersCount} Approved</div>
+                  <p className="text-[10px] text-emerald-600 font-medium mt-1">Currently active & approved →</p>
+                </div>
+              </div>
+
+              {/* Card 3: Pending Approval */}
+              <div
+                onClick={() => setActiveTab('approvals')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Approval</span>
+                  <div className="w-9 h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{pendingApprovalsCount} Queued</div>
+                  <p className="text-[10px] text-amber-600 font-medium mt-1">Review pending registrations →</p>
+                </div>
+              </div>
+
+              {/* Card 4: Suspended Accounts */}
+              <div
+                onClick={() => setActiveTab('resellers')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-rose-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Suspended Accounts</span>
+                  <div className="w-9 h-9 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <UserX className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{suspendedCount} Suspended</div>
+                  <p className="text-[10px] text-rose-600 font-medium mt-1">View restriction details →</p>
+                </div>
+              </div>
+
+              {/* Card 5: Total Admin */}
+              <div
+                onClick={() => setActiveTab('admin')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Admin</span>
+                  <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{totalAdminsCount} Staff</div>
+                  <p className="text-[10px] text-blue-600 font-medium mt-1">Manage admin permissions →</p>
+                </div>
+              </div>
+
+              {/* Card 6: Total Products */}
+              <div
+                onClick={() => setActiveTab('products')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Products</span>
+                  <div className="w-9 h-9 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Package className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{totalProductsCount} Items</div>
+                  <p className="text-[10px] text-teal-600 font-medium mt-1">Manage catalog & inventory →</p>
+                </div>
+              </div>
+
+              {/* Card 7: Total Orders */}
+              <div
+                onClick={() => setActiveTab('orders')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-violet-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Orders</span>
+                  <div className="w-9 h-9 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <ShoppingBag className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{totalOrdersCount} Orders</div>
+                  <p className="text-[10px] text-violet-600 font-medium mt-1">Review all transactions →</p>
+                </div>
+              </div>
+
+              {/* Card 8: Today's Orders */}
+              <div
+                onClick={() => setActiveTab('orders')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-sky-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Orders</span>
+                  <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <CalendarDays className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{todaysOrdersCount} New</div>
+                  <p className="text-[10px] text-sky-600 font-medium mt-1">Fulfill incoming orders →</p>
+                </div>
+              </div>
+
+              {/* Card 9: Monthly Orders */}
+              <div
+                onClick={() => setActiveTab('orders')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-fuchsia-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monthly Orders</span>
+                  <div className="w-9 h-9 bg-fuchsia-50 text-fuchsia-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <BarChart3 className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{monthlyOrdersCount} This Month</div>
+                  <p className="text-[10px] text-fuchsia-600 font-medium mt-1">Track monthly order growth →</p>
+                </div>
+              </div>
+
+              {/* Card 10: Total Revenue */}
+              <div
+                onClick={() => setActiveTab('reports')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-600 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Revenue</span>
+                  <div className="w-9 h-9 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <DollarSign className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">৳{totalRevenue.toLocaleString()}</div>
+                  <p className="text-[10px] text-emerald-700 font-medium mt-1">Gross from delivered orders →</p>
+                </div>
+              </div>
+
+              {/* Card 11: Total Commission */}
+              <div
+                onClick={() => setActiveTab('reports')}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-cyan-500 transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Commission</span>
+                  <div className="w-9 h-9 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Percent className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-900">৳{totalCommission.toLocaleString()}</div>
+                  <p className="text-[10px] text-cyan-600 font-medium mt-1">Earned by resellers →</p>
+                </div>
+              </div>
+
+              {/* Card 12: Low Stock Alert */}
+              <div
+                onClick={() => setActiveTab('products')}
+                className={`p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between ${
+                  lowStockCount > 0 
+                    ? 'bg-rose-50/50 border-rose-200 hover:border-rose-500 shadow-rose-50/50 shadow-xs' 
+                    : 'bg-white border-slate-200 hover:border-slate-400 shadow-xs'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`text-xs font-bold uppercase tracking-wider ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                    Low Stock Alert
+                  </span>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
+                    lowStockCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-50 text-slate-500'
+                  }`}>
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className={`text-xl font-bold ${lowStockCount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
+                    {lowStockCount} Products
+                  </div>
+                  <p className={`text-[10px] font-medium mt-1 ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                    {lowStockCount > 0 ? 'Urgent restocking needed →' : 'All stocks adequate →'}
+                  </p>
+                </div>
+              </div>
+
             </div>
           </div>
         );
