@@ -9,8 +9,9 @@ import {
 import { 
   TrendingUp, ShoppingBag, DollarSign, Package, Users, Wallet as WalletIcon, 
   Calendar, Filter, ArrowUpDown, ChevronDown, CheckCircle2, Clock, AlertTriangle, 
-  Loader2, RefreshCw
+  Loader2, RefreshCw, MessageSquare
 } from 'lucide-react';
+import { AdminFeedbackList } from '../feedback/AdminFeedbackList';
 
 type DatePreset = 'today' | 'week' | 'month' | 'year' | 'custom';
 
@@ -25,8 +26,12 @@ const STATUS_COLORS: Record<string, string> = {
   returned: '#64748b',
 };
 
-export const ReportsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sales' | 'orders' | 'products' | 'commission' | 'wallet' | 'resellers'>('sales');
+interface ReportsPageProps {
+  user?: UserProfile;
+}
+
+export const ReportsPage: React.FC<ReportsPageProps> = ({ user }) => {
+  const [activeTab, setActiveTab] = useState<'sales' | 'orders' | 'products' | 'commission' | 'wallet' | 'resellers' | 'feedback'>('sales');
   
   // Date Filters
   const [datePreset, setDatePreset] = useState<DatePreset>('month');
@@ -400,6 +405,7 @@ export const ReportsPage: React.FC = () => {
           { id: 'commission', label: 'Commission Report', icon: DollarSign },
           { id: 'wallet', label: 'Wallet Report', icon: WalletIcon },
           { id: 'resellers', label: 'Reseller Report', icon: Users },
+          { id: 'feedback', label: 'Reseller Feedback', icon: MessageSquare },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -766,6 +772,11 @@ export const ReportsPage: React.FC = () => {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* TAB 7: RESELLER FEEDBACK */}
+          {activeTab === 'feedback' && (
+            <AdminFeedbackList user={user || { uid: 'admin', fullName: 'Admin', role: 'admin', email: '' }} />
           )}
         </div>
       )}

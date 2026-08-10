@@ -15,11 +15,44 @@ export interface UserProfile {
   profilePhotoUrl: string;
   shopPhotoUrl: string;
   nidUrl?: string;
+  nidNumber?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountHolderName?: string;
+  branchName?: string;
+  bkashNumber?: string;
+  nagadNumber?: string;
+  rocketNumber?: string;
+  payoutMethod?: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  customCommissionRate?: number;
+  adminNotes?: string;
   role: UserRole;
   status: UserStatus;
   rejectReason?: string | null;
+  plainPassword?: string;
   lastSeenVersion?: string;
   createdAt: any; // Firestore Timestamp or Date
+}
+
+export interface PayoutChangeRequest {
+  id: string;
+  resellerId: string;
+  resellerName: string;
+  shopName: string;
+  mobile: string;
+  payoutMethod: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  bkashNumber?: string;
+  nagadNumber?: string;
+  rocketNumber?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountHolderName?: string;
+  branchName?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+  createdAt: any;
+  approvedAt?: any;
+  approvedBy?: string;
 }
 
 export interface GeoData {
@@ -125,6 +158,13 @@ export interface Order {
   paymentStatus: OrderPaymentStatus;
   createdAt: any;
   updatedAt: any;
+  specialInstructions?: string;
+  deliveryPreference?: 'standard' | 'express' | 'same_day' | string;
+  giftWrap?: boolean;
+  messageCard?: string | null;
+  customizations?: Record<string, any>;
+  deliveryCost?: number;
+  giftWrapCost?: number;
 }
 
 export interface Wallet {
@@ -201,7 +241,17 @@ export interface NoticeRead {
   readAt: any;
 }
 
-export type TicketCategory = 'order_issue' | 'payment_issue' | 'product_issue' | 'account_issue' | 'other';
+export type TicketCategory = 
+  | 'Order Issue' 
+  | 'Payment Issue' 
+  | 'Product Quality Issue' 
+  | 'Account Issue' 
+  | 'Delivery Problem' 
+  | 'Commission Question' 
+  | 'App Bug/Technical' 
+  | 'Other';
+
+export type TicketPriority = 'low' | 'medium' | 'high';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
 export interface TicketReply {
@@ -215,15 +265,20 @@ export interface TicketReply {
 
 export interface SupportTicket {
   id: string;
+  ticketId: string;
   resellerId: string;
   resellerName: string;
   resellerShopName?: string;
+  category: TicketCategory | string;
   subject: string;
-  category: TicketCategory;
   description: string;
-  imageUrl?: string | null;
+  orderId?: string | null;
+  orderNumber?: string | null;
+  priority: TicketPriority;
+  attachmentUrl?: string | null;
+  email: string;
   status: TicketStatus;
-  replies: TicketReply[];
+  replies?: TicketReply[];
   createdAt: any;
   updatedAt: any;
 }
@@ -287,6 +342,66 @@ export interface CartItem {
   quantity: number;
   sellingPrice: number; // custom reseller-defined price
 }
+
+export interface ProductReview {
+  id: string;
+  productId: string;
+  productName?: string;
+  productImage?: string;
+  resellerId: string;
+  resellerName: string;
+  rating: number;
+  title: string;
+  description: string;
+  imageUrl?: string | null;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export type FeedbackType = 'Complaint' | 'Suggestion/Feedback' | 'Bug Report' | 'Feature Request';
+export type BugSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
+
+export interface ResellerFeedback {
+  id: string;
+  refId: string;
+  resellerId: string;
+  resellerName: string;
+  resellerShopName?: string;
+  type: FeedbackType;
+  category: string;
+  title: string;
+  message: string;
+  attachmentUrls: string[];
+  severity?: BugSeverity | null;
+  status: 'new' | 'reviewed' | 'in_progress' | 'resolved' | 'closed';
+  email: string;
+  adminNotes?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export type WithdrawalPaymentMethod = 'bKash' | 'Nagad' | 'Rocket' | 'Bank Transfer';
+export type WithdrawalStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+
+export interface WithdrawalRequest {
+  id: string;
+  requestId: string;
+  resellerId: string;
+  resellerName: string;
+  resellerShopName?: string;
+  amount: number;
+  paymentMethod: WithdrawalPaymentMethod;
+  accountDetails: string;
+  accountHolderName?: string | null;
+  bankName?: string | null;
+  proofUrl?: string | null;
+  status: WithdrawalStatus;
+  requestedAt: any;
+  processedAt?: any | null;
+  notes?: string | null;
+  transactionId?: string | null;
+}
+
 
 
 

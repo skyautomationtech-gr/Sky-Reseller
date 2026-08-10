@@ -14,6 +14,8 @@ import { SupportSystem } from '../support/SupportSystem';
 import { SettingsPage } from '../settings/SettingsPage';
 import { ResellerProfilePage } from '../profile/ResellerProfilePage';
 import { ResellerHomePage } from '../home/ResellerHomePage';
+import { ProductReviewForm } from '../reviews/ProductReviewForm';
+import { FeedbackForm } from '../feedback/FeedbackForm';
 import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { 
   Store, Package, ShoppingBag, Wallet as WalletIcon, Percent, MapPin, Phone, Mail, 
@@ -155,6 +157,31 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
         return <ProductManagement user={user} />;
       case 'orders':
         return <OrderList user={user} />;
+      case 'reviews':
+        return (
+          <div className="space-y-6">
+            <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-lg flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-extrabold text-white">Product Reviews</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Submit feedback and star ratings for products you've received.</p>
+              </div>
+              <button
+                onClick={() => setActiveTab('products')}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all"
+              >
+                Browse All Products →
+              </button>
+            </div>
+            <ProductReviewForm
+              user={user}
+              onSuccessRedirect={(prodId) => {
+                setActiveTab('products');
+              }}
+            />
+          </div>
+        );
+      case 'feedback':
+        return <FeedbackForm user={user} />;
       case 'wallet':
         return <WalletView user={user} />;
       case 'commission':

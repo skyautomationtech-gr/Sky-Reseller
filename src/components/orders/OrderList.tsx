@@ -5,11 +5,13 @@ import {
 import { db } from '../../lib/firebase';
 import { Order, OrderStatus, UserProfile } from '../../types';
 import { CreateOrderModal } from './CreateOrderModal';
+import { OrderCustomizationForm } from './OrderCustomizationForm';
 import { InvoiceModal } from './InvoiceModal';
+import { ProductReviewForm } from '../reviews/ProductReviewForm';
 import { 
   ShoppingBag, Search, Plus, Filter, Clock, CheckCircle2, Package, Truck, 
   XCircle, RotateCcw, AlertCircle, Loader2, Eye, MapPin, Phone, User, Store,
-  ChevronRight, Calendar, FileText
+  ChevronRight, Calendar, FileText, Star, Sparkles, Gift
 } from 'lucide-react';
 
 interface OrderListProps {
@@ -41,12 +43,14 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCustomOrderModalOpen, setIsCustomOrderModalOpen] = useState(false);
 
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<Order | null>(null);
+  const [selectedReviewProductId, setSelectedReviewProductId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
 
@@ -290,13 +294,22 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
         </div>
 
         {!isAdminOrSuperAdmin && (
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create New Order</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setIsCustomOrderModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <Sparkles className="w-4 h-4 text-indigo-200" />
+              <span>Customized Order Form</span>
+            </button>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Quick Order</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -524,13 +537,24 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
 
                       {/* Actions */}
                       <td className="px-5 py-4 text-center">
-                        <button
-                          onClick={() => setSelectedOrderForDetails(order)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="View Order Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => setSelectedOrderForDetails(order)}
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="View Order Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {order.status === 'delivered' && (
+                            <button
+                              onClick={() => setSelectedReviewProductId(order.productId)}
+                              className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                              title="Write Product Review"
+                            >
+                              <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -548,6 +572,21 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
         user={user}
         onOrderCreated={() => fetchOrders()}
       />
+
+      {/* Modal: Custom Order Form */}
+      {isCustomOrderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto">
+          <div className="w-full max-w-3xl my-auto">
+            <OrderCustomizationForm
+              user={user}
+              onSuccess={() => {
+                fetchOrders();
+              }}
+              onCancel={() => setIsCustomOrderModalOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Modal: View Details */}
       {selectedOrderForDetails && (
@@ -627,6 +666,46 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                 </div>
               </div>
 
+              {/* Order Customizations */}
+              {(selectedOrderForDetails.specialInstructions || selectedOrderForDetails.deliveryPreference || selectedOrderForDetails.giftWrap) && (
+                <div className="space-y-2.5 bg-indigo-50/60 p-4 rounded-xl border border-indigo-200/80 text-xs text-indigo-950">
+                  <h4 className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Order Customizations</span>
+                  </h4>
+
+                  {selectedOrderForDetails.specialInstructions && (
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Special Instructions</span>
+                      <p className="font-medium text-slate-800 bg-white p-2 rounded-lg border border-indigo-100 mt-0.5">
+                        "{selectedOrderForDetails.specialInstructions}"
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedOrderForDetails.deliveryPreference && (
+                    <div className="flex items-center gap-2 text-slate-800 pt-1">
+                      <Truck className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Delivery Preference: <strong className="capitalize">{selectedOrderForDetails.deliveryPreference.replace('_', ' ')}</strong></span>
+                    </div>
+                  )}
+
+                  {selectedOrderForDetails.giftWrap && (
+                    <div className="pt-1 space-y-1">
+                      <div className="flex items-center gap-2 text-pink-700 font-bold">
+                        <Gift className="w-3.5 h-3.5 text-pink-600" />
+                        <span>Gift Wrapped (+৳100)</span>
+                      </div>
+                      {selectedOrderForDetails.messageCard && (
+                        <p className="text-slate-800 bg-white p-2 rounded-lg border border-pink-200 font-medium italic">
+                          Card Message: "{selectedOrderForDetails.messageCard}"
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Pricing Breakdown */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Financial Breakdown</h4>
@@ -643,20 +722,35 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-              {(isAdminOrSuperAdmin || selectedOrderForDetails.resellerId === user.uid) && (
-                <button
-                  onClick={() => {
-                    const orderToInv = selectedOrderForDetails;
-                    setSelectedOrderForDetails(null);
-                    setSelectedOrderForInvoice(orderToInv);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>{selectedOrderForDetails.invoiceNumber ? 'View Invoice' : 'Generate Invoice'}</span>
-                </button>
-              )}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center gap-2">
+              <div className="flex items-center gap-2">
+                {(isAdminOrSuperAdmin || selectedOrderForDetails.resellerId === user.uid) && (
+                  <button
+                    onClick={() => {
+                      const orderToInv = selectedOrderForDetails;
+                      setSelectedOrderForDetails(null);
+                      setSelectedOrderForInvoice(orderToInv);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>{selectedOrderForDetails.invoiceNumber ? 'View Invoice' : 'Generate Invoice'}</span>
+                  </button>
+                )}
+                {selectedOrderForDetails.status === 'delivered' && (
+                  <button
+                    onClick={() => {
+                      const prodId = selectedOrderForDetails.productId;
+                      setSelectedOrderForDetails(null);
+                      setSelectedReviewProductId(prodId);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+                  >
+                    <Star className="w-4 h-4 fill-slate-950" />
+                    <span>Write Review</span>
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setSelectedOrderForDetails(null)}
                 className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors"
@@ -664,6 +758,20 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Product Review Form */}
+      {selectedReviewProductId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
+          <div className="relative w-full max-w-2xl my-auto">
+            <ProductReviewForm
+              user={user}
+              initialProductId={selectedReviewProductId}
+              onClose={() => setSelectedReviewProductId(null)}
+              onSuccessRedirect={() => setSelectedReviewProductId(null)}
+            />
           </div>
         </div>
       )}

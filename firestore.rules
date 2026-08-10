@@ -103,6 +103,30 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Withdrawal Requests collection rules
+    match /withdrawalRequests/{requestId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Payout Change Requests collection rules
+    match /payoutChangeRequests/{requestId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Product Reviews collection rules
+    match /productReviews/{reviewId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Feedback collection rules
+    match /feedback/{feedbackId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
     // Changelogs collection rules
     match /changelogs/{changelogId} {
       allow read, list: if true;

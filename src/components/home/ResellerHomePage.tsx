@@ -642,6 +642,7 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
       <ProductDetailModal
         product={detailProduct}
         isOpen={isDetailOpen}
+        user={user}
         onClose={() => {
           setIsDetailOpen(false);
           setDetailProduct(null);

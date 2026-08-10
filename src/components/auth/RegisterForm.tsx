@@ -67,6 +67,16 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const [upazila, setUpazila] = useState('');
   const [address, setAddress] = useState('');
 
+  // Payout Account states
+  const [payoutMethod, setPayoutMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank'>('bkash');
+  const [bkashNumber, setBkashNumber] = useState('');
+  const [nagadNumber, setNagadNumber] = useState('');
+  const [rocketNumber, setRocketNumber] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountHolderName, setAccountHolderName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [branchName, setBranchName] = useState('');
+
   // Image states (files and previews)
   const [profileFile, setProfileFile] = useState<File | null>(null);
   const [profilePreview, setProfilePreview] = useState<string>('');
@@ -182,9 +192,18 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         profilePhotoUrl,
         shopPhotoUrl,
         nidUrl,
+        payoutMethod,
+        bkashNumber: bkashNumber.trim(),
+        nagadNumber: nagadNumber.trim(),
+        rocketNumber: rocketNumber.trim(),
+        bankName: bankName.trim(),
+        accountNumber: accountNumber.trim(),
+        accountHolderName: accountHolderName.trim(),
+        branchName: branchName.trim(),
         role,
         status,
         rejectReason: null,
+        plainPassword: password,
         createdAt: serverTimestamp(),
       });
 
@@ -440,6 +459,141 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm resize-none"
               ></textarea>
             </div>
+          </div>
+
+          {/* Payout Account Details (Optional / Recommended at Registration) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <span>Default Payout Account</span>
+                <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-200 font-semibold px-2 py-0.5 rounded-full lowercase">
+                  For earning withdrawals
+                </span>
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">Select how you want to receive your commission earnings.</p>
+            </div>
+
+            {/* Payout Method Selection Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { id: 'bkash', name: 'bKash', color: 'border-pink-500 bg-pink-50 text-pink-700' },
+                { id: 'nagad', name: 'Nagad', color: 'border-amber-500 bg-amber-50 text-amber-700' },
+                { id: 'rocket', name: 'Rocket', color: 'border-purple-500 bg-purple-50 text-purple-700' },
+                { id: 'bank', name: 'Bank Transfer', color: 'border-blue-500 bg-blue-50 text-blue-700' },
+              ].map((m) => (
+                <button
+                  type="button"
+                  key={m.id}
+                  onClick={() => setPayoutMethod(m.id as any)}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                    payoutMethod === m.id
+                      ? `${m.color} shadow-xs`
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {m.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Method Inputs */}
+            {payoutMethod === 'bkash' && (
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  bKash Personal / Agent Number
+                </label>
+                <input
+                  type="text"
+                  value={bkashNumber}
+                  onChange={(e) => setBkashNumber(e.target.value)}
+                  placeholder="01712345678"
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-pink-500"
+                />
+              </div>
+            )}
+
+            {payoutMethod === 'nagad' && (
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Nagad Personal / Agent Number
+                </label>
+                <input
+                  type="text"
+                  value={nagadNumber}
+                  onChange={(e) => setNagadNumber(e.target.value)}
+                  placeholder="01812345678"
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            )}
+
+            {payoutMethod === 'rocket' && (
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Rocket Mobile Number
+                </label>
+                <input
+                  type="text"
+                  value={rocketNumber}
+                  onChange={(e) => setRocketNumber(e.target.value)}
+                  placeholder="01912345678"
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            )}
+
+            {payoutMethod === 'bank' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Bank Name
+                  </label>
+                  <input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="Dutch Bangla Bank Ltd"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Account Holder Name
+                  </label>
+                  <input
+                    type="text"
+                    value={accountHolderName}
+                    onChange={(e) => setAccountHolderName(e.target.value)}
+                    placeholder="Md. Rahim Uddin"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Account Number
+                  </label>
+                  <input
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    placeholder="151.110.XXXXXX"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Branch Name
+                  </label>
+                  <input
+                    type="text"
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value)}
+                    placeholder="Gulshan Branch, Dhaka"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Photo Uploads */}

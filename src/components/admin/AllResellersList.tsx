@@ -2,14 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, UserStatus } from '../../types';
-import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield } from 'lucide-react';
+import { EditUserModal } from './EditUserModal';
+import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff } from 'lucide-react';
 
-export const AllResellersList: React.FC = () => {
+interface AllResellersListProps {
+  user?: UserProfile;
+}
+
+export const AllResellersList: React.FC<AllResellersListProps> = ({ user: currentUser }) => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -46,12 +56,15 @@ export const AllResellersList: React.FC = () => {
 
   const filteredUsers = users.filter(user => {
     const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
     const matchesSearch =
       user.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.shopName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.mobile.includes(searchQuery) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
+      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (user.district && user.district.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (user.upazila && user.upazila.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesStatus && matchesRole && matchesSearch;
   });
 
   const getStatusBadge = (status: UserStatus) => {
@@ -70,20 +83,28 @@ export const AllResellersList: React.FC = () => {
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'super_admin':
-        return <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Super Admin</span>;
+        return <span className="bg-purple-100 text-purple-800 border border-purple-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1 w-fit"><Shield className="w-3 h-3 text-purple-600" /> Super Admin</span>;
       case 'admin':
-        return <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Admin</span>;
+        return <span className="bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1 w-fit"><Shield className="w-3 h-3 text-blue-600" /> Admin</span>;
       default:
-        return <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Reseller</span>;
+        return <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase w-fit">Reseller</span>;
     }
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Reseller & User Directory</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Manage all registered accounts, status updates, and suspensions.</p>
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <span>Reseller & Admin User Directory</span>
+            {isSuperAdmin && (
+              <span className="bg-purple-100 text-purple-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                Super Admin Edit Unlocked
+              </span>
+            )}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">View and edit details of all Reseller and Admin accounts.</p>
         </div>
 
         {/* Search Input */}
@@ -95,128 +116,210 @@ export const AllResellersList: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search name, shop, phone..."
+            placeholder="Search name, shop, phone, city..."
             className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-transparent"
           />
         </div>
       </div>
 
-      {/* Chip / Toggle Style Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold text-slate-500 mr-2">Filter Status:</span>
-        {[
-          { key: 'all', label: 'All Users' },
-          { key: 'approved', label: 'Approved' },
-          { key: 'pending', label: 'Pending' },
-          { key: 'suspended', label: 'Suspended' },
-          { key: 'rejected', label: 'Rejected' },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setStatusFilter(tab.key)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-              statusFilter === tab.key
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Filter Tabs */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+        {/* Role Filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-slate-500 mr-2 uppercase tracking-wider">Account Role:</span>
+          {[
+            { key: 'all', label: 'All Roles' },
+            { key: 'reseller', label: 'Resellers Only' },
+            { key: 'admin', label: 'Admins Only' },
+            { key: 'super_admin', label: 'Super Admins' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setRoleFilter(tab.key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                roleFilter === tab.key
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Status Filter */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+          <span className="text-xs font-bold text-slate-500 mr-2 uppercase tracking-wider">Filter Status:</span>
+          {[
+            { key: 'all', label: 'All Statuses' },
+            { key: 'approved', label: 'Approved' },
+            { key: 'pending', label: 'Pending' },
+            { key: 'suspended', label: 'Suspended' },
+            { key: 'rejected', label: 'Rejected' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                statusFilter === tab.key
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-slate-400">
           <Clock className="w-6 h-6 animate-spin mr-2" />
-          <span>Loading users directory...</span>
+          <span>Loading user accounts directory...</span>
         </div>
       ) : filteredUsers.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
           <Store className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-slate-900 mb-1">No Users Found</h3>
-          <p className="text-xs text-slate-500">No users match the selected filter criteria.</p>
+          <h3 className="text-base font-bold text-slate-900 mb-1">No Accounts Found</h3>
+          <p className="text-xs text-slate-500">No reseller or admin accounts match the selected criteria.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                  <th className="py-3.5 px-4">User & Shop</th>
+                  <th className="py-3.5 px-4">User & Shop Details</th>
                   <th className="py-3.5 px-4">Role</th>
                   <th className="py-3.5 px-4">Contact & Location</th>
+                  {isSuperAdmin && <th className="py-3.5 px-4">Password</th>}
+                  <th className="py-3.5 px-4">Commission / Payout info</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredUsers.map((user) => (
-                  <tr key={user.uid} className="hover:bg-slate-50/60 transition-colors">
+                {filteredUsers.map((u) => (
+                  <tr key={u.uid} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
-                        {user.profilePhotoUrl ? (
+                        {u.profilePhotoUrl ? (
                           <img
-                            src={user.profilePhotoUrl}
-                            alt={user.fullName}
-                            className="w-10 h-10 rounded-xl object-cover border border-slate-200 cursor-pointer"
-                            onClick={() => setSelectedPhoto(user.profilePhotoUrl)}
+                            src={u.profilePhotoUrl}
+                            alt={u.fullName}
+                            className="w-10 h-10 rounded-xl object-cover border border-slate-200 cursor-pointer hover:opacity-90"
+                            onClick={() => setSelectedPhoto(u.profilePhotoUrl)}
                           />
                         ) : (
                           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
-                            {user.fullName.charAt(0)}
+                            {u.fullName.charAt(0) || 'U'}
                           </div>
                         )}
                         <div>
-                          <div className="font-bold text-slate-900">{user.fullName}</div>
-                          <div className="text-blue-600 font-medium">{user.shopName}</div>
+                          <div className="font-bold text-slate-900">{u.fullName}</div>
+                          <div className="text-blue-600 font-medium text-[11px]">{u.shopName || 'No Shop Name'}</div>
+                          <div className="text-[10px] text-slate-400">{u.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      {getRoleBadge(user.role)}
+                      {getRoleBadge(u.role)}
                     </td>
                     <td className="py-4 px-4 space-y-0.5 text-slate-600">
                       <div className="flex items-center gap-1.5 font-medium text-slate-900">
                         <Phone className="w-3 h-3 text-slate-400" />
-                        <span>{user.mobile}</span>
+                        <span>{u.mobile}</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-slate-500">
                         <MapPin className="w-3 h-3 text-slate-400" />
-                        <span>{user.upazila}, {user.district}</span>
+                        <span>{u.upazila || 'N/A'}, {u.district || 'N/A'}</span>
                       </div>
                     </td>
+                    {isSuperAdmin && (
+                      <td className="py-4 px-4">
+                        {u.plainPassword ? (
+                          <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-900 px-2.5 py-1 rounded-lg w-fit text-[11px] font-mono shadow-2xs">
+                            <Key className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>{visiblePasswords[u.uid] ? u.plainPassword : '••••••••'}</span>
+                            <button
+                              type="button"
+                              onClick={() => setVisiblePasswords(prev => ({ ...prev, [u.uid]: !prev[u.uid] }))}
+                              className="text-amber-700 hover:text-amber-950 p-0.5 ml-1 transition-colors"
+                              title={visiblePasswords[u.uid] ? "Hide password" : "Show password"}
+                            >
+                              {visiblePasswords[u.uid] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Not set</span>
+                        )}
+                      </td>
+                    )}
+                    <td className="py-4 px-4 space-y-1 text-[11px]">
+                      {u.customCommissionRate !== undefined && u.customCommissionRate !== null ? (
+                        <div className="bg-blue-50 text-blue-800 border border-blue-200 font-bold px-2 py-0.5 rounded-lg w-fit flex items-center gap-1">
+                          <Percent className="w-3 h-3 text-blue-600" />
+                          <span>{u.customCommissionRate}% Custom</span>
+                        </div>
+                      ) : (
+                        <div className="text-slate-400 italic">Global Rate</div>
+                      )}
+                      {(u.bkashNumber || u.nagadNumber || u.accountNumber) ? (
+                        <div className="text-slate-500 text-[10px] flex items-center gap-1">
+                          <CreditCard className="w-3 h-3 text-slate-400" />
+                          <span>{u.bkashNumber ? `bKash: ${u.bkashNumber}` : u.nagadNumber ? `Nagad: ${u.nagadNumber}` : u.bankName ? `${u.bankName}` : 'Payout Configured'}</span>
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="py-4 px-4">
-                      {getStatusBadge(user.status)}
+                      {getStatusBadge(u.status)}
                     </td>
                     <td className="py-4 px-4 text-right">
-                      {user.role !== 'super_admin' && (
-                        <div className="flex items-center justify-end gap-2">
-                          {user.status === 'approved' && (
-                            <button
-                              onClick={() => handleStatusChange(user.uid, 'suspended')}
-                              className="px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 font-medium hover:bg-rose-100 transition-colors text-[11px]"
-                            >
-                              Suspend
-                            </button>
-                          )}
-                          {user.status === 'suspended' && (
-                            <button
-                              onClick={() => handleStatusChange(user.uid, 'approved')}
-                              className="px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium hover:bg-emerald-100 transition-colors text-[11px]"
-                            >
-                              Reactivate
-                            </button>
-                          )}
-                          {user.status === 'pending' && (
-                            <button
-                              onClick={() => handleStatusChange(user.uid, 'approved')}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors text-[11px]"
-                            >
-                              Approve
-                            </button>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Edit Details Button */}
+                        <button
+                          onClick={() => setEditingUser(u)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs ${
+                            isSuperAdmin 
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                          }`}
+                          title={isSuperAdmin ? 'View & Edit Details' : 'View Details'}
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>{isSuperAdmin ? 'Edit Details' : 'View Details'}</span>
+                        </button>
+
+                        {/* Quick Action Button for Status */}
+                        {u.role !== 'super_admin' && isSuperAdmin && (
+                          <>
+                            {u.status === 'approved' && (
+                              <button
+                                onClick={() => handleStatusChange(u.uid, 'suspended')}
+                                className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 font-medium hover:bg-rose-100 transition-colors text-[11px]"
+                              >
+                                Suspend
+                              </button>
+                            )}
+                            {u.status === 'suspended' && (
+                              <button
+                                onClick={() => handleStatusChange(u.uid, 'approved')}
+                                className="px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium hover:bg-emerald-100 transition-colors text-[11px]"
+                              >
+                                Reactivate
+                              </button>
+                            )}
+                            {u.status === 'pending' && (
+                              <button
+                                onClick={() => handleStatusChange(u.uid, 'approved')}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors text-[11px]"
+                              >
+                                Approve
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -225,6 +328,15 @@ export const AllResellersList: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Edit User Details Modal */}
+      <EditUserModal
+        isOpen={!!editingUser}
+        onClose={() => setEditingUser(null)}
+        targetUser={editingUser}
+        currentUser={currentUser}
+        onUserUpdated={() => fetchUsers()}
+      />
 
       {/* Photo Lightbox */}
       {selectedPhoto && (
@@ -243,3 +355,4 @@ export const AllResellersList: React.FC = () => {
     </div>
   );
 };
+

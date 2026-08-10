@@ -58,6 +58,7 @@ export const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, o
         role: 'admin',
         status: 'approved',
         rejectReason: null,
+        plainPassword: password,
         createdAt: serverTimestamp(),
       });
 

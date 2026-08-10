@@ -105,9 +105,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
   const renderContent = () => {
     switch (activeTab) {
       case 'approvals':
-        return <ApprovalList />;
+        return <ApprovalList user={user} />;
       case 'resellers':
-        return <AllResellersList />;
+        return <AllResellersList user={user} />;
       case 'products':
         return <ProductManagement user={user} />;
       case 'categories':
@@ -121,7 +121,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
       case 'commission':
         return <CommissionSettingsView />;
       case 'reports':
-        return <ReportsPage />;
+        return <ReportsPage user={user} />;
       case 'notifications':
         return <NoticeManager user={user} />;
       case 'support':

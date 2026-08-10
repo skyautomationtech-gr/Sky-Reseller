@@ -261,6 +261,7 @@ export const GlobalSearchBar: React.FC<GlobalSearchBarProps> = ({ user, onNaviga
       <ProductDetailModal
         isOpen={!!selectedProduct}
         product={selectedProduct}
+        user={user}
         onClose={() => setSelectedProduct(null)}
       />
 

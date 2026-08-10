@@ -175,9 +175,9 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
   const renderContent = () => {
     switch (activeTab) {
       case 'approvals':
-        return <ApprovalList />;
+        return <ApprovalList user={user} />;
       case 'resellers':
-        return <AllResellersList />;
+        return <AllResellersList user={user} />;
       case 'products':
         return <ProductManagement user={user} />;
       case 'categories':
@@ -191,7 +191,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
       case 'commission':
         return <CommissionSettingsView />;
       case 'reports':
-        return <ReportsPage />;
+        return <ReportsPage user={user} />;
       case 'notifications':
         return <NoticeManager user={user} />;
       case 'support':
@@ -216,13 +216,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
                 <span>Add New Admin</span>
               </button>
             </div>
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-              <Shield className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-900 mb-1">Super Admin Control Center</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                You have full system privileges. Click the button above to provision new administrators with immediate approved status.
-              </p>
-            </div>
+            <AllResellersList user={user} />
           </div>
         );
       case 'dashboard':

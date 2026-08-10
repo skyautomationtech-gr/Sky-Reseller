@@ -90,13 +90,13 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
   };
 
   const startScanner = async () => {
-    try {
-      if (scannerRef.current) {
-        try {
-          await scannerRef.current.stop();
-        } catch (_) {}
-      }
+    await stopScanner();
 
+    const element = document.getElementById(readerElementId);
+    if (!element) return;
+
+    // Primary attempt: standard environment camera with ideal dimensions and aspect ratio
+    try {
       const html5Qrcode = new Html5Qrcode(readerElementId);
       scannerRef.current = html5Qrcode;
 
@@ -134,25 +134,46 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
       // Force 1.0x zoom ratio, continuous focus, auto exposure/WB, and FIT_CENTER styling
       await configureCameraTrack();
     } catch (err: any) {
-      console.warn('Camera access / scanner start failed, trying simple environment facingMode:', err);
+      const isPermissionDenied =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        (typeof err === 'string' && err.toLowerCase().includes('permission denied')) ||
+        err?.message?.toLowerCase().includes('permission denied') ||
+        err?.message?.toLowerCase().includes('notallowederror');
+
+      if (isPermissionDenied) {
+        console.warn('Camera permission denied by user.');
+        await stopScanner();
+        setPermissionError(
+          'Camera access was denied. Please allow camera permissions in your browser or app settings and click "Retry Camera".'
+        );
+        return;
+      }
+
+      console.warn('Camera access / scanner start failed, trying simple environment facingMode fallback:', err);
+      await stopScanner(); // Completely clean up state before fallback attempt
+
       try {
-        if (scannerRef.current) {
-          await scannerRef.current.start(
-            { facingMode: 'environment' },
-            {
-              fps: 15,
-              qrbox: { width: 220, height: 220 },
-              aspectRatio: 1.333333,
-            },
-            (decodedText) => {
-              handleScanSuccess(decodedText);
-            },
-            () => {}
-          );
-          await configureCameraTrack();
-        }
+        const fallbackQrcode = new Html5Qrcode(readerElementId);
+        scannerRef.current = fallbackQrcode;
+
+        await fallbackQrcode.start(
+          { facingMode: 'environment' },
+          {
+            fps: 15,
+            qrbox: { width: 220, height: 220 },
+            aspectRatio: 1.333333,
+          },
+          (decodedText) => {
+            handleScanSuccess(decodedText);
+          },
+          () => {}
+        );
+
+        await configureCameraTrack();
       } catch (fallbackErr: any) {
-        console.error('Camera fallback start failed:', fallbackErr);
+        console.warn('Camera fallback start failed:', fallbackErr);
+        await stopScanner();
         setPermissionError(
           'Camera access is needed to scan QR codes. Please allow camera permission in your browser settings.'
         );
@@ -162,14 +183,15 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
 
   const stopScanner = async () => {
     if (scannerRef.current) {
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
+        if (scanner.isScanning) {
+          await scanner.stop();
         }
+        await scanner.clear();
       } catch (err) {
-        console.error('Error stopping scanner:', err);
-      } finally {
-        scannerRef.current = null;
+        console.warn('Error clearing/stopping scanner:', err);
       }
     }
   };
@@ -244,9 +266,22 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
           {/* Camera / Permission Body */}
           <div className="p-6 space-y-5">
             {permissionError ? (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="leading-relaxed">{permissionError}</div>
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed flex-1">{permissionError}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPermissionError(null);
+                    startScanner();
+                  }}
+                  className="self-end px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Retry Camera</span>
+                </button>
               </div>
             ) : (
               <div className="space-y-2">

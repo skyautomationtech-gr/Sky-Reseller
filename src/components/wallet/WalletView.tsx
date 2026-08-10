@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  collection, query, where, getDocs, doc, runTransaction, serverTimestamp, setDoc, updateDoc
+  collection, query, where, getDocs, doc, runTransaction, serverTimestamp, setDoc, updateDoc, addDoc
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { PaymentMethod, UserProfile, Wallet, WalletTransaction } from '../../types';
+import { PaymentMethod, UserProfile, Wallet, WalletTransaction, PayoutChangeRequest } from '../../types';
+import { WithdrawalRequestForm } from './WithdrawalRequestForm';
+import { AdminWithdrawalManager } from './AdminWithdrawalManager';
 import { 
   Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
   XCircle, AlertCircle, Loader2, DollarSign, Building2, Smartphone, Plus,
-  Users, Check, X, ShieldCheck
+  Users, Check, X, ShieldCheck, CreditCard, Edit3
 } from 'lucide-react';
 
 interface WalletViewProps {
@@ -46,6 +48,20 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
   const [rejectReason, setRejectReason] = useState('');
   const [processingTxId, setProcessingTxId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+
+  // Payout Account Edit State (Reseller)
+  const [pendingPayoutRequest, setPendingPayoutRequest] = useState<PayoutChangeRequest | null>(null);
+  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
+  const [editPayoutMethod, setEditPayoutMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank'>(user.payoutMethod || 'bkash');
+  const [editBkash, setEditBkash] = useState(user.bkashNumber || '');
+  const [editNagad, setEditNagad] = useState(user.nagadNumber || '');
+  const [editRocket, setEditRocket] = useState(user.rocketNumber || '');
+  const [editBankName, setEditBankName] = useState(user.bankName || '');
+  const [editAccountHolder, setEditAccountHolder] = useState(user.accountHolderName || '');
+  const [editAccountNumber, setEditAccountNumber] = useState(user.accountNumber || '');
+  const [editBranchName, setEditBranchName] = useState(user.branchName || '');
+  const [payoutModalError, setPayoutModalError] = useState('');
+  const [submittingPayout, setSubmittingPayout] = useState(false);
 
   useEffect(() => {
     fetchWalletData();
@@ -135,6 +151,24 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
           return timeB - timeA;
         });
         setTransactions(list);
+
+        // Fetch pending payout change request
+        try {
+          const payoutQuery = query(
+            collection(db, 'payoutChangeRequests'),
+            where('resellerId', '==', user.uid),
+            where('status', '==', 'pending')
+          );
+          const payoutSnap = await getDocs(payoutQuery);
+          if (!payoutSnap.empty) {
+            const pDoc = payoutSnap.docs[0];
+            setPendingPayoutRequest({ id: pDoc.id, ...pDoc.data() } as PayoutChangeRequest);
+          } else {
+            setPendingPayoutRequest(null);
+          }
+        } catch (pErr) {
+          console.warn('Payout change request fetch warning:', pErr);
+        }
       }
     } catch (err: any) {
       console.error('Error fetching wallet data:', err);
@@ -242,6 +276,63 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
       setDepositError(err.message || 'Failed to submit deposit request.');
     } finally {
       setSubmittingDeposit(false);
+    }
+  };
+
+  // Request Payout Account Change (Reseller)
+  const handleRequestPayoutChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingPayout(true);
+    setPayoutModalError('');
+
+    try {
+      // Validate inputs depending on method
+      if (editPayoutMethod === 'bkash' && !editBkash.trim()) {
+        throw new Error('bKash number is required.');
+      }
+      if (editPayoutMethod === 'nagad' && !editNagad.trim()) {
+        throw new Error('Nagad number is required.');
+      }
+      if (editPayoutMethod === 'rocket' && !editRocket.trim()) {
+        throw new Error('Rocket number is required.');
+      }
+      if (editPayoutMethod === 'bank' && (!editBankName.trim() || !editAccountNumber.trim() || !editAccountHolder.trim())) {
+        throw new Error('Bank name, account holder name, and account number are required.');
+      }
+
+      await addDoc(collection(db, 'payoutChangeRequests'), {
+        resellerId: user.uid,
+        resellerName: user.fullName,
+        shopName: user.shopName || '',
+        mobile: user.mobile,
+        payoutMethod: editPayoutMethod,
+        bkashNumber: editBkash.trim(),
+        nagadNumber: editNagad.trim(),
+        rocketNumber: editRocket.trim(),
+        bankName: editBankName.trim(),
+        accountNumber: editAccountNumber.trim(),
+        accountHolderName: editAccountHolder.trim(),
+        branchName: editBranchName.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+
+      // Admin Notice
+      await addDoc(collection(db, 'notices'), {
+        title: 'New Payout Account Change Request',
+        message: `Reseller ${user.fullName} (${user.shopName || ''}) requested a payout account change to ${editPayoutMethod.toUpperCase()}.`,
+        type: 'system',
+        targetRole: 'admin',
+        createdAt: serverTimestamp(),
+      });
+
+      setIsPayoutModalOpen(false);
+      fetchWalletData();
+    } catch (err: any) {
+      console.error('Payout change request error:', err);
+      setPayoutModalError(err.message || 'Failed to submit payout update request.');
+    } finally {
+      setSubmittingPayout(false);
     }
   };
 
@@ -453,97 +544,114 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
         </div>
       )}
 
-      {/* Admin View: Pending Withdrawal Requests */}
-      {isAdminOrSuperAdmin && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-amber-500" />
-                  <span>Pending Withdrawal Requests</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Approve or reject payouts submitted by registered resellers
-                </p>
+      {/* Registered Payout Method Card & Pending Approval Banner (Reseller) */}
+      {!isAdminOrSuperAdmin && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                <CreditCard className="w-5 h-5" />
               </div>
-              <span className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1 rounded-full">
-                {pendingWithdrawals.length} Pending
-              </span>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Registered Payout Account</h3>
+                <p className="text-xs text-slate-500">Your approved account details where earnings are sent upon withdrawal</p>
+              </div>
             </div>
 
-            {actionError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{actionError}</span>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setEditPayoutMethod(user.payoutMethod || 'bkash');
+                setEditBkash(user.bkashNumber || '');
+                setEditNagad(user.nagadNumber || '');
+                setEditRocket(user.rocketNumber || '');
+                setEditBankName(user.bankName || '');
+                setEditAccountHolder(user.accountHolderName || '');
+                setEditAccountNumber(user.accountNumber || '');
+                setEditBranchName(user.branchName || '');
+                setPayoutModalError('');
+                setIsPayoutModalOpen(true);
+              }}
+              className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit Payout Method</span>
+            </button>
+          </div>
 
-            {pendingWithdrawals.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
-                No pending withdrawal requests at this time.
+          {/* Pending Payout Request Alert */}
+          {pendingPayoutRequest && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex items-start gap-3">
+              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-amber-900">Payout Account Change Request PENDING APPROVAL</p>
+                <p className="text-amber-800">
+                  You submitted a request to update your payout account to <strong className="uppercase">{pendingPayoutRequest.payoutMethod}</strong>.
+                  An Admin or Super Admin must review and approve this change before it takes effect.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Current Active Details Display */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 text-xs">
+            {user.payoutMethod === 'bank' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Bank Name</span>
+                  <span className="font-semibold text-slate-900">{user.bankName || 'Not configured'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Account Holder</span>
+                  <span className="font-semibold text-slate-900">{user.accountHolderName || 'Not configured'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Account Number</span>
+                  <span className="font-mono font-bold text-blue-700">{user.accountNumber || 'Not configured'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Branch Name</span>
+                  <span className="font-semibold text-slate-900">{user.branchName || 'Not configured'}</span>
+                </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                      <th className="px-4 py-3">Reseller / Shop</th>
-                      <th className="px-4 py-3">Method</th>
-                      <th className="px-4 py-3">Account Number</th>
-                      <th className="px-4 py-3 text-right">Amount</th>
-                      <th className="px-4 py-3 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {pendingWithdrawals.map((tx) => {
-                      const isProc = processingTxId === tx.id;
-                      return (
-                        <tr key={tx.id} className="hover:bg-amber-50/40 transition-colors">
-                          <td className="px-4 py-3">
-                            <p className="font-bold text-slate-900">{tx.resellerShopName || 'Reseller'}</p>
-                            <p className="text-[10px] text-slate-500">{tx.resellerName}</p>
-                          </td>
-                          <td className="px-4 py-3 uppercase font-bold text-blue-600">
-                            {tx.paymentMethod}
-                          </td>
-                          <td className="px-4 py-3 font-mono font-bold text-slate-800">
-                            {tx.accountNumber}
-                          </td>
-                          <td className="px-4 py-3 text-right font-extrabold text-slate-900 text-sm">
-                            ৳{tx.amount}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => handleApproveWithdrawal(tx)}
-                                disabled={isProc}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-xs disabled:opacity-50"
-                              >
-                                {isProc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                <span>Approve</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setSelectedTxToReject(tx);
-                                  setRejectReason('');
-                                }}
-                                disabled={isProc}
-                                className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Reject</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Default Payout Method</span>
+                  <span className="font-bold text-slate-900 uppercase">{user.payoutMethod || 'Mobile Wallet'}</span>
+                </div>
+                {user.bkashNumber && (
+                  <div>
+                    <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider block">bKash Number</span>
+                    <span className="font-mono font-bold text-slate-900">{user.bkashNumber}</span>
+                  </div>
+                )}
+                {user.nagadNumber && (
+                  <div>
+                    <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider block">Nagad Number</span>
+                    <span className="font-mono font-bold text-slate-900">{user.nagadNumber}</span>
+                  </div>
+                )}
+                {user.rocketNumber && (
+                  <div>
+                    <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wider block">Rocket Number</span>
+                    <span className="font-mono font-bold text-slate-900">{user.rocketNumber}</span>
+                  </div>
+                )}
+                {(!user.bkashNumber && !user.nagadNumber && !user.rocketNumber && !user.bankName) && (
+                  <span className="text-slate-400 italic">No account numbers added yet. Click "Edit Payout Method" above.</span>
+                )}
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Admin View: Withdrawal Management */}
+      {isAdminOrSuperAdmin && (
+        <div className="space-y-6">
+          <AdminWithdrawalManager user={user} />
+
 
           {/* Admin View: Pending Deposit Requests */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
@@ -783,98 +891,17 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
 
       {/* Modal: Request Withdraw (Reseller) */}
       {isWithdrawModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
-              <div className="flex items-center gap-2">
-                <WalletIcon className="w-5 h-5 text-blue-400" />
-                <h3 className="text-base font-bold">Request Balance Withdrawal</h3>
-              </div>
-              <button
-                onClick={() => setIsWithdrawModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRequestWithdraw} className="p-6 space-y-4">
-              {withdrawError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{withdrawError}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Withdrawal Amount (BDT)
-                </label>
-                <input
-                  type="number"
-                  placeholder={`Max ৳${wallet?.balance || 0}`}
-                  value={withdrawAmount}
-                  onChange={(e) => setWithdrawAmount(e.target.value)}
-                  max={wallet?.balance || 0}
-                  className="w-full px-3.5 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Payment Method
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['bkash', 'nagad', 'bank_transfer'] as PaymentMethod[]).map((m) => (
-                    <button
-                      type="button"
-                      key={m}
-                      onClick={() => setPaymentMethod(m)}
-                      className={`p-2.5 rounded-xl border text-center text-xs font-bold uppercase transition-all ${
-                        paymentMethod === m
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {m === 'bank_transfer' ? 'Bank' : m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Account / Mobile Number
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 01700000000 or Bank A/C Number"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsWithdrawModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingWithdraw}
-                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {submittingWithdraw ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Submit Request</span>
-                </button>
-              </div>
-            </form>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto">
+          <div className="w-full max-w-2xl my-auto">
+            <WithdrawalRequestForm
+              user={user}
+              availableBalance={wallet?.balance || 0}
+              onSuccess={() => {
+                setIsWithdrawModalOpen(false);
+                fetchWalletData();
+              }}
+              onCancel={() => setIsWithdrawModalOpen(false)}
+            />
           </div>
         </div>
       )}
@@ -983,6 +1010,193 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                 >
                   {submittingDeposit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   <span>Submit Request</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Payout Account Request (Reseller) */}
+      {isPayoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-bold">Edit Payout Account</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPayoutModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRequestPayoutChange} className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Approval Required:</strong> For financial security, any changes to your payout account must be approved by an Admin or Super Admin before taking effect.
+                </p>
+              </div>
+
+              {payoutModalError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{payoutModalError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Select Payout Method
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: 'bkash', name: 'bKash', color: 'border-pink-500 bg-pink-50 text-pink-700' },
+                    { id: 'nagad', name: 'Nagad', color: 'border-amber-500 bg-amber-50 text-amber-700' },
+                    { id: 'rocket', name: 'Rocket', color: 'border-purple-500 bg-purple-50 text-purple-700' },
+                    { id: 'bank', name: 'Bank Transfer', color: 'border-blue-500 bg-blue-50 text-blue-700' },
+                  ].map((m) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => setEditPayoutMethod(m.id as any)}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all text-center ${
+                        editPayoutMethod === m.id
+                          ? `${m.color} shadow-xs`
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamic Inputs per method */}
+              {editPayoutMethod === 'bkash' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    bKash Personal / Agent Mobile Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editBkash}
+                    onChange={(e) => setEditBkash(e.target.value)}
+                    placeholder="017XXXXXXXX"
+                    className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pink-500 focus:bg-white outline-none"
+                  />
+                </div>
+              )}
+
+              {editPayoutMethod === 'nagad' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Nagad Personal / Agent Mobile Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editNagad}
+                    onChange={(e) => setEditNagad(e.target.value)}
+                    placeholder="018XXXXXXXX"
+                    className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:bg-white outline-none"
+                  />
+                </div>
+              )}
+
+              {editPayoutMethod === 'rocket' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Rocket Mobile Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editRocket}
+                    onChange={(e) => setEditRocket(e.target.value)}
+                    placeholder="019XXXXXXXX"
+                    className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white outline-none"
+                  />
+                </div>
+              )}
+
+              {editPayoutMethod === 'bank' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Bank Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editBankName}
+                      onChange={(e) => setEditBankName(e.target.value)}
+                      placeholder="e.g. Dutch Bangla Bank"
+                      className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Account Holder Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editAccountHolder}
+                      onChange={(e) => setEditAccountHolder(e.target.value)}
+                      placeholder="Full Name as in Bank"
+                      className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Account Number *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editAccountNumber}
+                      onChange={(e) => setEditAccountNumber(e.target.value)}
+                      placeholder="Account Number"
+                      className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Branch Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editBranchName}
+                      onChange={(e) => setEditBranchName(e.target.value)}
+                      placeholder="Branch location"
+                      className="w-full px-3.5 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsPayoutModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPayout}
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {submittingPayout ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Submit for Admin Approval</span>
                 </button>
               </div>
             </form>

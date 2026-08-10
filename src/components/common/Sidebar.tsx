@@ -8,7 +8,7 @@ import { db } from '../../lib/firebase';
 import { 
   LayoutDashboard, Shield, Users, CheckCircle2, Package, 
   Layers, Tag, ShoppingBag, Wallet, Percent, BarChart3, 
-  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X, Store, Sparkles
+  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X, Store, Sparkles, Star, MessageSquare
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -98,6 +98,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'products', label: 'Products', icon: Package },
         { id: 'orders', label: 'Orders', icon: ShoppingBag },
+        { id: 'reviews', label: 'Write Review', icon: Star },
+        { id: 'feedback', label: 'Feedback / Complaint', icon: MessageSquare },
         { id: 'wallet', label: 'Wallet', icon: Wallet },
         { id: 'commission', label: 'Commission', icon: Percent },
         { id: 'notifications', label: 'Notifications', icon: Bell },
