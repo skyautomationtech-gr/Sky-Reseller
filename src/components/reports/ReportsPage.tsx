@@ -9,9 +9,10 @@ import {
 import { 
   TrendingUp, ShoppingBag, DollarSign, Package, Users, Wallet as WalletIcon, 
   Calendar, Filter, ArrowUpDown, ChevronDown, CheckCircle2, Clock, AlertTriangle, 
-  Loader2, RefreshCw, MessageSquare
+  Loader2, RefreshCw, MessageSquare, RotateCw
 } from 'lucide-react';
 import { AdminFeedbackList } from '../feedback/AdminFeedbackList';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 type DatePreset = 'today' | 'week' | 'month' | 'year' | 'custom';
 
@@ -50,11 +51,19 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ user }) => {
   const [resellerSortField, setResellerSortField] = useState<'fullName' | 'shopName' | 'orderCount' | 'totalSales' | 'createdAt' | 'status'>('totalSales');
   const [resellerSortOrder, setResellerSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  const { isRefreshing, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await fetchAllReportData(true);
+  };
+
+  usePageRefresh('reports', handleRefresh);
+
   useEffect(() => {
     fetchAllReportData();
   }, []);
 
-  const fetchAllReportData = async () => {
+  const fetchAllReportData = async (isManualRefresh = false) => {
     setLoading(true);
     try {
       const [ordersSnap, productsSnap, usersSnap, walletsSnap, txSnap] = await Promise.all([
@@ -87,8 +96,15 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ user }) => {
       setUsers(uList);
       setWallets(wMap);
       setTransactions(tList);
+
+      if (isManualRefresh) {
+        showToast('✓ Analytics reports updated', 'success');
+      }
     } catch (err) {
       console.error('Error fetching report data:', err);
+      if (isManualRefresh) {
+        showToast('✗ Failed to refresh report data', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -363,11 +379,14 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ user }) => {
           ))}
 
           <button
-            onClick={fetchAllReportData}
-            className="p-2 text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+            type="button"
+            onClick={() => refreshCurrentPage()}
+            disabled={isRefreshing || loading}
+            className="p-2 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 rounded-xl transition-all cursor-pointer flex items-center gap-1"
             title="Refresh Report Data"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RotateCw className={`w-4 h-4 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+            <span className="text-[11px] font-bold hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>

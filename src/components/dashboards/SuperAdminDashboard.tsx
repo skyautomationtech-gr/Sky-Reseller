@@ -23,8 +23,9 @@ import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { 
   LayoutDashboard, Users, CheckCircle2, Shield, ShoppingBag, Wallet, Percent, 
   Sparkles, DollarSign, TrendingUp, Clock, PackageCheck, AlertTriangle, 
-  UserCheck, UserX, Package, CalendarDays, BarChart3, HelpCircle
+  UserCheck, UserX, Package, CalendarDays, BarChart3, HelpCircle, RotateCw
 } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface SuperAdminDashboardProps {
   user: UserProfile;
@@ -50,6 +51,15 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
   const [totalCommission, setTotalCommission] = useState(0);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
+
+  const { isRefreshing, formattedLastUpdated, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await fetchDashboardMetrics();
+    showToast('✓ Super Admin Dashboard refreshed', 'success');
+  };
+
+  usePageRefresh(activeTab, handleRefresh);
 
   useEffect(() => {
     fetchDashboardMetrics();
@@ -238,13 +248,30 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
             {/* Low Stock Alert Widget */}
             <LowStockAlertWidget onNavigateToProducts={() => setActiveTab('products')} />
 
-            {/* Super Admin Dashboard Metrics Title */}
-            <div>
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <LayoutDashboard className="w-5 h-5 text-blue-600" />
-                <span>Super Admin Dashboard Metrics</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">Real-time statistics across users, products, orders, and financial summaries.</p>
+            {/* Super Admin Dashboard Metrics Title & Refresh Header */}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <LayoutDashboard className="w-5 h-5 text-blue-600" />
+                  <span>Super Admin Dashboard Metrics</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Real-time statistics across users, products, orders, and financial summaries.</p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <span className="text-[11px] font-medium text-slate-500 hidden sm:inline">
+                  Last updated: <strong className="text-slate-700 font-semibold">{formattedLastUpdated}</strong>
+                </span>
+                <button
+                  onClick={() => refreshCurrentPage()}
+                  disabled={isRefreshing || loadingMetrics}
+                  className="flex items-center gap-1.5 bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold py-2 px-3 rounded-xl shadow-2xs transition-all disabled:opacity-50"
+                  title="Refresh Dashboard Metrics"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loadingMetrics ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              </div>
             </div>
 
             {/* Quick Metrics Grid - 12 Cards */}

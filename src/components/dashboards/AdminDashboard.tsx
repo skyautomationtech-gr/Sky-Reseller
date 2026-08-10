@@ -19,7 +19,8 @@ import { SupportSystem } from '../support/SupportSystem';
 import { SettingsPage } from '../settings/SettingsPage';
 import { SecurityPage } from '../security/SecurityPage';
 import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
-import { LayoutDashboard, Users, CheckCircle2, Sparkles, Package, ShoppingBag, Wallet, Percent, Clock, AlertTriangle, HelpCircle, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Users, CheckCircle2, Sparkles, Package, ShoppingBag, Wallet, Percent, Clock, AlertTriangle, HelpCircle, RotateCw } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface AdminDashboardProps {
   user: UserProfile;
@@ -39,6 +40,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
   const [lowStockCount, setLowStockCount] = useState(0);
   const [openTicketsCount, setOpenTicketsCount] = useState(0);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
+
+  const { isRefreshing, formattedLastUpdated, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await fetchMetrics();
+    showToast('✓ Admin Dashboard refreshed', 'success');
+  };
+
+  usePageRefresh(activeTab, handleRefresh);
 
   useEffect(() => {
     fetchMetrics();
@@ -191,7 +201,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Processing Orders</span>
                   <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <RefreshCw className="w-4.5 h-4.5" />
+                    <RotateCw className="w-4.5 h-4.5" />
                   </div>
                 </div>
                 <div>

@@ -7,8 +7,9 @@ import { SupportTicketForm } from './SupportTicketForm';
 import { 
   LifeBuoy, Plus, PhoneCall, MessageSquare, Send, CheckCircle2, 
   Clock, AlertCircle, Image as ImageIcon, X, Shield, Loader2, ArrowLeft, ExternalLink,
-  Tag, Mail, Paperclip, FileText, ChevronRight
+  Tag, Mail, Paperclip, FileText, ChevronRight, RotateCw
 } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface SupportSystemProps {
   user: UserProfile;
@@ -35,6 +36,28 @@ export const SupportSystem: React.FC<SupportSystemProps> = ({ user }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [replySubmitting, setReplySubmitting] = useState(false);
+
+  const [lastCheckTime, setLastCheckTime] = useState<number>(Date.now());
+  const { isRefreshing, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const updatedTickets = tickets.filter((t) => {
+      const uTime = t.updatedAt?.toDate ? t.updatedAt.toDate().getTime() : new Date(t.updatedAt || t.createdAt || 0).getTime();
+      return uTime > lastCheckTime;
+    });
+
+    if (updatedTickets.length > 0) {
+      showToast(`✓ Tickets refreshed! ${updatedTickets.length} new or updated support ticket(s) found.`, 'success');
+    } else {
+      showToast('✓ Support tickets are fully up to date', 'success');
+    }
+
+    setLastCheckTime(Date.now());
+  };
+
+  usePageRefresh('support', handleRefresh);
 
   useEffect(() => {
     // Realtime subscription for support tickets
@@ -134,18 +157,32 @@ export const SupportSystem: React.FC<SupportSystemProps> = ({ user }) => {
             </div>
           </div>
 
-          {!isStaff && (
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => {
-                setSelectedTicket(null);
-                setIsFormOpen(!isFormOpen);
-              }}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all shrink-0 cursor-pointer"
+              type="button"
+              onClick={() => refreshCurrentPage()}
+              disabled={isRefreshing || loading}
+              className="bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold px-3 py-2.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              title="Refresh Tickets"
             >
-              {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              <span>{isFormOpen ? 'Back to Tickets' : 'Raise Support Ticket'}</span>
+              <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
-          )}
+
+            {!isStaff && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTicket(null);
+                  setIsFormOpen(!isFormOpen);
+                }}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
+              >
+                {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                <span>{isFormOpen ? 'Back to Tickets' : 'Raise Support Ticket'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Direct Contact Buttons */}

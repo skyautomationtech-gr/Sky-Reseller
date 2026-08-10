@@ -9,8 +9,9 @@ import { AdminWithdrawalManager } from './AdminWithdrawalManager';
 import { 
   Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
   XCircle, AlertCircle, Loader2, DollarSign, Building2, Smartphone, Plus,
-  Users, Check, X, ShieldCheck, CreditCard, Edit3
+  Users, Check, X, ShieldCheck, CreditCard, Edit3, RotateCw
 } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface WalletViewProps {
   user: UserProfile;
@@ -63,11 +64,19 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
   const [payoutModalError, setPayoutModalError] = useState('');
   const [submittingPayout, setSubmittingPayout] = useState(false);
 
+  const { isRefreshing, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await fetchWalletData(true);
+  };
+
+  usePageRefresh('wallet', handleRefresh);
+
   useEffect(() => {
     fetchWalletData();
   }, [user.uid, user.role]);
 
-  const fetchWalletData = async () => {
+  const fetchWalletData = async (isManualRefresh = false) => {
     setLoading(true);
     setActionError('');
     try {
@@ -127,15 +136,26 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
           return timeB - timeA;
         });
         setTransactions(allTxList);
+
+        if (isManualRefresh) {
+          showToast('✓ Wallet dashboard refreshed successfully', 'success');
+        }
       } else {
         // Fetch reseller wallet
         const wRef = doc(db, 'wallets', user.uid);
         const walletSnap = await getDocs(query(collection(db, 'wallets'), where('resellerId', '==', user.uid)));
 
+        let freshBalance = 0;
         if (!walletSnap.empty) {
-          setWallet(walletSnap.docs[0].data() as Wallet);
+          const wData = walletSnap.docs[0].data() as Wallet;
+          setWallet(wData);
+          freshBalance = wData.balance || 0;
         } else {
           setWallet({ resellerId: user.uid, balance: 0, totalEarned: 0, totalWithdrawn: 0, updatedAt: new Date() });
+        }
+
+        if (isManualRefresh) {
+          showToast(`✓ Balance updated to ৳${freshBalance.toLocaleString()}`, 'success');
         }
 
         // Fetch reseller transactions
@@ -173,6 +193,9 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
     } catch (err: any) {
       console.error('Error fetching wallet data:', err);
       setActionError('Failed to load wallet dataset.');
+      if (isManualRefresh) {
+        showToast('✗ Failed to refresh wallet details', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -470,6 +493,28 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
 
   return (
     <div className="space-y-6">
+      {/* Page Title & Refresh Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Wallet & Payouts</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {isAdminOrSuperAdmin 
+              ? 'Manage reseller deposits, withdrawals, and monitor global transaction ledgers'
+              : 'Monitor your reseller wallet balance, track payout transactions, and top up funds'}
+          </p>
+        </div>
+
+        <button
+          onClick={() => refreshCurrentPage()}
+          disabled={isRefreshing || loading}
+          className="bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold px-3.5 py-2 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer self-start sm:self-center"
+          title="Refresh Wallet Data"
+        >
+          <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Refresh Wallet</span>
+        </button>
+      </div>
+
       {/* Reseller Header & Wallet Summary */}
       {!isAdminOrSuperAdmin && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

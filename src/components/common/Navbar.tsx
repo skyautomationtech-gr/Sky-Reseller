@@ -4,7 +4,8 @@ import { GlobalSearchBar } from './GlobalSearchBar';
 import { QrScannerModal } from './QrScannerModal';
 import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { SkyLogo } from './SkyLogo';
-import { LogOut, Menu, Store, QrCode } from 'lucide-react';
+import { LogOut, Menu, Store, QrCode, RotateCw } from 'lucide-react';
+import { useRefresh } from '../../context/RefreshContext';
 
 interface NavbarProps {
   user: UserProfile;
@@ -23,6 +24,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const isAdminOrSuperAdmin = user.role === 'super_admin' || user.role === 'admin';
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const { isRefreshing, refreshCurrentPage, formattedLastUpdated } = useRefresh();
 
   return (
     <header className="bg-white border-b border-slate-200 h-16 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs gap-4">
@@ -52,6 +54,17 @@ export const Navbar: React.FC<NavbarProps> = ({
       )}
 
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Global Refresh Button */}
+        <button
+          onClick={() => refreshCurrentPage()}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold py-2 px-3 rounded-xl transition-all border border-blue-200/80 disabled:opacity-50 group min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 justify-center"
+          title={`Refresh data (Press R)\nLast updated: ${formattedLastUpdated}`}
+        >
+          <RotateCw className={`w-4 h-4 text-blue-600 transition-transform ${isRefreshing ? 'animate-spin text-blue-800' : 'group-hover:rotate-180 duration-500'}`} />
+          <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+        </button>
+
         {/* Scan QR Button */}
         {isAdminOrSuperAdmin && (
           <button

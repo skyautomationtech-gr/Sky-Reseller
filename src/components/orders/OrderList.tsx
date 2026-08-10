@@ -11,8 +11,9 @@ import { ProductReviewForm } from '../reviews/ProductReviewForm';
 import { 
   ShoppingBag, Search, Plus, Filter, Clock, CheckCircle2, Package, Truck, 
   XCircle, RotateCcw, AlertCircle, Loader2, Eye, MapPin, Phone, User, Store,
-  ChevronRight, Calendar, FileText, Star, Sparkles, Gift
+  ChevronRight, Calendar, FileText, Star, Sparkles, Gift, RotateCw
 } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface OrderListProps {
   user: UserProfile;
@@ -56,11 +57,20 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
 
   const isAdminOrSuperAdmin = user.role === 'super_admin' || user.role === 'admin';
 
+  const { isRefreshing, showToast, refreshCurrentPage } = useRefresh();
+  const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
+
+  const handleRefresh = async () => {
+    await fetchOrders(true);
+  };
+
+  usePageRefresh('orders', handleRefresh);
+
   useEffect(() => {
     fetchOrders();
   }, [user.uid, user.role]);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (isManualRefresh = false) => {
     setLoading(true);
     setActionError('');
     try {
@@ -84,10 +94,27 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
         return timeB - timeA;
       });
 
+      if (isManualRefresh && orders.length > 0) {
+        const existingIds = new Set(orders.map(o => o.id));
+        const newlyDiscovered = list.filter(o => !existingIds.has(o.id)).map(o => o.id);
+        if (newlyDiscovered.length > 0) {
+          setNewlyAddedIds(newlyDiscovered);
+          showToast(`✓ ${newlyDiscovered.length} new orders found!`, 'success');
+          setTimeout(() => {
+            setNewlyAddedIds([]);
+          }, 3000);
+        } else {
+          showToast('✓ Orders up to date', 'success');
+        }
+      }
+
       setOrders(list);
     } catch (err: any) {
       console.error('Error fetching orders:', err);
       setActionError('Failed to load orders.');
+      if (isManualRefresh) {
+        showToast('✗ Failed to refresh orders', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -293,24 +320,36 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
           </p>
         </div>
 
-        {!isAdminOrSuperAdmin && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setIsCustomOrderModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-            >
-              <Sparkles className="w-4 h-4 text-indigo-200" />
-              <span>Customized Order Form</span>
-            </button>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Quick Order</span>
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => refreshCurrentPage()}
+            disabled={isRefreshing || loading}
+            className="bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold px-3 py-2.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50"
+            title="Refresh Orders"
+          >
+            <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh Orders</span>
+          </button>
+
+          {!isAdminOrSuperAdmin && (
+            <>
+              <button
+                onClick={() => setIsCustomOrderModalOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <Sparkles className="w-4 h-4 text-indigo-200" />
+                <span>Customized Order Form</span>
+              </button>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Quick Order</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {actionError && (
@@ -434,9 +473,13 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                   const badge = statusBadgeStyles[order.status] || statusBadgeStyles.pending;
                   const BadgeIcon = badge.icon;
                   const isUpdating = updatingStatusId === order.id;
+                  const isNew = newlyAddedIds.includes(order.id);
 
                   return (
-                    <tr key={order.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr 
+                      key={order.id} 
+                      className={`transition-all duration-500 ${isNew ? 'bg-amber-50 hover:bg-amber-100/80 ring-1 ring-amber-200/50 scale-[0.99] shadow-inner font-semibold text-slate-900' : 'hover:bg-slate-50/80 transition-colors'}`}
+                    >
                       {/* Order # */}
                       <td className="px-5 py-4 font-bold text-blue-600 whitespace-nowrap">
                         <span className="bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">

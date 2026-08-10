@@ -19,8 +19,9 @@ import { FeedbackForm } from '../feedback/FeedbackForm';
 import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { 
   Store, Package, ShoppingBag, Wallet as WalletIcon, Percent, MapPin, Phone, Mail, 
-  CheckCircle2, Plus, ArrowUpRight, TrendingUp, Clock, Bell, CalendarDays
+  CheckCircle2, Plus, ArrowUpRight, TrendingUp, Clock, Bell, CalendarDays, RotateCw
 } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface ResellerDashboardProps {
   user: UserProfile;
@@ -42,6 +43,15 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
   const [pendingCommission, setPendingCommission] = useState<number>(0);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(true);
+
+  const { isRefreshing, formattedLastUpdated, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await fetchResellerStats();
+    showToast('✓ Reseller Dashboard refreshed', 'success');
+  };
+
+  usePageRefresh(activeTab, handleRefresh);
 
   useEffect(() => {
     fetchResellerStats();

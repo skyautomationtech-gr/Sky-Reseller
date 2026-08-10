@@ -7,8 +7,9 @@ import { VariantManager } from './VariantManager';
 import { 
   Package, Plus, Edit2, Trash2, Search, AlertTriangle, 
   CheckCircle2, XCircle, QrCode as QrIcon, Loader2, 
-  Upload, Play, Download, Eye, ChevronLeft, ChevronRight, Palette
+  Upload, Play, Download, Eye, ChevronLeft, ChevronRight, Palette, RotateCw
 } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { QRCodeSVG } from 'qrcode.react';
 import JsBarcode from 'jsbarcode';
 
@@ -65,6 +66,15 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeRef = useRef<SVGSVGElement | null>(null);
+
+  const { isRefreshing, formattedLastUpdated, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    const totalCount = await fetchData();
+    showToast(`✓ Products refreshed! ${totalCount} items found`, 'success');
+  };
+
+  usePageRefresh('products', handleRefresh);
 
   useEffect(() => {
     fetchData();
@@ -127,9 +137,12 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
       setCategories(catList);
       setBrands(brandList);
-      setProducts(prodList.filter(p => p.status !== 'deleted'));
+      const validList = prodList.filter(p => p.status !== 'deleted');
+      setProducts(validList);
+      return validList.length;
     } catch (err) {
       console.error('Error fetching inventory:', err);
+      return 0;
     } finally {
       setLoading(false);
     }
@@ -491,15 +504,26 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
             {isReseller ? 'Browse accessories catalog, check reseller prices, and download marketing media.' : 'Manage inventory, pricing, stock levels, and media uploads.'}
           </p>
         </div>
-        {isAdmin && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleOpenAdd}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-md flex items-center gap-2"
+            onClick={() => handleRefresh()}
+            disabled={isRefreshing || loading}
+            className="bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold px-3 py-2.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50"
+            title="Refresh Products"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add New Product</span>
+            <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh Products</span>
           </button>
-        )}
+          {isAdmin && (
+            <button
+              onClick={handleOpenAdd}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-md flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New Product</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter & Search Bar */}

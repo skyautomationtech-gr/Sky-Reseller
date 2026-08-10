@@ -15,6 +15,7 @@ import { logUserSession } from './lib/auditLogger';
 import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from './lib/versionService';
 import { WhatsNewModal } from './components/version/WhatsNewModal';
 import { ChangelogEntry } from './types';
+import { RefreshProvider } from './context/RefreshContext';
 import { Store, Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -182,7 +183,7 @@ export default function App() {
 
   // Approved role-based dashboards
   return (
-    <>
+    <RefreshProvider>
       {userProfile.role === 'super_admin' && (
         <SuperAdminDashboard user={userProfile} onLogout={handleLogout} />
       )}
@@ -199,6 +200,6 @@ export default function App() {
         changelog={whatsNewChangelog}
         currentVersion={currentAppVersion || '1.0.0'}
       />
-    </>
+    </RefreshProvider>
   );
 }

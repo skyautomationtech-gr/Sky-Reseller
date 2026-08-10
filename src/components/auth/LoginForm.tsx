@@ -31,23 +31,60 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     setError('');
 
     try {
-      // Set Auth persistence
-      await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      // Set Auth persistence safely (Android WebView / APK fix: wrap in try-catch in case IndexedDB or local storage persistence is restricted)
+      try {
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      } catch (pErr) {
+        console.warn('Firebase Auth persistence warning (continuing login):', pErr);
+      }
 
-      let targetEmail = identifier.trim();
+      const rawInput = identifier.trim();
+      let targetEmail = rawInput.toLowerCase();
 
-      // Check if identifier is a mobile number (not containing @)
-      if (!targetEmail.includes('@')) {
-        // Query users collection for matching mobile number
-        const q = query(collection(db, 'users'), where('mobile', '==', targetEmail), limit(1));
-        const querySnapshot = await getDocs(q);
-        if (querySnapshot.empty) {
-          setError('No user found with this mobile number. Please check or use your email.');
+      // Check if identifier is a mobile number (does not contain @)
+      if (!rawInput.includes('@')) {
+        const cleanMobile = rawInput.replace(/[^0-9+]/g, ''); // Strip spaces, hyphens, parentheses
+
+        // Prepare candidate mobile formats to check in Firestore
+        let mobileCandidates = [rawInput, cleanMobile];
+
+        if (cleanMobile.startsWith('+88')) {
+          const noPrefix = cleanMobile.replace('+88', '');
+          mobileCandidates.push(noPrefix);
+          mobileCandidates.push('0' + noPrefix);
+          mobileCandidates.push('88' + noPrefix);
+        } else if (cleanMobile.startsWith('880')) {
+          const noPrefix = cleanMobile.slice(2); // '017...'
+          mobileCandidates.push(noPrefix);
+          mobileCandidates.push('+' + cleanMobile);
+        } else if (cleanMobile.startsWith('0')) {
+          mobileCandidates.push('+88' + cleanMobile);
+          mobileCandidates.push('88' + cleanMobile);
+        }
+
+        // Deduplicate non-empty candidates
+        mobileCandidates = Array.from(new Set(mobileCandidates.filter(Boolean)));
+
+        let foundEmail = '';
+        for (const mNum of mobileCandidates) {
+          try {
+            const q = query(collection(db, 'users'), where('mobile', '==', mNum), limit(1));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              foundEmail = querySnapshot.docs[0].data().email;
+              break;
+            }
+          } catch (qErr) {
+            console.warn('Error querying mobile number candidate:', mNum, qErr);
+          }
+        }
+
+        if (!foundEmail) {
+          setError('No reseller account found with this mobile number. Please check or use your registered email.');
           setLoading(false);
           return;
         }
-        const userData = querySnapshot.docs[0].data();
-        targetEmail = userData.email;
+        targetEmail = foundEmail;
       }
 
       const userCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
@@ -78,6 +115,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         err.code === 'auth/invalid-email'
       ) {
         msg = 'Invalid email/mobile or password. Please try again or click Register below.';
+      } else if (err.code === 'auth/network-request-failed') {
+        msg = 'Network request failed. Please check your internet connection on your Android device and try again.';
       } else if (err.code === 'auth/too-many-requests') {
         msg = 'Access to this account has been temporarily disabled due to many failed login attempts. Please try again later.';
       } else if (err.message && !err.message.includes('auth/')) {
@@ -118,6 +157,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
               <input
                 type="text"
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="name@example.com or 01712345678"
@@ -146,6 +188,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"

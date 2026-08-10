@@ -3,7 +3,8 @@ import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, UserStatus } from '../../types';
 import { EditUserModal } from './EditUserModal';
-import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff } from 'lucide-react';
+import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff, RotateCw } from 'lucide-react';
+import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface AllResellersListProps {
   user?: UserProfile;
@@ -21,7 +22,15 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
 
   const isSuperAdmin = currentUser?.role === 'super_admin';
 
-  const fetchUsers = async () => {
+  const { isRefreshing, showToast, refreshCurrentPage } = useRefresh();
+
+  const handleRefresh = async () => {
+    await fetchUsers(true);
+  };
+
+  usePageRefresh('resellers', handleRefresh);
+
+  const fetchUsers = async (isManualRefresh = false) => {
     setLoading(true);
     try {
       const querySnapshot = await getDocs(collection(db, 'users'));
@@ -30,8 +39,14 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
         list.push(docSnap.data() as UserProfile);
       });
       setUsers(list);
+      if (isManualRefresh) {
+        showToast('✓ Reseller directory refreshed', 'success');
+      }
     } catch (err) {
       console.error('Error fetching users:', err);
+      if (isManualRefresh) {
+        showToast('✗ Failed to refresh reseller directory', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -107,18 +122,31 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
           <p className="text-xs text-slate-500 mt-0.5">View and edit details of all Reseller and Admin accounts.</p>
         </div>
 
-        {/* Search Input */}
-        <div className="relative w-full sm:w-72">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-            <Search className="w-4 h-4" />
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => refreshCurrentPage()}
+            disabled={isRefreshing || loading}
+            className="bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold px-3 py-2 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer h-[38px] shrink-0"
+            title="Refresh Directory"
+          >
+            <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
+          {/* Search Input */}
+          <div className="relative w-full sm:w-72">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+              <Search className="w-4 h-4" />
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search name, shop, phone, city..."
+              className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-transparent h-[38px]"
+            />
           </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search name, shop, phone, city..."
-            className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-          />
         </div>
       </div>
 
