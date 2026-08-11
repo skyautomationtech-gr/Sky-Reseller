@@ -453,158 +453,283 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                  <th className="px-5 py-3.5">Order #</th>
-                  {isAdminOrSuperAdmin && <th className="px-5 py-3.5">Reseller</th>}
-                  <th className="px-5 py-3.5">Product & Variant</th>
-                  <th className="px-5 py-3.5">Customer Info</th>
-                  <th className="px-5 py-3.5 text-center">Qty</th>
-                  <th className="px-5 py-3.5 text-right">Total Amount</th>
-                  <th className="px-5 py-3.5 text-right">Your Sell Amount (Profit)</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredOrders.map((order) => {
-                  const badge = statusBadgeStyles[order.status] || statusBadgeStyles.pending;
-                  const BadgeIcon = badge.icon;
-                  const isUpdating = updatingStatusId === order.id;
-                  const isNew = newlyAddedIds.includes(order.id);
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                    <th className="px-5 py-3.5">Order #</th>
+                    {isAdminOrSuperAdmin && <th className="px-5 py-3.5">Reseller</th>}
+                    <th className="px-5 py-3.5">Product & Variant</th>
+                    <th className="px-5 py-3.5">Customer Info</th>
+                    <th className="px-5 py-3.5 text-center">Qty</th>
+                    <th className="px-5 py-3.5 text-right">Total Amount</th>
+                    <th className="px-5 py-3.5 text-right">Your Sell Amount (Profit)</th>
+                    <th className="px-5 py-3.5">Status</th>
+                    <th className="px-5 py-3.5 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {filteredOrders.map((order) => {
+                    const badge = statusBadgeStyles[order.status] || statusBadgeStyles.pending;
+                    const BadgeIcon = badge.icon;
+                    const isUpdating = updatingStatusId === order.id;
+                    const isNew = newlyAddedIds.includes(order.id);
 
-                  return (
-                    <tr 
-                      key={order.id} 
-                      className={`transition-all duration-500 ${isNew ? 'bg-amber-50 hover:bg-amber-100/80 ring-1 ring-amber-200/50 scale-[0.99] shadow-inner font-semibold text-slate-900' : 'hover:bg-slate-50/80 transition-colors'}`}
-                    >
-                      {/* Order # */}
-                      <td className="px-5 py-4 font-bold text-blue-600 whitespace-nowrap">
-                        <span className="bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
-                          {order.orderNumber}
-                        </span>
-                      </td>
-
-                      {/* Reseller (Admin view) */}
-                      {isAdminOrSuperAdmin && (
-                        <td className="px-5 py-4">
-                          <p className="font-bold text-slate-900 truncate max-w-[140px]">{order.resellerShopName}</p>
-                          <p className="text-[10px] text-slate-500 truncate max-w-[140px]">{order.resellerName}</p>
+                    return (
+                      <tr 
+                        key={order.id} 
+                        className={`transition-all duration-500 ${isNew ? 'bg-amber-50 hover:bg-amber-100/80 ring-1 ring-amber-200/50 scale-[0.99] shadow-inner font-semibold text-slate-900' : 'hover:bg-slate-50/80 transition-colors'}`}
+                      >
+                        {/* Order # */}
+                        <td className="px-5 py-4 font-bold text-blue-600 whitespace-nowrap">
+                          <span className="bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+                            {order.orderNumber}
+                          </span>
                         </td>
-                      )}
 
-                      {/* Product & Variant */}
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          {order.productImage ? (
-                            <img
-                              src={order.productImage}
-                              alt={order.productName}
-                              className="w-9 h-9 object-cover rounded-lg border border-slate-200 shrink-0"
-                            />
-                          ) : (
-                            <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[9px] font-bold shrink-0">
-                              NO IMG
+                        {/* Reseller (Admin view) */}
+                        {isAdminOrSuperAdmin && (
+                          <td className="px-5 py-4">
+                            <p className="font-bold text-slate-900 truncate max-w-[140px]">{order.resellerShopName}</p>
+                            <p className="text-[10px] text-slate-500 truncate max-w-[140px]">{order.resellerName}</p>
+                          </td>
+                        )}
+
+                        {/* Product & Variant */}
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            {order.productImage ? (
+                              <img
+                                src={order.productImage}
+                                alt={order.productName}
+                                className="w-9 h-9 object-cover rounded-lg border border-slate-200 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[9px] font-bold shrink-0">
+                                NO IMG
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-bold text-slate-900 line-clamp-1">{order.productName}</p>
+                              {order.variantColorName && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  Color: {order.variantColorName}
+                                </span>
+                              )}
                             </div>
-                          )}
-                          <div>
-                            <p className="font-bold text-slate-900 line-clamp-1">{order.productName}</p>
-                            {order.variantColorName && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                Color: {order.variantColorName}
-                              </span>
+                          </div>
+                        </td>
+
+                        {/* Customer Info */}
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-slate-900">{order.customerName}</p>
+                          <p className="text-[11px] text-slate-500 font-mono">{order.customerPhone}</p>
+                        </td>
+
+                        {/* Qty */}
+                        <td className="px-5 py-4 text-center font-bold text-slate-800">
+                          {order.quantity}
+                        </td>
+
+                        {/* Total Amount */}
+                        <td className="px-5 py-4 text-right">
+                          <span className="font-bold text-slate-900">৳{order.totalAmount}</span>
+                          <p className="text-[10px] text-slate-400 capitalize">Pay: {order.paymentStatus}</p>
+                        </td>
+
+                        {/* Sell Amount / Reseller Profit */}
+                        <td className="px-5 py-4 text-right">
+                          <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                            ৳{order.sellAmount}
+                          </span>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-5 py-4">
+                          <div className="space-y-1.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.color}`}
+                            >
+                              <BadgeIcon className="w-3.5 h-3.5" />
+                              <span>{badge.label}</span>
+                            </span>
+
+                            {/* Admin Status Dropdown */}
+                            {isAdminOrSuperAdmin && (
+                              <div className="pt-1">
+                                <select
+                                  disabled={isUpdating}
+                                  value={order.status}
+                                  onChange={(e) =>
+                                    handleUpdateOrderStatus(order, e.target.value as OrderStatus)
+                                  }
+                                  className="text-[10px] font-semibold bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+                                >
+                                  {statusSteps.map((st) => (
+                                    <option key={st} value={st}>
+                                      Move to {statusBadgeStyles[st].label}
+                                    </option>
+                                  ))}
+                                  <option value="cancelled">Cancel Order</option>
+                                  <option value="returned">Return Order</option>
+                                </select>
+                              </div>
                             )}
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Customer Info */}
-                      <td className="px-5 py-4">
-                        <p className="font-bold text-slate-900">{order.customerName}</p>
-                        <p className="text-[11px] text-slate-500 font-mono">{order.customerPhone}</p>
-                      </td>
-
-                      {/* Qty */}
-                      <td className="px-5 py-4 text-center font-bold text-slate-800">
-                        {order.quantity}
-                      </td>
-
-                      {/* Total Amount */}
-                      <td className="px-5 py-4 text-right">
-                        <span className="font-bold text-slate-900">৳{order.totalAmount}</span>
-                        <p className="text-[10px] text-slate-400 capitalize">Pay: {order.paymentStatus}</p>
-                      </td>
-
-                      {/* Sell Amount / Reseller Profit */}
-                      <td className="px-5 py-4 text-right">
-                        <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
-                          ৳{order.sellAmount}
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-5 py-4">
-                        <div className="space-y-1.5">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.color}`}
-                          >
-                            <BadgeIcon className="w-3.5 h-3.5" />
-                            <span>{badge.label}</span>
-                          </span>
-
-                          {/* Admin Status Dropdown */}
-                          {isAdminOrSuperAdmin && (
-                            <div className="pt-1">
-                              <select
-                                disabled={isUpdating}
-                                value={order.status}
-                                onChange={(e) =>
-                                  handleUpdateOrderStatus(order, e.target.value as OrderStatus)
-                                }
-                                className="text-[10px] font-semibold bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
-                              >
-                                {statusSteps.map((st) => (
-                                  <option key={st} value={st}>
-                                    Move to {statusBadgeStyles[st].label}
-                                  </option>
-                                ))}
-                                <option value="cancelled">Cancel Order</option>
-                                <option value="returned">Return Order</option>
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-5 py-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => setSelectedOrderForDetails(order)}
-                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="View Order Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {order.status === 'delivered' && (
+                        {/* Actions */}
+                        <td className="px-5 py-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
                             <button
-                              onClick={() => setSelectedReviewProductId(order.productId)}
-                              className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
-                              title="Write Product Review"
+                              onClick={() => setSelectedOrderForDetails(order)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="View Order Details"
                             >
-                              <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                              <Eye className="w-4 h-4" />
                             </button>
-                          )}
+                            {order.status === 'delivered' && (
+                              <button
+                                onClick={() => setSelectedReviewProductId(order.productId)}
+                                className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                                title="Write Product Review"
+                              >
+                                <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card Layout Fallback */}
+            <div className="md:hidden space-y-4">
+              {filteredOrders.map((order) => {
+                const badge = statusBadgeStyles[order.status] || statusBadgeStyles.pending;
+                const BadgeIcon = badge.icon;
+                const isUpdating = updatingStatusId === order.id;
+                const isNew = newlyAddedIds.includes(order.id);
+
+                return (
+                  <div
+                    key={order.id}
+                    className={`p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-3 relative transition-all duration-500 ${
+                      isNew ? 'bg-amber-50 ring-1 ring-amber-200/50 scale-[0.99] shadow-sm font-semibold' : ''
+                    }`}
+                  >
+                    {/* Header: Order Number and Status */}
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                      <span className="font-mono font-black text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                        {order.orderNumber}
+                      </span>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badge.color}`}>
+                        <BadgeIcon className="w-3 h-3" />
+                        <span>{badge.label}</span>
+                      </span>
+                    </div>
+
+                    {/* Product & Variant */}
+                    <div className="flex gap-3">
+                      {order.productImage ? (
+                        <img
+                          src={order.productImage}
+                          alt={order.productName}
+                          className="w-12 h-12 object-cover rounded-xl border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 text-[8px] font-bold shrink-0">
+                          NO IMAGE
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                      <div className="space-y-1">
+                        <p className="font-bold text-slate-950 text-xs line-clamp-2">{order.productName}</p>
+                        {order.variantColorName && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                            Color: {order.variantColorName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-200/50">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Customer</span>
+                        <span className="font-semibold text-slate-900 block">{order.customerName}</span>
+                        <span className="font-mono text-slate-500 text-[10px] block">{order.customerPhone}</span>
+                      </div>
+                      {isAdminOrSuperAdmin && (
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Reseller Shop</span>
+                          <span className="font-semibold text-slate-900 block truncate">{order.resellerShopName}</span>
+                          <span className="text-slate-500 text-[10px] block truncate">{order.resellerName}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Amt (Qty: {order.quantity})</span>
+                        <span className="font-extrabold text-slate-900 block">৳{order.totalAmount}</span>
+                        <span className="text-[10px] text-slate-400 capitalize block">{order.paymentStatus}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Your Profit</span>
+                        <span className="font-extrabold text-emerald-700 block">৳{order.sellAmount}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions and Status Select */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                      {/* Dropdown status update for Admin */}
+                      {isAdminOrSuperAdmin && (
+                        <div className="w-full sm:w-auto">
+                          <select
+                            disabled={isUpdating}
+                            value={order.status}
+                            onChange={(e) =>
+                              handleUpdateOrderStatus(order, e.target.value as OrderStatus)
+                            }
+                            className="w-full text-xs font-semibold bg-white border border-slate-300 text-slate-700 rounded-xl px-2.5 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+                          >
+                            {statusSteps.map((st) => (
+                              <option key={st} value={st}>
+                                Move to {statusBadgeStyles[st].label}
+                              </option>
+                            ))}
+                            <option value="cancelled">Cancel Order</option>
+                            <option value="returned">Return Order</option>
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                          onClick={() => setSelectedOrderForDetails(order)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 rounded-xl transition-all font-semibold text-xs flex items-center gap-1 border border-slate-200"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View Details</span>
+                        </button>
+                        {order.status === 'delivered' && (
+                          <button
+                            onClick={() => setSelectedReviewProductId(order.productId)}
+                            className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl transition-all"
+                            title="Write Product Review"
+                          >
+                            <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
