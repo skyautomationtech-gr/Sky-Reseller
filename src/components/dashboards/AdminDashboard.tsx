@@ -52,6 +52,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
   useEffect(() => {
     fetchMetrics();
+
+    const handlePushNav = (e: any) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('sky_navigate_tab', handlePushNav);
+    return () => window.removeEventListener('sky_navigate_tab', handlePushNav);
   }, []);
 
   const fetchMetrics = async () => {
@@ -137,7 +145,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
       case 'support':
         return <SupportSystem user={user} />;
       case 'settings':
-        return <SettingsPage user={user} onNavigateCommission={() => setActiveTab('commission')} />;
+        return <SettingsPage user={user} onNavigateCommission={() => setActiveTab('commission')} onLogout={onLogout} />;
       case 'audit':
         return <SecurityPage user={user} />;
       case 'dashboard':
@@ -158,100 +166,100 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             {/* Low Stock Alert Widget */}
             <LowStockAlertWidget onNavigateToProducts={() => setActiveTab('products')} />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-4">
               {/* Card 1: Pending Resellers */}
               <div
                 onClick={() => setActiveTab('approvals')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Resellers</span>
-                  <div className="w-9 h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Clock className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Pending Resellers</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Clock className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{pendingApprovalsCount} Queued</div>
-                  <p className="text-[10px] text-amber-600 font-medium mt-1">Process registration approvals →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{pendingApprovalsCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Queued</span></div>
+                  <p className="text-[10px] text-amber-600 font-bold mt-1 truncate">Process approvals →</p>
                 </div>
               </div>
 
               {/* Card 2: Pending Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Orders</span>
-                  <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <ShoppingBag className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Pending Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <ShoppingBag className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{pendingOrdersCount} Unfulfilled</div>
-                  <p className="text-[10px] text-blue-600 font-medium mt-1">Pending verification & packaging →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{pendingOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Unfulfilled</span></div>
+                  <p className="text-[10px] text-blue-600 font-bold mt-1 truncate">Fulfill orders →</p>
                 </div>
               </div>
 
               {/* Card 3: Processing Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Processing Orders</span>
-                  <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <RotateCw className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Processing Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <RotateCw className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{processingOrdersCount} Shipments</div>
-                  <p className="text-[10px] text-indigo-600 font-medium mt-1">In transit / processing →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{processingOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">In Transit</span></div>
+                  <p className="text-[10px] text-indigo-600 font-bold mt-1 truncate">Track status →</p>
                 </div>
               </div>
 
               {/* Card 4: Delivered Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Delivered Orders</span>
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <CheckCircle2 className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Delivered Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <CheckCircle2 className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{deliveredOrdersCount} Completed</div>
-                  <p className="text-[10px] text-emerald-600 font-medium mt-1">Fully dispatched & delivered →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{deliveredOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Done</span></div>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1 truncate">Completed orders →</p>
                 </div>
               </div>
 
               {/* Card 5: Stock Alert */}
               <div
                 onClick={() => setActiveTab('products')}
-                className={`p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between ${
+                className={`p-3.5 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between active:scale-98 ${
                   lowStockCount > 0 
                     ? 'bg-rose-50/50 border-rose-200 hover:border-rose-500 shadow-rose-50/50 shadow-xs' 
                     : 'bg-white border-slate-200 hover:border-slate-400 shadow-xs'
                 }`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wider truncate ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
                     Stock Alert
                   </span>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
+                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 ${
                     lowStockCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-50 text-slate-500'
                   }`}>
-                    <AlertTriangle className="w-4.5 h-4.5" />
+                    <AlertTriangle className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className={`text-xl font-bold ${lowStockCount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
-                    {lowStockCount} Products
+                  <div className={`text-base sm:text-xl font-extrabold ${lowStockCount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
+                    {lowStockCount} <span className="text-xs sm:text-sm font-semibold opacity-80">Items</span>
                   </div>
-                  <p className={`text-[10px] font-medium mt-1 ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                    {lowStockCount > 0 ? 'Critical low stock alerts →' : 'All stocks adequate →'}
+                  <p className={`text-[10px] font-bold mt-1 truncate ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                    {lowStockCount > 0 ? 'Low stock alerts →' : 'Stock adequate →'}
                   </p>
                 </div>
               </div>
@@ -259,28 +267,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
               {/* Card 6: Support Tickets */}
               <div
                 onClick={() => setActiveTab('support')}
-                className={`p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between ${
+                className={`p-3.5 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between active:scale-98 ${
                   openTicketsCount > 0 
                     ? 'bg-amber-50/50 border-amber-200 hover:border-amber-500' 
                     : 'bg-white border-slate-200 hover:border-slate-400 shadow-xs'
                 }`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${openTicketsCount > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wider truncate ${openTicketsCount > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
                     Support Tickets
                   </span>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
+                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 ${
                     openTicketsCount > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-500'
                   }`}>
-                    <HelpCircle className="w-4.5 h-4.5" />
+                    <HelpCircle className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className={`text-xl font-bold ${openTicketsCount > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
-                    {openTicketsCount} Unresolved
+                  <div className={`text-base sm:text-xl font-extrabold ${openTicketsCount > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
+                    {openTicketsCount} <span className="text-xs sm:text-sm font-semibold opacity-80">Open</span>
                   </div>
-                  <p className={`text-[10px] font-medium mt-1 ${openTicketsCount > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
-                    {openTicketsCount > 0 ? 'Pending staff responses →' : 'No active inquiries →'}
+                  <p className={`text-[10px] font-bold mt-1 truncate ${openTicketsCount > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
+                    {openTicketsCount > 0 ? 'Inquiries pending →' : 'No open tickets →'}
                   </p>
                 </div>
               </div>
@@ -288,34 +296,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
               {/* Card 7: Reseller Payouts */}
               <div
                 onClick={() => setActiveTab('wallet')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Reseller Payouts</span>
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Wallet className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Reseller Payouts</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Wallet className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">Wallet Hub</div>
-                  <p className="text-[10px] text-emerald-600 font-medium mt-1">Approve pending withdrawals →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">Wallet Hub</div>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1 truncate">Process payouts →</p>
                 </div>
               </div>
 
               {/* Card 8: Resellers Directory */}
               <div
                 onClick={() => setActiveTab('resellers')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Resellers Directory</span>
-                  <div className="w-9 h-9 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Users className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Reseller Directory</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Users className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{totalResellersCount} Accounts</div>
-                  <p className="text-[10px] text-purple-600 font-medium mt-1">View entire reseller list →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{totalResellersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Accounts</span></div>
+                  <p className="text-[10px] text-purple-600 font-bold mt-1 truncate">View directory →</p>
                 </div>
               </div>
             </div>

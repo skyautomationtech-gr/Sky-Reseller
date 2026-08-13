@@ -11,12 +11,13 @@ import { CommissionSummary } from '../commission/CommissionSummary';
 import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { ResellerNoticeList } from '../notifications/ResellerNoticeList';
 import { SupportSystem } from '../support/SupportSystem';
-import { SettingsPage } from '../settings/SettingsPage';
+import { ResellerSettings } from '../settings/ResellerSettings';
 import { ResellerProfilePage } from '../profile/ResellerProfilePage';
 import { ResellerHomePage } from '../home/ResellerHomePage';
 import { ProductReviewForm } from '../reviews/ProductReviewForm';
 import { FeedbackForm } from '../feedback/FeedbackForm';
 import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
+import { BottomNavigation } from '../common/BottomNavigation';
 import { 
   Store, Package, ShoppingBag, Wallet as WalletIcon, Percent, MapPin, Phone, Mail, 
   CheckCircle2, Plus, ArrowUpRight, TrendingUp, Clock, Bell, CalendarDays, RotateCw
@@ -55,6 +56,14 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
 
   useEffect(() => {
     fetchResellerStats();
+
+    const handlePushNav = (e: any) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('sky_navigate_tab', handlePushNav);
+    return () => window.removeEventListener('sky_navigate_tab', handlePushNav);
   }, [user.uid]);
 
   const fetchResellerStats = async () => {
@@ -203,16 +212,17 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
       case 'profile':
         return <ResellerProfilePage user={user} />;
       case 'settings':
-        return <SettingsPage user={user} />;
+        return <ResellerSettings user={user} onLogout={onLogout} />;
       case 'dashboard':
         return (
           <div className="space-y-6">
-            <div className="bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 rounded-2xl p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+            {/* Welcome Banner */}
+            <div className="bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 rounded-2xl p-5 sm:p-8 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6">
               <div className="max-w-xl">
-                <span className="bg-white/25 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-3">
+                <span className="bg-white/20 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-2">
                   Reseller Hub • Sky Automation Tech
                 </span>
-                <h2 className="text-2xl font-bold mb-2">Welcome back, {user.fullName}!</h2>
+                <h2 className="text-lg sm:text-2xl font-extrabold mb-1">Welcome back, {user.fullName}!</h2>
                 <p className="text-blue-100 text-xs leading-relaxed">
                   Your shop <span className="font-semibold text-white">{user.shopName}</span> is active. Create customer orders, track fulfillment progress, and earn commissions directly to your wallet.
                 </p>
@@ -220,139 +230,139 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
 
               <button
                 onClick={() => setIsCreateModalOpen(true)}
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-6 py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 shrink-0"
+                className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-5 py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 shrink-0 min-h-[44px] cursor-pointer active:scale-98"
               >
                 <Plus className="w-5 h-5" />
                 <span>Create New Order</span>
               </button>
             </div>
 
-            {/* Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-4">
               
               {/* Card 1: Wallet Balance */}
               <div
                 onClick={() => setActiveTab('wallet')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Wallet Balance</span>
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <WalletIcon className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Wallet Balance</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <WalletIcon className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">৳{walletBalance.toLocaleString()}</div>
-                  <p className="text-[10px] text-emerald-600 font-medium mt-1">Request withdrawal payout →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">৳{walletBalance.toLocaleString()}</div>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1 truncate">Request withdrawal →</p>
                 </div>
               </div>
 
               {/* Card 2: Today's Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-sky-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-sky-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Orders</span>
-                  <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <CalendarDays className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Today's Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <CalendarDays className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{todaysOrders} Orders</div>
-                  <p className="text-[10px] text-sky-600 font-medium mt-1">Orders placed today →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{todaysOrders} <span className="text-xs sm:text-sm font-semibold text-slate-500">Orders</span></div>
+                  <p className="text-[10px] text-sky-600 font-bold mt-1 truncate">Orders placed today →</p>
                 </div>
               </div>
 
               {/* Card 3: Total Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Orders</span>
-                  <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <ShoppingBag className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <ShoppingBag className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{totalOrders} Orders</div>
-                  <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage all customer orders →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{totalOrders} <span className="text-xs sm:text-sm font-semibold text-slate-500">Orders</span></div>
+                  <p className="text-[10px] text-indigo-600 font-bold mt-1 truncate">Manage all orders →</p>
                 </div>
               </div>
 
               {/* Card 4: Pending Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Orders</span>
-                  <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Clock className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Pending Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Clock className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{pendingOrders} Orders</div>
-                  <p className="text-[10px] text-blue-600 font-medium mt-1">Awaiting fulfillment →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{pendingOrders} <span className="text-xs sm:text-sm font-semibold text-slate-500">Pending</span></div>
+                  <p className="text-[10px] text-blue-600 font-bold mt-1 truncate">Awaiting fulfillment →</p>
                 </div>
               </div>
 
               {/* Card 5: Delivered Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Delivered Orders</span>
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <CheckCircle2 className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Delivered Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <CheckCircle2 className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{deliveredOrders} Completed</div>
-                  <p className="text-[10px] text-emerald-600 font-medium mt-1">Dispatched & completed →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{deliveredOrders} <span className="text-xs sm:text-sm font-semibold text-slate-500">Done</span></div>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1 truncate">Completed orders →</p>
                 </div>
               </div>
 
               {/* Card 6: Total Earnings */}
               <div
                 onClick={() => setActiveTab('commission')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Earnings</span>
-                  <div className="w-9 h-9 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <TrendingUp className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Earnings</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <TrendingUp className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">৳{totalEarnings.toLocaleString()}</div>
-                  <p className="text-[10px] text-purple-600 font-medium mt-1">Earned from delivered orders →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">৳{totalEarnings.toLocaleString()}</div>
+                  <p className="text-[10px] text-purple-600 font-bold mt-1 truncate">Delivered commission →</p>
                 </div>
               </div>
 
               {/* Card 7: Commission */}
               <div
                 onClick={() => setActiveTab('commission')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-cyan-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-cyan-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Commission</span>
-                  <div className="w-9 h-9 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Percent className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Pending Comm.</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Percent className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">৳{pendingCommission.toLocaleString()}</div>
-                  <p className="text-[10px] text-cyan-600 font-medium mt-1">In-progress / pending commission →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">৳{pendingCommission.toLocaleString()}</div>
+                  <p className="text-[10px] text-cyan-600 font-bold mt-1 truncate">Pending processing →</p>
                 </div>
               </div>
 
               {/* Card 8: Notifications */}
               <div
                 onClick={() => setActiveTab('notifications')}
-                className={`p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between ${
+                className={`p-3.5 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between active:scale-98 ${
                   unreadNotifications > 0 
                     ? 'bg-amber-50/50 border-amber-200 hover:border-amber-500 shadow-amber-50/50 shadow-xs' 
                     : 'bg-white border-slate-200 hover:border-slate-400 shadow-xs'
@@ -409,12 +419,14 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           onNavigateTab={setActiveTab}
         />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-20 md:pb-8 overflow-y-auto">
           {renderContent()}
         </main>
       </div>
 
-      <FloatingHelpButtons />
+      <FloatingHelpButtons isResellerMobile={true} />
+
+      <BottomNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <CreateOrderModal
         isOpen={isCreateModalOpen}

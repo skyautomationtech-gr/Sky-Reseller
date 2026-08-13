@@ -171,7 +171,75 @@ export const BrandManagement: React.FC<BrandManagementProps> = ({ isAdminOrSuper
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile Cards View (<640px) */}
+        <div className="sm:hidden p-3 space-y-3">
+          {brands.map((brand) => {
+            const count = getProductCount(brand.id);
+            return (
+              <div 
+                key={brand.id}
+                className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {brand.logoUrl ? (
+                      <img src={brand.logoUrl} alt={brand.name} className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold shrink-0 text-base">
+                        {brand.name.charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">{brand.name}</h4>
+                      <p className="text-[10px] text-slate-400 font-mono">ID: {brand.id.slice(0, 8)}</p>
+                    </div>
+                  </div>
+                  {brand.status === 'active' ? (
+                    <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
+                      <CheckCircle2 className="w-3 h-3" /> Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
+                      <XCircle className="w-3 h-3" /> Inactive
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1 rounded-full">
+                    {count} Products
+                  </span>
+                  {isAdminOrSuperAdmin && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleOpenEdit(brand)}
+                        className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                        title="Edit Brand"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setBrandToDelete(brand)}
+                        className="p-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                        title="Delete Brand"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {brands.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No brands found.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View (>=640px) */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
               <tr>

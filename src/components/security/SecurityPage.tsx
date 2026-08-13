@@ -163,36 +163,63 @@ export const SecurityPage: React.FC<SecurityPageProps> = ({ user }) => {
             ) : sessions.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs">No logged login history found.</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-700">
-                  <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="p-3.5">User</th>
-                      <th className="p-3.5">Device / Browser User-Agent</th>
-                      <th className="p-3.5">Login Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {sessions.map((s) => {
-                      const timeObj = s.timestamp?.toDate ? s.timestamp.toDate() : new Date(s.timestamp || 0);
-                      return (
-                        <tr key={s.id} className="hover:bg-slate-50/80">
-                          <td className="p-3.5 font-bold text-slate-900">
-                            {s.userName}
-                            <span className="block text-[10px] font-mono text-slate-400 capitalize">{s.userRole}</span>
-                          </td>
-                          <td className="p-3.5 text-slate-600 font-mono text-[11px] max-w-md truncate">
-                            {s.deviceInfo}
-                          </td>
-                          <td className="p-3.5 font-mono text-slate-500 whitespace-nowrap">
-                            {timeObj.toLocaleString('en-GB')}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3.5">User</th>
+                        <th className="p-3.5">Device / Browser User-Agent</th>
+                        <th className="p-3.5">Login Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {sessions.map((s) => {
+                        const timeObj = s.timestamp?.toDate ? s.timestamp.toDate() : new Date(s.timestamp || 0);
+                        return (
+                          <tr key={s.id} className="hover:bg-slate-50/80">
+                            <td className="p-3.5 font-bold text-slate-900">
+                              {s.userName}
+                              <span className="block text-[10px] font-mono text-slate-400 capitalize">{s.userRole}</span>
+                            </td>
+                            <td className="p-3.5 text-slate-600 font-mono text-[11px] max-w-md truncate">
+                              {s.deviceInfo}
+                            </td>
+                            <td className="p-3.5 font-mono text-slate-500 whitespace-nowrap">
+                              {timeObj.toLocaleString('en-GB')}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card Layout Fallback */}
+                <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                  {sessions.map((s) => {
+                    const timeObj = s.timestamp?.toDate ? s.timestamp.toDate() : new Date(s.timestamp || 0);
+                    return (
+                      <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 text-xs">
+                        <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                          <div>
+                            <span className="font-extrabold text-slate-900">{s.userName}</span>
+                            <span className="ml-2 text-[10px] font-mono text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded capitalize">
+                              {s.userRole}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500">{timeObj.toLocaleString('en-GB')}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 font-mono bg-white p-2.5 rounded-xl border border-slate-200/50 break-all">
+                          <span className="text-[9px] text-slate-400 font-bold block uppercase mb-0.5">Device Info</span>
+                          {s.deviceInfo}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -228,38 +255,75 @@ export const SecurityPage: React.FC<SecurityPageProps> = ({ user }) => {
           ) : filteredAuditLogs.length === 0 ? (
             <div className="p-12 text-center text-slate-400 text-xs">No matching audit events recorded yet.</div>
           ) : (
-            <div className="overflow-x-auto border rounded-xl border-slate-200">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-900 text-slate-300 font-semibold">
-                  <tr>
-                    <th className="p-3.5">Action Code</th>
-                    <th className="p-3.5">Performed By</th>
-                    <th className="p-3.5">Target ID</th>
-                    <th className="p-3.5">Details</th>
-                    <th className="p-3.5">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredAuditLogs.map((log) => {
-                    const dateObj = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp || 0);
-                    return (
-                      <tr key={log.id} className="hover:bg-slate-50">
-                        <td className="p-3.5 font-bold font-mono text-blue-600">{log.action}</td>
-                        <td className="p-3.5 font-semibold text-slate-900">
-                          {log.performedByName}
-                          <span className="block text-[10px] text-slate-400 capitalize">{log.performedByRole}</span>
-                        </td>
-                        <td className="p-3.5 font-mono text-[11px] text-slate-500">{log.targetId || '—'}</td>
-                        <td className="p-3.5 text-slate-700 max-w-xs">{log.details}</td>
-                        <td className="p-3.5 font-mono text-slate-500 whitespace-nowrap">
-                          {dateObj.toLocaleString('en-GB')}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto border rounded-xl border-slate-200">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-900 text-slate-300 font-semibold">
+                    <tr>
+                      <th className="p-3.5">Action Code</th>
+                      <th className="p-3.5">Performed By</th>
+                      <th className="p-3.5">Target ID</th>
+                      <th className="p-3.5">Details</th>
+                      <th className="p-3.5">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredAuditLogs.map((log) => {
+                      const dateObj = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp || 0);
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-50">
+                          <td className="p-3.5 font-bold font-mono text-blue-600">{log.action}</td>
+                          <td className="p-3.5 font-semibold text-slate-900">
+                            {log.performedByName}
+                            <span className="block text-[10px] text-slate-400 capitalize">{log.performedByRole}</span>
+                          </td>
+                          <td className="p-3.5 font-mono text-[11px] text-slate-500">{log.targetId || '—'}</td>
+                          <td className="p-3.5 text-slate-700 max-w-xs">{log.details}</td>
+                          <td className="p-3.5 font-mono text-slate-500 whitespace-nowrap">
+                            {dateObj.toLocaleString('en-GB')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden divide-y divide-slate-100 space-y-3">
+                {filteredAuditLogs.map((log) => {
+                  const dateObj = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp || 0);
+                  return (
+                    <div key={log.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                        <span className="font-bold font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-[11px]">
+                          {log.action}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-500">{dateObj.toLocaleString('en-GB')}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Performed By</span>
+                          <span className="font-semibold text-slate-900">{log.performedByName}</span>
+                          <span className="text-[10px] text-slate-500 capitalize block">{log.performedByRole}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Target ID</span>
+                          <span className="font-mono text-slate-600 text-[10px]">{log.targetId || '—'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200/50 text-slate-700 text-[11px]">
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase mb-0.5">Details</span>
+                        {log.details}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}

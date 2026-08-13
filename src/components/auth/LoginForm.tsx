@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
-import { collection, query, where, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import { collection, query, where, getDocs, limit, doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { SkyLogo } from '../common/SkyLogo';
-import { Eye, EyeOff, Mail, Lock, Phone, AlertCircle, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Phone, AlertCircle, ArrowRight, WifiOff, ShieldCheck, Sparkles } from 'lucide-react';
+import { useNetwork } from '../../context/NetworkContext';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -12,6 +13,7 @@ interface LoginFormProps {
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLoginSuccess }) => {
+  const { isOnline } = useNetwork();
   const [identifier, setIdentifier] = useState(''); // Email or Mobile
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -20,8 +22,92 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
   const [error, setError] = useState('');
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
+  const handleQuickDemoLogin = async (role: 'super_admin' | 'reseller') => {
+    if (!isOnline) {
+      setError('You are offline. An active internet connection is required to sign in.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+
+    const email = role === 'super_admin' ? 'admin@skyshebang.com' : 'reseller@skyshebang.com';
+    const pass = 'shebang123';
+
+    setIdentifier(email);
+    setPassword(pass);
+
+    try {
+      try {
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      } catch (pErr) {
+        console.warn('Firebase Auth persistence warning (continuing login):', pErr);
+      }
+
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, pass);
+      } catch (signInErr: any) {
+        if (
+          signInErr.code === 'auth/invalid-credential' ||
+          signInErr.code === 'auth/user-not-found' ||
+          signInErr.code === 'auth/wrong-password'
+        ) {
+          console.log(`Demo account ${email} not found in Auth during quick login. Provisioning now...`);
+          const createCredential = await createUserWithEmailAndPassword(auth, email, pass);
+          const uid = createCredential.user.uid;
+          
+          const userDocRef = doc(db, 'users', uid);
+          await setDoc(userDocRef, {
+            uid,
+            fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
+            shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
+            mobile: role === 'super_admin' ? '01711111111' : '01722222222',
+            email,
+            role,
+            status: 'approved',
+            division: 'Dhaka',
+            district: 'Dhaka',
+            upazila: 'Tejgaon',
+            address: 'Sky Shebang Tower, Dhaka',
+            plainPassword: pass,
+            createdAt: serverTimestamp()
+          });
+          userCredential = createCredential;
+        } else {
+          throw signInErr;
+        }
+      }
+
+      if (userCredential && userCredential.user) {
+        try {
+          const userDocRef = doc(db, 'users', userCredential.user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            if (userDocSnap.data().plainPassword !== pass) {
+              await updateDoc(userDocRef, { plainPassword: pass });
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Could not sync password to Firestore:', syncErr);
+        }
+      }
+
+      onLoginSuccess();
+    } catch (err: any) {
+      console.error('Demo login failed:', err);
+      setError('Failed to log in with demo account: ' + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOnline) {
+      setError('You are offline. An active internet connection is required to sign in.');
+      return;
+    }
+
     if (!identifier || !password) {
       setError('Please enter your email/mobile and password.');
       return;
@@ -87,10 +173,51 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         targetEmail = foundEmail;
       }
 
-      const userCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
+      const signInPromise = signInWithEmailAndPassword(auth, targetEmail, password);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 15000)
+      );
+
+      let userCredential;
+      try {
+        userCredential = await Promise.race([signInPromise, timeoutPromise]);
+      } catch (authErr: any) {
+        const cleanEmail = targetEmail.toLowerCase().trim();
+        // Self-heal demo credentials on-the-fly
+        if (
+          (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-not-found') &&
+          password === 'shebang123' &&
+          (cleanEmail === 'admin@skyshebang.com' || cleanEmail === 'reseller@skyshebang.com')
+        ) {
+          console.log(`Demo account ${cleanEmail} not found in Auth. Provisioning now...`);
+          const role = cleanEmail === 'admin@skyshebang.com' ? 'super_admin' : 'reseller';
+          const createCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+          const uid = createCredential.user.uid;
+          
+          const userDocRef = doc(db, 'users', uid);
+          await setDoc(userDocRef, {
+            uid,
+            fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
+            shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
+            mobile: role === 'super_admin' ? '01711111111' : '01722222222',
+            email: cleanEmail,
+            role,
+            status: 'approved',
+            division: 'Dhaka',
+            district: 'Dhaka',
+            upazila: 'Tejgaon',
+            address: 'Sky Shebang Tower, Dhaka',
+            plainPassword: password,
+            createdAt: serverTimestamp()
+          });
+          userCredential = createCredential;
+        } else {
+          throw authErr;
+        }
+      }
 
       // Sync password to Firestore so Super Admin can view it
-      if (userCredential.user) {
+      if (userCredential && userCredential.user) {
         try {
           const userDocRef = doc(db, 'users', userCredential.user.uid);
           const userDocSnap = await getDoc(userDocRef);
@@ -108,7 +235,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     } catch (err: any) {
       console.error('Login error:', err);
       let msg = 'Invalid email/mobile or password. Please try again.';
-      if (
+      if (err.message === 'timeout') {
+        msg = 'Connection lost or timed out. Please check your internet connection and try again.';
+      } else if (
         err.code === 'auth/invalid-credential' ||
         err.code === 'auth/user-not-found' ||
         err.code === 'auth/wrong-password' ||
@@ -220,11 +349,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
           >
-            <span>{loading ? 'Signing In...' : 'Sign In to Portal'}</span>
-            {!loading && <ArrowRight className="w-4 h-4" />}
+            <span>{loading ? 'Signing In...' : !isOnline ? 'Offline - Connection Required' : 'Sign In to Portal'}</span>
+            {!loading && isOnline && <ArrowRight className="w-4 h-4" />}
           </button>
 
           <div className="text-center pt-3 border-t border-slate-100">

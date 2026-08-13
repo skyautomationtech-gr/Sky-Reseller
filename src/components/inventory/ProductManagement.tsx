@@ -582,9 +582,127 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
         </div>
       </div>
 
-      {/* Product List Table */}
+      {/* Product List Table / Cards */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile Cards View (<640px) */}
+        <div className="sm:hidden p-3 space-y-3">
+          {filteredProducts.map((p) => {
+            const isLowStock = p.stock <= (p.lowStockThreshold || 5);
+            const coverImg = getCoverImage(p);
+            return (
+              <div 
+                key={p.id}
+                onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); setSelectedVariantIndex(0); }}
+                className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs active:bg-slate-50 transition-colors space-y-3 cursor-pointer"
+              >
+                {/* Header: Cover + Name + Status */}
+                <div className="flex items-start gap-3">
+                  {coverImg ? (
+                    <img src={coverImg} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                      <Package className="w-7 h-7" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-1">
+                      <h4 className="font-extrabold text-slate-900 text-sm leading-snug line-clamp-2">{p.name}</h4>
+                      {p.status === 'active' ? (
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">{p.categoryName} • {p.brandName}</p>
+                    <p className="text-[11px] font-mono text-slate-400 mt-0.5">{p.sku}</p>
+                  </div>
+                </div>
+
+                {/* Key Metrics Grid */}
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Reseller Price</span>
+                    <span className="font-bold font-mono text-blue-600 text-sm">৳ {p.resellerPrice?.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Retail Price</span>
+                    <span className="font-bold font-mono text-slate-900 text-sm">৳ {p.retailPrice?.toFixed(2)}</span>
+                  </div>
+                  {isAdmin && (
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase block">Cost Price</span>
+                      <span className="font-semibold font-mono text-slate-700">৳ {p.costPrice?.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Stock Status</span>
+                    {isReseller ? (
+                      p.stock > 0 ? (
+                        <span className="text-emerald-600 font-bold">In Stock</span>
+                      ) : (
+                        <span className="text-rose-600 font-bold">Out of Stock</span>
+                      )
+                    ) : (
+                      <span className={`font-mono font-bold ${isLowStock ? 'text-rose-600' : 'text-slate-900'}`}>
+                        {p.stock} units {isLowStock && '(Low)'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions Footer Bar */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-[10px] text-slate-400 font-medium">Tap card for details</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
+                      className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>View</span>
+                    </button>
+                    {!isReseller && (
+                      <button
+                        onClick={() => setViewingQrProduct(p)}
+                        className="p-2.5 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                      >
+                        <QrIcon className="w-4 h-4" />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => handleOpenEdit(p)}
+                          className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setProductToDelete(p)}
+                          className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filteredProducts.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No products found matching your filters.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View (>=640px) */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
               <tr>
@@ -984,376 +1102,392 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
       {/* Add / Edit Product Modal */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 my-8">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-900 text-base">
-                {editingProduct ? 'Edit Product' : 'Add New Product'}
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/70 backdrop-blur-xs overflow-hidden">
+          <div className="fixed sm:relative inset-0 sm:inset-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-white sm:rounded-3xl border-0 sm:border border-slate-200 shadow-2xl flex flex-col overflow-hidden animate-in fade-in sm:zoom-in-95 duration-200">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 px-4 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900 text-white shrink-0 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md shadow-blue-600/30 shrink-0">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm sm:text-base">
+                    {editingProduct ? 'Edit Product Details' : 'Add New Product'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Specify inventory parameters and media assets</p>
+                </div>
+              </div>
               <button
                 onClick={() => setIsFormOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-lg"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
-              {formError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-xl font-medium">
-                  {formError}
-                </div>
-              )}
+            <form onSubmit={handleSaveProduct} className="flex-1 flex flex-col overflow-hidden">
+              {/* Scrollable Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
+                {formError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3.5 rounded-xl font-medium">
+                    {formError}
+                  </div>
+                )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Category *
-                  </label>
-                  <select
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    required
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm bg-white"
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Category <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={categoryId}
+                      onChange={(e) => setCategoryId(e.target.value)}
+                      required
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs bg-white"
+                    >
+                      <option value="">Select Category</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Brand *
-                  </label>
-                  <select
-                    value={brandId}
-                    onChange={(e) => setBrandId(e.target.value)}
-                    required
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm bg-white"
-                  >
-                    <option value="">Select Brand</option>
-                    {brands.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Product Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. JBL Go 3 Waterproof Bluetooth Speaker"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
-                  />
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Brand <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={brandId}
+                      onChange={(e) => setBrandId(e.target.value)}
+                      required
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs bg-white"
+                    >
+                      <option value="">Select Brand</option>
+                      {brands.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    SKU Code
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={sku}
-                    onChange={(e) => setSku(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm font-mono"
-                  />
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Product Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. JBL Go 3 Speaker"
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 text-slate-500">
-                    Barcode (Auto-Generated)
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={editingProduct ? (editingProduct.barcodeValue || 'Auto-generated on save') : 'Auto-generated on save'}
-                    placeholder="Auto-generated barcode"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-sm font-mono cursor-not-allowed"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Unique barcode value generated automatically on save.</p>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      SKU Code <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={sku}
+                      onChange={(e) => setSku(e.target.value)}
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs font-mono font-bold"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 text-slate-500">
-                    QR Code (Auto-Generated)
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={editingProduct ? (editingProduct.qrValue || 'Auto-generated on save') : 'Auto-generated on save'}
-                    placeholder="Auto-generated QR code"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-sm font-mono cursor-not-allowed"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Unique QR value pointing to the product SKU page.</p>
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Barcode (Auto-Generated)
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={editingProduct ? (editingProduct.barcodeValue || 'Auto-generated on save') : 'Auto-generated on save'}
+                      placeholder="Auto-generated barcode"
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-base sm:text-xs font-mono cursor-not-allowed"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {isAdmin && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 text-rose-600">
-                      Cost Price (BDT) * <span className="text-[9px] text-rose-500/80 lowercase">(reseller dakbe na)</span>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      QR Code (Auto-Generated)
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={editingProduct ? (editingProduct.qrValue || 'Auto-generated on save') : 'Auto-generated on save'}
+                      placeholder="Auto-generated QR code"
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-base sm:text-xs font-mono cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {isAdmin && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider text-rose-600">
+                        Cost Price (BDT) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        required
+                        value={costPrice}
+                        onChange={(e) => setCostPrice(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-rose-500 focus:border-transparent text-base sm:text-xs font-mono font-bold"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Reseller Price (BDT) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
+                      inputMode="decimal"
                       step="0.01"
                       required
-                      value={costPrice}
-                      onChange={(e) => setCostPrice(e.target.value)}
+                      value={resellerPrice}
+                      onChange={(e) => setResellerPrice(e.target.value)}
                       placeholder="0.00"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-mono"
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs font-mono font-bold"
                     />
                   </div>
-                )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Reseller Price (BDT) *
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Retail Price (Suggested BDT) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      required
+                      value={retailPrice}
+                      onChange={(e) => setRetailPrice(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Stock Quantity <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      required
+                      value={stock}
+                      onChange={(e) => setStock(e.target.value)}
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs font-mono font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Low Stock Threshold
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      required
+                      value={lowStockThreshold}
+                      onChange={(e) => setLowStockThreshold(e.target.value)}
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs font-mono font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Warranty
+                    </label>
+                    <input
+                      type="text"
+                      value={warranty}
+                      onChange={(e) => setWarranty(e.target.value)}
+                      placeholder="e.g. 6 Months"
+                      className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Product Description
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={resellerPrice}
-                    onChange={(e) => setResellerPrice(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm font-mono"
+                  <textarea
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Enter product details, specifications..."
+                    className="w-full p-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs min-h-[80px]"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Retail Price (Suggested) (BDT) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={retailPrice}
-                    onChange={(e) => setRetailPrice(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Stock Quantity
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={stock}
-                    onChange={(e) => setStock(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Low Stock Threshold
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={lowStockThreshold}
-                    onChange={(e) => setLowStockThreshold(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Warranty
-                  </label>
-                  <input
-                    type="text"
-                    value={warranty}
-                    onChange={(e) => setWarranty(e.target.value)}
-                    placeholder="e.g. 6 Months"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Product Description
-                </label>
-                <textarea
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Enter product details, specifications..."
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+                {/* Product Variants Section */}
+                <VariantManager
+                  hasVariants={hasVariants}
+                  setHasVariants={setHasVariants}
+                  variants={variants}
+                  setVariants={setVariants}
+                  baseSku={sku || 'SAT-PRD'}
+                  productId={editingProduct ? editingProduct.id : 'new'}
                 />
-              </div>
 
-              {/* Product Variants Section */}
-              <VariantManager
-                hasVariants={hasVariants}
-                setHasVariants={setHasVariants}
-                variants={variants}
-                setVariants={setVariants}
-                baseSku={sku || 'SAT-PRD'}
-                productId={editingProduct ? editingProduct.id : 'new'}
-              />
-
-              {/* Native File Upload Area */}
-              <div className="space-y-3">
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  Product Media (Images & Videos)
-                </label>
-                
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-6 text-center cursor-pointer bg-slate-50 hover:bg-blue-50/30 transition-all group"
-                >
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    multiple
-                    accept="image/*,video/mp4,video/quicktime"
-                    className="hidden"
-                  />
-                  <div className="w-12 h-12 bg-white text-blue-600 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                    <Upload className="w-6 h-6" />
+                {/* Native File Upload Area */}
+                <div className="space-y-3">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Product Media (Images & Videos)
+                  </label>
+                  
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-6 text-center cursor-pointer bg-slate-50 hover:bg-blue-50/30 transition-all group"
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      multiple
+                      accept="image/*,video/mp4,video/quicktime"
+                      className="hidden"
+                    />
+                    <div className="w-12 h-12 bg-white text-blue-600 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-900 mb-1">Click to upload or drag and drop</p>
+                    <p className="text-[11px] text-slate-500">
+                      Images (JPG, PNG, WEBP — max 5MB) & Videos (MP4, MOV — max 50MB)
+                    </p>
                   </div>
-                  <p className="text-xs font-bold text-slate-900 mb-1">Click to upload or drag and drop</p>
-                  <p className="text-[11px] text-slate-500">
-                    Images (JPG, PNG, WEBP — max 5MB) & Videos (MP4, MOV — max 50MB)
-                  </p>
-                </div>
 
-                {/* Upload Progress */}
-                {uploadingFiles.length > 0 && (
-                  <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    {uploadingFiles.map((f, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex justify-between text-[11px] font-semibold text-slate-700">
-                          <span className="truncate max-w-[200px]">{f.name}</span>
-                          <span>{f.progress}%</span>
+                  {/* Upload Progress */}
+                  {uploadingFiles.length > 0 && (
+                    <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      {uploadingFiles.map((f, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-[11px] font-semibold text-slate-700">
+                            <span className="truncate max-w-[200px]">{f.name}</span>
+                            <span>{f.progress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${f.progress}%` }} />
+                          </div>
                         </div>
-                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${f.progress}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
 
-                {/* Images Preview Grid */}
-                {images.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-700 uppercase mb-2">Uploaded Images ({images.length})</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {images.map((img, idx) => (
-                        <div key={idx} className="relative group bg-slate-100 rounded-xl border border-slate-200 overflow-hidden aspect-square">
-                          <img src={img.url} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
-                          
-                          {img.isCover && (
-                            <span className="absolute top-2 left-2 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-md shadow-xs">
-                              Cover
-                            </span>
-                          )}
+                  {/* Images Preview Grid */}
+                  {images.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-700 uppercase mb-2">Uploaded Images ({images.length})</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {images.map((img, idx) => (
+                          <div key={idx} className="relative group bg-slate-100 rounded-xl border border-slate-200 overflow-hidden aspect-square">
+                            <img src={img.url} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
+                            
+                            {img.isCover && (
+                              <span className="absolute top-2 left-2 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-md shadow-xs">
+                                Cover
+                              </span>
+                            )}
 
-                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                            {!img.isCover && (
+                            <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              {!img.isCover && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetCover(idx)}
+                                  className="bg-white text-slate-900 px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm hover:bg-slate-100 min-h-[32px]"
+                                  title="Set as Cover"
+                                >
+                                  Cover
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={() => handleSetCover(idx)}
-                                className="bg-white text-slate-900 px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm hover:bg-slate-100"
-                                title="Set as Cover"
+                                onClick={() => handleRemoveMedia('image', idx)}
+                                className="bg-rose-600 text-white p-1.5 rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm min-h-[32px] min-w-[32px]"
+                                title="Remove Image"
                               >
-                                Cover
+                                ✕
                               </button>
-                            )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Videos Preview Grid */}
+                  {videos.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-700 uppercase mb-2">Uploaded Videos ({videos.length})</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {videos.map((vid, idx) => (
+                          <div key={idx} className="relative group bg-slate-900 rounded-xl border border-slate-200 overflow-hidden aspect-video flex items-center justify-center">
+                            <video src={vid.url} className="w-full h-full object-cover" muted />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="w-10 h-10 bg-white/90 text-slate-900 rounded-full flex items-center justify-center shadow-lg">
+                                <Play className="w-5 h-5 fill-current ml-0.5" />
+                              </div>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => handleRemoveMedia('image', idx)}
-                              className="bg-rose-600 text-white p-1.5 rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm"
-                              title="Remove Image"
+                              onClick={() => handleRemoveMedia('video', idx)}
+                              className="absolute top-2 right-2 bg-rose-600 text-white p-1.5 rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove Video"
                             >
                               ✕
                             </button>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
-                {/* Videos Preview Grid */}
-                {videos.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-bold text-slate-700 uppercase mb-2">Uploaded Videos ({videos.length})</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {videos.map((vid, idx) => (
-                        <div key={idx} className="relative group bg-slate-900 rounded-xl border border-slate-200 overflow-hidden aspect-video flex items-center justify-center">
-                          <video src={vid.url} className="w-full h-full object-cover" muted />
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <div className="w-10 h-10 bg-white/90 text-slate-900 rounded-full flex items-center justify-center shadow-lg">
-                              <Play className="w-5 h-5 fill-current ml-0.5" />
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMedia('video', idx)}
-                            className="absolute top-2 right-2 bg-rose-600 text-white p-1.5 rounded-lg text-xs font-bold hover:bg-rose-700 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remove Video"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Status
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
+                    className="w-full h-11 sm:h-10 px-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-base sm:text-xs bg-white"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Status
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm bg-white"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+              {/* Sticky Footer */}
+              <div className="sticky bottom-0 z-20 bg-slate-50 px-4 sm:px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-colors"
+                  className="px-5 py-3 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm sm:text-xs font-bold transition-colors min-h-[44px] sm:min-h-[38px] flex items-center justify-center cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50 flex items-center gap-2"
+                  className="px-6 py-3 sm:py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-xs font-extrabold transition-all shadow-md shadow-blue-600/30 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-98 min-h-[44px] sm:min-h-[38px] cursor-pointer"
                 >
-                  {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   <span>{editingProduct ? 'Update Product' : 'Save Product'}</span>
                 </button>
               </div>

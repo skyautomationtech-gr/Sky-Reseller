@@ -5,6 +5,7 @@ import { ChangelogModal } from '../version/ChangelogModal';
 import { SkyLogo } from './SkyLogo';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, Shield, Users, CheckCircle2, Package, 
   Layers, Tag, ShoppingBag, Wallet, Percent, BarChart3, 
@@ -157,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }
                 if (onCloseMobile) onCloseMobile();
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors min-h-[44px] ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -173,7 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-t border-slate-800 space-y-2">
         <button
           onClick={() => setIsChangelogOpen(true)}
-          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors group"
+          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors group min-h-[36px]"
         >
           <div className="flex items-center gap-1.5 text-[11px]">
             <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
@@ -182,14 +183,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
             v{currentVersion}
           </span>
-        </button>
-
-        <button
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          <span>Sign Out</span>
         </button>
       </div>
     </aside>
@@ -203,19 +196,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Mobile Drawer */}
-      {isMobileOpen && (
-        <div className="fixed inset-0 z-50 md:hidden flex">
-          {/* Overlay */}
-          <div 
-            className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs transition-opacity" 
-            onClick={onCloseMobile}
-          />
-          {/* Content */}
-          <div className="relative z-10 w-64 h-full shadow-2xl animate-in slide-in-from-left duration-200">
-            {sidebarContent}
+      <AnimatePresence>
+        {isMobileOpen && (
+          <div className="fixed inset-0 z-50 md:hidden flex">
+            {/* Overlay */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs" 
+              onClick={onCloseMobile}
+            />
+            {/* Content */}
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'tween', duration: 0.3, ease: 'easeOut' }}
+              className="relative z-10 w-64 h-full shadow-2xl"
+            >
+              {sidebarContent}
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       <ChangelogModal
         isOpen={isChangelogOpen}

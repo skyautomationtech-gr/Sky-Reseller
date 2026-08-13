@@ -4,7 +4,7 @@ import { GlobalSearchBar } from './GlobalSearchBar';
 import { QrScannerModal } from './QrScannerModal';
 import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { SkyLogo } from './SkyLogo';
-import { LogOut, Menu, Store, QrCode, RotateCw } from 'lucide-react';
+import { LogOut, Menu, Store, QrCode, RotateCw, Search, ArrowLeft } from 'lucide-react';
 import { useRefresh } from '../../context/RefreshContext';
 
 interface NavbarProps {
@@ -24,29 +24,51 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const isAdminOrSuperAdmin = user.role === 'super_admin' || user.role === 'admin';
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const { isRefreshing, refreshCurrentPage, formattedLastUpdated } = useRefresh();
+
+  // Expanded search overlay mode for mobile
+  if (isSearchExpanded && isAdminOrSuperAdmin) {
+    return (
+      <header className="bg-white border-b border-slate-200 h-16 px-4 flex items-center sticky top-0 z-20 shadow-xs gap-3">
+        <button
+          onClick={() => setIsSearchExpanded(false)}
+          className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
+          title="Back"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="flex-1">
+          <GlobalSearchBar user={user} onNavigateTab={(tab) => {
+            if (onNavigateTab) onNavigateTab(tab);
+            setIsSearchExpanded(false);
+          }} />
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="bg-white border-b border-slate-200 h-16 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs gap-4">
-      <div className="flex items-center gap-2.5 shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         {onToggleMobileMenu && (
           <button
             onClick={onToggleMobileMenu}
-            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
             title="Open Menu"
           >
             <Menu className="w-5 h-5" />
           </button>
         )}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="md:hidden">
             <SkyLogo size="sm" showText={false} lightMode={true} />
           </div>
-          <h1 className="text-sm md:text-lg font-bold text-slate-900 truncate max-w-[150px] sm:max-w-none">{title}</h1>
+          <h1 className="text-xs sm:text-sm md:text-lg font-bold text-slate-900 truncate max-w-[120px] sm:max-w-none">{title}</h1>
         </div>
       </div>
 
-      {/* Global Search Bar (Admin / Super Admin) */}
+      {/* Global Search Bar (Admin / Super Admin - Desktop) */}
       {isAdminOrSuperAdmin && (
         <div className="hidden md:flex flex-1 max-w-md mx-4">
           <GlobalSearchBar user={user} onNavigateTab={onNavigateTab} />
@@ -54,6 +76,17 @@ export const Navbar: React.FC<NavbarProps> = ({
       )}
 
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Mobile Search Button (Admin / Super Admin - Mobile) */}
+        {isAdminOrSuperAdmin && (
+          <button
+            onClick={() => setIsSearchExpanded(true)}
+            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+            title="Search"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+        )}
+
         {/* Global Refresh Button */}
         <button
           onClick={() => refreshCurrentPage()}
@@ -69,11 +102,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         {isAdminOrSuperAdmin && (
           <button
             onClick={() => setIsQrModalOpen(true)}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-2 px-3 rounded-xl transition-colors"
+            className="hidden sm:flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-2 px-3 rounded-xl transition-colors min-h-[38px]"
             title="Scan QR Code"
           >
             <QrCode className="w-4 h-4 text-blue-600" />
-            <span className="hidden sm:inline">Scan QR</span>
+            <span>Scan QR</span>
           </button>
         )}
 
@@ -90,12 +123,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           onNavigateNotifications={() => onNavigateTab && onNavigateTab('notifications')}
         />
 
+        {/* User Profile Avatar / Icon on the right */}
         <button
-          onClick={onLogout}
-          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium py-2 px-3 sm:px-3.5 rounded-xl transition-colors shadow-sm"
+          onClick={() => {
+            if (onNavigateTab) {
+              onNavigateTab(user.role === 'reseller' ? 'profile' : 'settings');
+            }
+          }}
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer shrink-0 hover:scale-105 active:scale-95 transition-transform"
+          title="Go to Profile"
         >
-          <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">Logout</span>
+          {user.profilePhotoUrl ? (
+            <img src={user.profilePhotoUrl} alt={user.fullName} className="w-full h-full object-cover referrerPolicy='no-referrer'" />
+          ) : (
+            <div className="w-full h-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase">
+              {user.fullName.charAt(0)}
+            </div>
+          )}
         </button>
       </div>
 

@@ -247,26 +247,26 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
-        <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95 duration-150">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/80 backdrop-blur-xs overflow-y-auto">
+        <div className="relative w-full max-w-lg bg-white sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden h-full sm:h-auto flex flex-col my-0 sm:my-6 animate-in zoom-in-95 duration-150">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-slate-900 text-white shrink-0 sticky top-0 z-10">
             <div className="flex items-center gap-2">
-              <QrCode className="w-5 h-5 text-blue-400" />
-              <h3 className="font-bold text-sm">Scan Product QR Code</h3>
+              <QrCode className="w-5 h-5 text-blue-400 shrink-0" />
+              <h3 className="font-bold text-sm sm:text-base">Scan Product QR Code</h3>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Camera / Permission Body */}
-          <div className="p-6 space-y-5">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 flex-1 overflow-y-auto">
             {permissionError ? (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex flex-col gap-3">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs sm:text-sm flex flex-col gap-3">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                   <div className="leading-relaxed flex-1">{permissionError}</div>
@@ -274,61 +274,61 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose 
                 <button
                   type="button"
                   onClick={() => {
-                    setPermissionError(null);
+                    setPermissionError('');
                     startScanner();
                   }}
-                  className="self-end px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                  className="w-full sm:w-auto self-end px-5 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs min-h-[44px] cursor-pointer"
                 >
-                  <Camera className="w-3.5 h-3.5" />
+                  <Camera className="w-4 h-4" />
                   <span>Retry Camera</span>
                 </button>
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-slate-500 text-center font-medium">
-                  Point camera at the product's QR code or barcode
+                <p className="text-xs sm:text-sm text-slate-600 text-center font-medium bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  Align product QR code or barcode within frame
                 </p>
                 <div
                   id={readerElementId}
-                  className="w-full min-h-[280px] sm:min-h-[320px] bg-slate-950 rounded-2xl overflow-hidden relative flex items-center justify-center border border-slate-800 shadow-inner"
+                  className="w-full min-h-[260px] sm:min-h-[320px] max-h-[50vh] bg-slate-950 rounded-2xl overflow-hidden relative flex items-center justify-center border border-slate-800 shadow-inner"
                 />
-                <div className="flex items-center justify-between px-1 text-[10px] text-slate-400 font-medium">
-                  <span>Sensor View: Full Frame (FIT_CENTER)</span>
-                  <span>Zoom: 1.0x • Autofocus: ON</span>
+                <div className="flex items-center justify-between px-1 text-[10px] sm:text-xs text-slate-400 font-medium">
+                  <span>Full Frame Mode</span>
+                  <span>Auto-Focus Enabled</span>
                 </div>
               </div>
             )}
 
             {/* Manual Input Fallback */}
             <form onSubmit={handleManualSubmit} className="pt-3 border-t border-slate-100 space-y-2">
-              <label className="block text-xs font-bold text-slate-700">
+              <label className="block text-xs sm:text-sm font-bold text-slate-800">
                 Or enter SKU / Barcode / QR value manually:
               </label>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <input
                   type="text"
-                  placeholder="e.g. SKU-1002"
+                  placeholder="e.g. SAT-PRD-1002"
                   value={manualInput}
                   onChange={(e) => setManualInput(e.target.value)}
-                  className="flex-1 bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
+                  className="flex-1 bg-slate-50 border border-slate-300 text-slate-900 text-base sm:text-xs rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none min-h-[44px]"
                 />
                 <button
                   type="submit"
                   disabled={searching || !manualInput.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-colors shrink-0 disabled:opacity-50"
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shrink-0 disabled:opacity-50 min-h-[44px] cursor-pointer active:scale-98"
                 >
                   {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                  <span>Search</span>
+                  <span>Search Product</span>
                 </button>
               </div>
             </form>
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 bg-slate-100 border-t border-slate-200 flex justify-end">
+          <div className="px-4 sm:px-6 py-3.5 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0 sticky bottom-0 z-10">
             <button
               onClick={onClose}
-              className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors"
+              className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors min-h-[44px] cursor-pointer"
             >
               Cancel
             </button>

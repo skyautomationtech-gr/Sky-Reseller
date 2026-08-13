@@ -180,93 +180,177 @@ export const AdminFeedbackList: React.FC<AdminFeedbackListProps> = ({ user }) =>
             <p className="text-xs font-medium">No complaints or feedback found matching criteria.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                  <th className="px-5 py-3.5">Ref ID</th>
-                  <th className="px-5 py-3.5">Type & Category</th>
-                  <th className="px-5 py-3.5">Title & Reseller</th>
-                  <th className="px-5 py-3.5">Severity</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Date</th>
-                  <th className="px-5 py-3.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredItems.map((f) => {
-                  const typeConf = TYPE_BADGE_STYLE[f.type] || TYPE_BADGE_STYLE['Suggestion/Feedback'];
-                  const IconComp = typeConf.icon;
-                  const statusConf = STATUS_BADGE[f.status] || STATUS_BADGE.new;
-                  const dateObj = f.createdAt?.toDate ? f.createdAt.toDate() : new Date(f.createdAt || 0);
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-3.5">Ref ID</th>
+                    <th className="px-5 py-3.5">Type & Category</th>
+                    <th className="px-5 py-3.5">Title & Reseller</th>
+                    <th className="px-5 py-3.5">Severity</th>
+                    <th className="px-5 py-3.5">Status</th>
+                    <th className="px-5 py-3.5">Date</th>
+                    <th className="px-5 py-3.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {filteredItems.map((f) => {
+                    const typeConf = TYPE_BADGE_STYLE[f.type] || TYPE_BADGE_STYLE['Suggestion/Feedback'];
+                    const IconComp = typeConf.icon;
+                    const statusConf = STATUS_BADGE[f.status] || STATUS_BADGE.new;
+                    const dateObj = f.createdAt?.toDate ? f.createdAt.toDate() : new Date(f.createdAt || 0);
 
-                  return (
-                    <tr key={f.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-5 py-4 font-mono font-bold text-slate-900">
+                    return (
+                      <tr key={f.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-5 py-4 font-mono font-bold text-slate-900">
+                          {f.refId}
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${typeConf.bg} ${typeConf.text}`}>
+                              <IconComp className="w-3 h-3" />
+                              <span>{f.type}</span>
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-medium block mt-0.5">{f.category}</span>
+                        </td>
+                        <td className="px-5 py-4 max-w-xs">
+                          <p className="font-bold text-slate-900 truncate">{f.title}</p>
+                          <p className="text-[11px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                            <User className="w-3 h-3 text-slate-400" />
+                            <span>{f.resellerName} {f.resellerShopName ? `(${f.resellerShopName})` : ''}</span>
+                          </p>
+                        </td>
+                        <td className="px-5 py-4">
+                          {f.severity ? (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                              f.severity === 'Critical' ? 'bg-rose-100 text-rose-800' :
+                              f.severity === 'High' ? 'bg-amber-100 text-amber-900' :
+                              'bg-slate-100 text-slate-700'
+                            }`}>
+                              {f.severity}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">—</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          <select
+                            value={f.status}
+                            onChange={(e) => handleUpdateStatus(f, e.target.value as ResellerFeedback['status'])}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer ${statusConf.bg} ${statusConf.text}`}
+                          >
+                            <option value="new">New</option>
+                            <option value="reviewed">Reviewed</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="closed">Closed</option>
+                          </select>
+                        </td>
+                        <td className="px-5 py-4 text-[11px] text-slate-500 font-mono">
+                          {dateObj.toLocaleDateString('en-GB')}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <button
+                            onClick={() => {
+                              setSelectedItem(f);
+                              setAdminNotesInput(f.adminNotes || '');
+                            }}
+                            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer"
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card Layout Fallback */}
+            <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+              {filteredItems.map((f) => {
+                const typeConf = TYPE_BADGE_STYLE[f.type] || TYPE_BADGE_STYLE['Suggestion/Feedback'];
+                const IconComp = typeConf.icon;
+                const statusConf = STATUS_BADGE[f.status] || STATUS_BADGE.new;
+                const dateObj = f.createdAt?.toDate ? f.createdAt.toDate() : new Date(f.createdAt || 0);
+
+                return (
+                  <div key={f.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                      <span className="font-mono font-extrabold text-xs text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
                         {f.refId}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${typeConf.bg} ${typeConf.text}`}>
-                            <IconComp className="w-3 h-3" />
-                            <span>{f.type}</span>
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-500 font-medium block mt-0.5">{f.category}</span>
-                      </td>
-                      <td className="px-5 py-4 max-w-xs">
-                        <p className="font-bold text-slate-900 truncate">{f.title}</p>
-                        <p className="text-[11px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
-                          <User className="w-3 h-3 text-slate-400" />
-                          <span>{f.resellerName} {f.resellerShopName ? `(${f.resellerShopName})` : ''}</span>
-                        </p>
-                      </td>
-                      <td className="px-5 py-4">
-                        {f.severity ? (
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                      </span>
+                      <select
+                        value={f.status}
+                        onChange={(e) => handleUpdateStatus(f, e.target.value as ResellerFeedback['status'])}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer ${statusConf.bg} ${statusConf.text}`}
+                      >
+                        <option value="new">New</option>
+                        <option value="reviewed">Reviewed</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs">{f.title}</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                        <User className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span>{f.resellerName} {f.resellerShopName ? `(${f.resellerShopName})` : ''}</span>
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-white p-2.5 rounded-xl border border-slate-200/60">
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Type</span>
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold border ${typeConf.bg} ${typeConf.text}`}>
+                          <IconComp className="w-3 h-3" />
+                          <span>{f.type}</span>
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Category</span>
+                        <span className="font-medium text-slate-700">{f.category}</span>
+                      </div>
+                      {f.severity && (
+                        <div>
+                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Severity</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
                             f.severity === 'Critical' ? 'bg-rose-100 text-rose-800' :
                             f.severity === 'High' ? 'bg-amber-100 text-amber-900' :
                             'bg-slate-100 text-slate-700'
                           }`}>
                             {f.severity}
                           </span>
-                        ) : (
-                          <span className="text-slate-400 text-[10px]">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <select
-                          value={f.status}
-                          onChange={(e) => handleUpdateStatus(f, e.target.value as ResellerFeedback['status'])}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer ${statusConf.bg} ${statusConf.text}`}
-                        >
-                          <option value="new">New</option>
-                          <option value="reviewed">Reviewed</option>
-                          <option value="in_progress">In Progress</option>
-                          <option value="resolved">Resolved</option>
-                          <option value="closed">Closed</option>
-                        </select>
-                      </td>
-                      <td className="px-5 py-4 text-[11px] text-slate-500 font-mono">
-                        {dateObj.toLocaleDateString('en-GB')}
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => {
-                            setSelectedItem(f);
-                            setAdminNotesInput(f.adminNotes || '');
-                          }}
-                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer"
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Date</span>
+                        <span className="font-mono text-slate-500 text-[10px]">{dateObj.toLocaleDateString('en-GB')}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        onClick={() => {
+                          setSelectedItem(f);
+                          setAdminNotesInput(f.adminNotes || '');
+                        }}
+                        className="w-full sm:w-auto min-h-[44px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <span>View Details & Notes</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 

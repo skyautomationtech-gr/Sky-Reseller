@@ -2,6 +2,28 @@ export type UserRole = 'super_admin' | 'admin' | 'reseller';
 
 export type UserStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 
+export interface PayoutMethod {
+  id: string;
+  type: 'bKash' | 'Nagad' | 'Bank';
+  accountNumber: string;
+  accountHolderName?: string | null;
+  bankName?: string | null;
+  isDefault: boolean;
+  verified: boolean;
+  addedAt: any;
+}
+
+export interface NotificationPreferences {
+  newOrder: boolean;
+  payout: boolean;
+  commission: boolean;
+  importantNotice: boolean;
+  appUpdate: boolean;
+  promotional: boolean;
+  sound: boolean;
+  vibration: boolean;
+}
+
 export interface UserProfile {
   uid: string;
   fullName: string;
@@ -24,6 +46,7 @@ export interface UserProfile {
   nagadNumber?: string;
   rocketNumber?: string;
   payoutMethod?: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  payoutMethods?: PayoutMethod[];
   customCommissionRate?: number;
   adminNotes?: string;
   role: UserRole;
@@ -31,6 +54,11 @@ export interface UserProfile {
   rejectReason?: string | null;
   plainPassword?: string;
   lastSeenVersion?: string;
+  appLockEnabled?: boolean;
+  appLockPinHash?: string | null;
+  appLockPinLength?: number;
+  notificationPreferences?: NotificationPreferences;
+  fcmTokens?: string[];
   createdAt: any; // Firestore Timestamp or Date
 }
 

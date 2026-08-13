@@ -63,6 +63,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
 
   useEffect(() => {
     fetchDashboardMetrics();
+
+    const handlePushNav = (e: any) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('sky_navigate_tab', handlePushNav);
+    return () => window.removeEventListener('sky_navigate_tab', handlePushNav);
   }, []);
 
   const fetchDashboardMetrics = async () => {
@@ -207,7 +215,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
       case 'support':
         return <SupportSystem user={user} />;
       case 'settings':
-        return <SettingsPage user={user} onNavigateCommission={() => setActiveTab('commission')} />;
+        return <SettingsPage user={user} onNavigateCommission={() => setActiveTab('commission')} onLogout={onLogout} />;
       case 'audit':
         return <SecurityPage user={user} />;
       case 'admin':
@@ -275,220 +283,220 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
             </div>
 
             {/* Quick Metrics Grid - 12 Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-4">
               
               {/* Card 1: Total Resellers */}
               <div
                 onClick={() => setActiveTab('resellers')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-indigo-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Resellers</span>
-                  <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Resellers</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <Users className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{totalResellersCount} Accounts</div>
-                  <p className="text-[10px] text-indigo-600 font-medium mt-1">Manage entire reseller directory →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{totalResellersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Accounts</span></div>
+                  <p className="text-[10px] text-indigo-600 font-bold mt-1 truncate">Manage directory →</p>
                 </div>
               </div>
 
               {/* Card 2: Active Resellers */}
               <div
                 onClick={() => setActiveTab('resellers')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Resellers</span>
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Active Resellers</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <UserCheck className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{activeResellersCount} Approved</div>
-                  <p className="text-[10px] text-emerald-600 font-medium mt-1">Currently active & approved →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{activeResellersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Active</span></div>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1 truncate">Approved users →</p>
                 </div>
               </div>
 
               {/* Card 3: Pending Approval */}
               <div
                 onClick={() => setActiveTab('approvals')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Approval</span>
-                  <div className="w-9 h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Pending Approval</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <Clock className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{pendingApprovalsCount} Queued</div>
-                  <p className="text-[10px] text-amber-600 font-medium mt-1">Review pending registrations →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{pendingApprovalsCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Queued</span></div>
+                  <p className="text-[10px] text-amber-600 font-bold mt-1 truncate">Review requests →</p>
                 </div>
               </div>
 
               {/* Card 4: Suspended Accounts */}
               <div
                 onClick={() => setActiveTab('resellers')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-rose-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-rose-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Suspended Accounts</span>
-                  <div className="w-9 h-9 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Suspended Accounts</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <UserX className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{suspendedCount} Suspended</div>
-                  <p className="text-[10px] text-rose-600 font-medium mt-1">View restriction details →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{suspendedCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Blocked</span></div>
+                  <p className="text-[10px] text-rose-600 font-bold mt-1 truncate">View restrictions →</p>
                 </div>
               </div>
 
               {/* Card 5: Total Admin */}
               <div
                 onClick={() => setActiveTab('admin')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Admin</span>
-                  <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Admin</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <Shield className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{totalAdminsCount} Staff</div>
-                  <p className="text-[10px] text-blue-600 font-medium mt-1">Manage admin permissions →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{totalAdminsCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Staff</span></div>
+                  <p className="text-[10px] text-blue-600 font-bold mt-1 truncate">Manage staff →</p>
                 </div>
               </div>
 
               {/* Card 6: Total Products */}
               <div
                 onClick={() => setActiveTab('products')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Products</span>
-                  <div className="w-9 h-9 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Products</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <Package className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{totalProductsCount} Items</div>
-                  <p className="text-[10px] text-teal-600 font-medium mt-1">Manage catalog & inventory →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{totalProductsCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Items</span></div>
+                  <p className="text-[10px] text-teal-600 font-bold mt-1 truncate">Manage catalog →</p>
                 </div>
               </div>
 
               {/* Card 7: Total Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-violet-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-violet-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Orders</span>
-                  <div className="w-9 h-9 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <ShoppingBag className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{totalOrdersCount} Orders</div>
-                  <p className="text-[10px] text-violet-600 font-medium mt-1">Review all transactions →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{totalOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Orders</span></div>
+                  <p className="text-[10px] text-violet-600 font-bold mt-1 truncate">Review orders →</p>
                 </div>
               </div>
 
               {/* Card 8: Today's Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-sky-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-sky-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Orders</span>
-                  <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Today's Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <CalendarDays className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{todaysOrdersCount} New</div>
-                  <p className="text-[10px] text-sky-600 font-medium mt-1">Fulfill incoming orders →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{todaysOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">New</span></div>
+                  <p className="text-[10px] text-sky-600 font-bold mt-1 truncate">Fulfill orders →</p>
                 </div>
               </div>
 
               {/* Card 9: Monthly Orders */}
               <div
                 onClick={() => setActiveTab('orders')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-fuchsia-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-fuchsia-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monthly Orders</span>
-                  <div className="w-9 h-9 bg-fuchsia-50 text-fuchsia-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Monthly Orders</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-fuchsia-50 text-fuchsia-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <BarChart3 className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{monthlyOrdersCount} This Month</div>
-                  <p className="text-[10px] text-fuchsia-600 font-medium mt-1">Track monthly order growth →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{monthlyOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">This Month</span></div>
+                  <p className="text-[10px] text-fuchsia-600 font-bold mt-1 truncate">Track growth →</p>
                 </div>
               </div>
 
               {/* Card 10: Total Revenue */}
               <div
                 onClick={() => setActiveTab('reports')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-600 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-600 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Revenue</span>
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Revenue</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <DollarSign className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">৳{totalRevenue.toLocaleString()}</div>
-                  <p className="text-[10px] text-emerald-700 font-medium mt-1">Gross from delivered orders →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">৳{totalRevenue.toLocaleString()}</div>
+                  <p className="text-[10px] text-emerald-700 font-bold mt-1 truncate">Gross revenue →</p>
                 </div>
               </div>
 
               {/* Card 11: Total Commission */}
               <div
                 onClick={() => setActiveTab('reports')}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-cyan-500 transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-cyan-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Commission</span>
-                  <div className="w-9 h-9 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Total Commission</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                     <Percent className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900">৳{totalCommission.toLocaleString()}</div>
-                  <p className="text-[10px] text-cyan-600 font-medium mt-1">Earned by resellers →</p>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">৳{totalCommission.toLocaleString()}</div>
+                  <p className="text-[10px] text-cyan-600 font-bold mt-1 truncate">Reseller payouts →</p>
                 </div>
               </div>
 
               {/* Card 12: Low Stock Alert */}
               <div
                 onClick={() => setActiveTab('products')}
-                className={`p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between ${
+                className={`p-3.5 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between active:scale-98 ${
                   lowStockCount > 0 
                     ? 'bg-rose-50/50 border-rose-200 hover:border-rose-500 shadow-rose-50/50 shadow-xs' 
                     : 'bg-white border-slate-200 hover:border-slate-400 shadow-xs'
                 }`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wider truncate ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
                     Low Stock Alert
                   </span>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
+                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 ${
                     lowStockCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-50 text-slate-500'
                   }`}>
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className={`text-xl font-bold ${lowStockCount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
-                    {lowStockCount} Products
+                  <div className={`text-base sm:text-xl font-extrabold ${lowStockCount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
+                    {lowStockCount} <span className="text-xs sm:text-sm font-semibold opacity-80">Products</span>
                   </div>
-                  <p className={`text-[10px] font-medium mt-1 ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                    {lowStockCount > 0 ? 'Urgent restocking needed →' : 'All stocks adequate →'}
+                  <p className={`text-[10px] font-bold mt-1 truncate ${lowStockCount > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                    {lowStockCount > 0 ? 'Restock needed →' : 'All stocks good →'}
                   </p>
                 </div>
               </div>

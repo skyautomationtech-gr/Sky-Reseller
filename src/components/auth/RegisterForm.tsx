@@ -4,7 +4,8 @@ import { doc, setDoc, serverTimestamp, collection, getDocs, query, where, limit 
 import { auth, db, storage } from '../../lib/firebase';
 import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
 import { SkyLogo } from '../common/SkyLogo';
-import { Eye, EyeOff, Upload, ShieldCheck, Store, MapPin, Phone, Mail, Lock, User, FileText, AlertCircle, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Upload, ShieldCheck, Store, MapPin, Phone, Mail, Lock, User, FileText, AlertCircle, CheckCircle, WifiOff } from 'lucide-react';
+import { useNetwork } from '../../context/NetworkContext';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
@@ -53,6 +54,7 @@ const compressImage = (file: File, maxWidth = 600, maxHeight = 600, quality = 0.
 };
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onRegistered }) => {
+  const { isOnline } = useNetwork();
   const [fullName, setFullName] = useState('');
   const [shopName, setShopName] = useState('');
   const [mobile, setMobile] = useState('');
@@ -122,6 +124,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!isOnline) {
+      setError('You are offline. An active internet connection is required to register.');
+      return;
+    }
 
     if (!fullName || !shopName || !mobile || !email || !password || !division || !district || !upazila || !address) {
       setError('Please fill in all required fields.');
@@ -670,10 +677,10 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
           >
-            {loading ? 'Submitting Application...' : 'Submit Reseller Registration'}
+            {loading ? 'Submitting Application...' : !isOnline ? 'Offline - Connection Required' : 'Submit Reseller Registration'}
           </button>
 
           <div className="text-center pt-2">

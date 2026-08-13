@@ -257,9 +257,9 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
   const selectedPriorityConfig = PRIORITY_OPTIONS.find((p) => p.value === priority) || PRIORITY_OPTIONS[1];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden max-w-2xl mx-auto my-2 animate-in fade-in duration-200">
-      {/* Top Banner */}
-      <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between">
+    <div className="fixed sm:relative inset-0 sm:inset-auto z-50 sm:z-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-white sm:rounded-2xl border-0 sm:border border-slate-200 shadow-2xl flex flex-col overflow-hidden animate-in fade-in sm:zoom-in-95 duration-200">
+      {/* Top Banner - Sticky */}
+      <div className="sticky top-0 z-20 bg-slate-900 text-white px-4 sm:px-6 py-4 flex items-center justify-between shrink-0 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md shadow-blue-600/30">
             <LifeBuoy className="w-5 h-5" />
@@ -273,7 +273,7 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
           <button
             type="button"
             onClick={onCancel}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
@@ -282,8 +282,8 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
 
       {/* Success View */}
       {createdTicketId ? (
-        <div className="p-8 text-center space-y-6">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner animate-bounce">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 flex flex-col justify-center items-center text-center space-y-6">
+          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner animate-bounce shrink-0">
             <CheckCircle2 className="w-9 h-9" />
           </div>
 
@@ -295,254 +295,268 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
           </div>
 
           {/* Ticket ID Box with Copy button */}
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto flex items-center justify-between gap-3 shadow-inner">
-            <div className="text-left">
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl w-full max-w-sm mx-auto flex items-center justify-between gap-3 shadow-inner">
+            <div className="text-left min-w-0">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ticket ID</span>
-              <span className="text-base font-mono font-extrabold text-slate-900">{createdTicketId}</span>
+              <span className="font-mono text-xs font-bold text-slate-800 truncate block">
+                {createdTicketId}
+              </span>
             </div>
             <button
               onClick={copyToClipboard}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+              className={`p-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 min-h-[44px] min-w-[44px] transition-all cursor-pointer ${
+                copied
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
             >
               {copied ? (
                 <>
-                  <Check className="w-4 h-4" />
-                  <span>Copied!</span>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden sm:inline">Copied!</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-4 h-4" />
-                  <span>Copy ID</span>
+                  <span className="hidden sm:inline">Copy ID</span>
                 </>
               )}
             </button>
           </div>
 
           {/* Response SLA Notice */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 max-w-md mx-auto flex items-center gap-3">
-            <Clock className="w-5 h-5 text-blue-600 shrink-0" />
-            <div className="text-left">
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 w-full max-w-md mx-auto flex items-start gap-3">
+            <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-left min-w-0">
               <p className="font-bold">Estimated Response Time</p>
-              <p className="text-[11px] text-blue-700 mt-0.5">
-                You'll be contacted within <strong>{selectedPriorityConfig.hours} hours</strong> ({selectedPriorityConfig.label} priority). Confirmation and updates will be sent to <strong>{email}</strong>.
+              <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                You'll be contacted within <strong>{selectedPriorityConfig.hours} hours</strong> ({selectedPriorityConfig.label} priority). Confirmation and updates will be sent to <span className="font-semibold break-all">{email}</span>.
               </p>
             </div>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 w-full max-w-xs">
             <button
               onClick={() => {
                 if (onCancel) onCancel();
               }}
-              className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors"
+              className="w-full px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm rounded-xl shadow-md transition-colors min-h-[44px] flex items-center justify-center"
             >
               View My Support Tickets
             </button>
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {error && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span className="font-medium">{error}</span>
-            </div>
-          )}
-
-          {/* 1. Issue Category */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Issue Category <span className="text-rose-500">*</span>
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value as TicketCategory)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              required
-            >
-              <option value="" disabled>-- Select Issue Category --</option>
-              {CATEGORY_OPTIONS.map((cat) => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 2. Subject / Title */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Subject / Title <span className="text-rose-500">*</span>
-              </label>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {subject.length}/100
-              </span>
-            </div>
-            <input
-              type="text"
-              maxLength={100}
-              placeholder="Brief summary of issue"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              required
-            />
-          </div>
-
-          {/* 3. Description */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Description <span className="text-rose-500">*</span>
-              </label>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {description.length}/1000
-              </span>
-            </div>
-            <textarea
-              rows={4}
-              maxLength={1000}
-              placeholder="Describe your issue in detail..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 resize-y"
-              required
-            />
-          </div>
-
-          {/* 4. Related Order ID (dropdown, optional) */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Related Order ID <span className="text-slate-400 font-normal">(Optional)</span>
-            </label>
-
-            {loadingOrders ? (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>Loading your orders...</span>
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+          {/* Scrollable Body */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+            {error && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span className="font-medium">{error}</span>
               </div>
-            ) : (
-              <select
-                value={selectedOrderId}
-                onChange={(e) => setSelectedOrderId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              >
-                <option value="">-- No Specific Order Selected --</option>
-                {userOrders.map((ord) => (
-                  <option key={ord.id} value={ord.id}>
-                    {ord.orderNumber || ord.id} ({ord.productName || 'Product'}) - ৳{ord.totalAmount}
-                  </option>
-                ))}
-              </select>
             )}
-            <p className="text-[11px] text-slate-400">Select an order if this ticket relates to a specific purchase or delivery.</p>
-          </div>
 
-          {/* 5. Priority Radio Buttons */}
-          <div className="space-y-2">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Priority Level <span className="text-rose-500">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {PRIORITY_OPTIONS.map((pOpt) => {
-                const isChecked = priority === pOpt.value;
-                return (
-                  <label
-                    key={pOpt.value}
-                    className={`p-3.5 rounded-xl border-2 flex items-start gap-3 cursor-pointer transition-all ${pOpt.badgeBg} ${
-                      isChecked ? `${pOpt.badgeBorder} ring-2 ring-blue-500/20` : 'border-slate-200 opacity-80 hover:opacity-100'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="priority"
-                      value={pOpt.value}
-                      checked={isChecked}
-                      onChange={() => setPriority(pOpt.value)}
-                      className="mt-0.5 accent-blue-600 w-4 h-4 cursor-pointer"
-                    />
-                    <div>
-                      <span className={`block text-xs font-extrabold ${pOpt.badgeText}`}>
-                        {pOpt.label}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
-                        ({pOpt.timeframe})
-                      </span>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 6. Attachment (Optional) */}
-          <div className="space-y-2">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Attachment / Evidence <span className="text-slate-400 font-normal">(Optional, max 5MB)</span>
-            </label>
-
-            {attachmentPreview ? (
-              <div className="p-3 bg-slate-50 border border-slate-300 rounded-xl flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 overflow-hidden">
-                  {attachmentType.includes('image') ? (
-                    <img src={attachmentPreview} alt="Preview" className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0" />
-                  ) : (
-                    <div className="w-10 h-10 bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                  )}
-                  <span className="text-xs font-bold text-slate-800 truncate">{attachmentName || 'Attachment'}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAttachmentPreview(null);
-                    setAttachmentName('');
-                    setAttachmentType('');
-                  }}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+            {/* 1. Issue Category */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Issue Category <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as TicketCategory)}
+                  className="w-full h-11 sm:h-10 px-3.5 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer appearance-none"
+                  required
                 >
-                  <X className="w-4 h-4" />
-                </button>
+                  <option value="" disabled>-- Select Issue Category --</option>
+                  {CATEGORY_OPTIONS.map((cat) => (
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              <label className="flex items-center gap-2.5 px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 hover:border-blue-500 rounded-xl cursor-pointer text-xs text-slate-700 font-semibold transition-all">
-                <Paperclip className="w-4 h-4 text-slate-500" />
-                <span>Upload Screenshot or PDF (JPG, PNG, PDF up to 5MB)</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/jpg,application/pdf"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
+            </div>
+
+            {/* 2. Subject / Title */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Subject / Title <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {subject.length}/100
+                </span>
+              </div>
+              <input
+                type="text"
+                maxLength={100}
+                placeholder="Brief summary of issue"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full h-11 sm:h-10 px-4 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                required
+              />
+            </div>
+
+            {/* 3. Description */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Description <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {description.length}/1000
+                </span>
+              </div>
+              <textarea
+                rows={4}
+                maxLength={1000}
+                placeholder="Describe your issue in detail..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full min-h-[110px] px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 resize-y"
+                required
+              />
+            </div>
+
+            {/* 4. Related Order ID (dropdown, optional) */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Related Order ID <span className="text-slate-400 font-normal">(Optional)</span>
               </label>
-            )}
+
+              {loadingOrders ? (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  <span>Loading your orders...</span>
+                </div>
+              ) : (
+                <div className="relative">
+                  <select
+                    value={selectedOrderId}
+                    onChange={(e) => setSelectedOrderId(e.target.value)}
+                    className="w-full h-11 sm:h-10 px-3.5 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer appearance-none"
+                  >
+                    <option value="">-- No Specific Order Selected --</option>
+                    {userOrders.map((ord) => (
+                      <option key={ord.id} value={ord.id}>
+                        {ord.orderNumber || ord.id} ({ord.productName || 'Product'}) - ৳{ord.totalAmount}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400">Select an order if this ticket relates to a specific purchase or delivery.</p>
+            </div>
+
+            {/* 5. Priority Radio Buttons */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Priority Level <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {PRIORITY_OPTIONS.map((pOpt) => {
+                  const isChecked = priority === pOpt.value;
+                  return (
+                    <label
+                      key={pOpt.value}
+                      className={`p-3.5 min-h-[56px] rounded-xl border-2 flex items-center gap-3 cursor-pointer transition-all ${pOpt.badgeBg} ${
+                        isChecked ? `${pOpt.badgeBorder} ring-2 ring-blue-500/20 shadow-sm` : 'border-slate-200 opacity-80 hover:opacity-100'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="priority"
+                        value={pOpt.value}
+                        checked={isChecked}
+                        onChange={() => setPriority(pOpt.value)}
+                        className="accent-blue-600 w-5 h-5 cursor-pointer shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className={`block text-xs font-extrabold ${pOpt.badgeText} truncate`}>
+                          {pOpt.label}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                          ({pOpt.timeframe})
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 6. Attachment (Optional) */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Attachment / Evidence <span className="text-slate-400 font-normal">(Optional, max 5MB)</span>
+              </label>
+
+              {attachmentPreview ? (
+                <div className="p-3 bg-slate-50 border border-slate-300 rounded-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    {attachmentType.includes('image') ? (
+                      <img src={attachmentPreview} alt="Preview" className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center shrink-0">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                    )}
+                    <span className="text-xs font-bold text-slate-800 truncate">{attachmentName || 'Attachment'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachmentPreview(null);
+                      setAttachmentName('');
+                      setAttachmentType('');
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 rounded-xl cursor-pointer transition-all min-h-[110px]">
+                  <Paperclip className="w-8 h-8 text-blue-600 mb-2" />
+                  <span className="text-sm font-extrabold text-slate-800 text-center">Tap to upload attachment</span>
+                  <span className="text-[11px] text-slate-500 text-center mt-0.5">JPG, PNG or PDF up to 5MB</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/jpg,application/pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* 7. Contact Email (pre-filled, user can edit) */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Contact Email <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full h-11 sm:h-10 px-4 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                required
+              />
+              <p className="text-[11px] text-slate-400">Updates about this ticket will be sent to this email address.</p>
+            </div>
           </div>
 
-          {/* 7. Contact Email (pre-filled, user can edit) */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Contact Email <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              required
-            />
-            <p className="text-[11px] text-slate-400">Updates about this ticket will be sent to this email address.</p>
-          </div>
-
-          {/* Submit Actions */}
-          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
+          {/* Sticky Footer */}
+          <div className="sticky bottom-0 z-20 bg-slate-50 px-4 sm:px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
             {onCancel && (
               <button
                 type="button"
                 onClick={onCancel}
                 disabled={submitting}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+                className="px-5 py-3 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm sm:text-xs rounded-xl transition-colors min-h-[44px] sm:min-h-[38px] flex items-center justify-center"
               >
                 Cancel
               </button>
@@ -550,7 +564,7 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
             <button
               type="submit"
               disabled={submitting}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer active:scale-98"
+              className="px-6 py-3 sm:py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-extrabold text-sm sm:text-xs rounded-xl transition-all shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 cursor-pointer active:scale-98 min-h-[44px] sm:min-h-[38px]"
             >
               {submitting ? (
                 <>

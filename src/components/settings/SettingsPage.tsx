@@ -7,12 +7,13 @@ import { SkyLogo } from '../common/SkyLogo';
 import { VersionManagerForm } from '../version/VersionManagerForm';
 import { 
   Settings, Building2, Phone, Mail, MapPin, DollarSign, 
-  Percent, Truck, Image as ImageIcon, Save, ArrowRight, Loader2, CheckCircle2, Shield
+  Percent, Truck, Image as ImageIcon, Save, ArrowRight, Loader2, CheckCircle2, Shield, LogOut
 } from 'lucide-react';
 
 interface SettingsPageProps {
   user: UserProfile;
   onNavigateCommission?: () => void;
+  onLogout?: () => void;
 }
 
 const DEFAULT_SETTINGS: CompanySettings = {
@@ -26,13 +27,29 @@ const DEFAULT_SETTINGS: CompanySettings = {
   defaultDeliveryCharge: 100,
 };
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateCommission }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateCommission, onLogout }) => {
   const isSuperAdmin = user.role === 'super_admin';
+  const isAdmin = user.role === 'admin';
+
+  if (!isAdmin && !isSuperAdmin) {
+    return (
+      <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-3">
+        <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto border border-rose-100">
+          <Shield className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-900">Access Restricted</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          This system settings page is strictly reserved for Admin and Super Admin accounts.
+        </p>
+      </div>
+    );
+  }
   const [settings, setSettings] = useState<CompanySettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -362,6 +379,72 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
       {isSuperAdmin && (
         <div className="pt-4">
           <VersionManagerForm user={user} />
+        </div>
+      )}
+
+      {/* Account Logout Section */}
+      {onLogout && (
+        <div className="pt-6 border-t border-slate-200">
+          <div className="bg-gradient-to-r from-rose-50 to-orange-50 border border-rose-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center shrink-0 border border-rose-200">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-sm text-slate-900">Sign Out / Logout Account</h4>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Safely end your {isSuperAdmin ? 'Super Admin' : 'Admin'} session on this device.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowLogoutModal(true)}
+              className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 min-h-[44px]"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout Now</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in duration-150">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto border border-rose-200">
+              <LogOut className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-base text-slate-900">Sign Out of Account</h3>
+              <p className="text-xs text-slate-500">
+                Are you sure you want to log out of your administrative portal?
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogoutModal(false);
+                  if (onLogout) onLogout();
+                }}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Yes, Logout
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

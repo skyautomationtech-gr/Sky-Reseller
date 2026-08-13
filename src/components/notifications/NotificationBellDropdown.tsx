@@ -4,6 +4,8 @@ import { db } from '../../lib/firebase';
 import { UserProfile, Notice } from '../../types';
 import { Bell, Check, ChevronRight, X, Sparkles, AlertCircle } from 'lucide-react';
 
+import { requestAndRegisterPushNotifications } from '../../lib/pushNotifications';
+
 interface NotificationBellDropdownProps {
   user: UserProfile;
   onNavigateNotifications?: () => void;
@@ -77,15 +79,8 @@ export const NotificationBellDropdown: React.FC<NotificationBellDropdownProps> =
   };
 
   const requestPushPermission = async () => {
-    if ('Notification' in window) {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        new Notification('Sky Reseller Notifications Enabled!', {
-          body: 'You will now receive instant updates on new product offers and system notices.',
-        });
-      }
-      setPermissionPromptVisible(false);
-    }
+    await requestAndRegisterPushNotifications(user.uid);
+    setPermissionPromptVisible(false);
   };
 
   const markAsRead = async (noticeId: string) => {

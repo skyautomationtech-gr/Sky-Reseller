@@ -48,22 +48,22 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/75 backdrop-blur-xs">
-      <div className="bg-white rounded-3xl border border-slate-200 max-w-2xl w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/80 backdrop-blur-xs">
+      <div className="bg-white sm:rounded-3xl border-0 sm:border border-slate-200 max-w-2xl w-full h-full sm:h-auto overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col sm:max-h-[85vh]">
         {/* Modal Header */}
-        <div className="bg-slate-900 text-white p-5 sm:p-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/30 text-blue-400 border border-blue-500/30 flex items-center justify-center">
+        <div className="bg-slate-900 text-white p-4 sm:p-6 flex items-center justify-between shrink-0 sticky top-0 z-10">
+          <div className="flex items-center gap-3 pr-2">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/30 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0">
               <History className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold">App Version History & Changelog</h2>
-                <span className="bg-blue-500/20 text-blue-300 font-mono text-[11px] font-bold px-2 py-0.5 rounded-md border border-blue-500/30">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-lg font-bold">App Version History & Changelog</h2>
+                <span className="bg-blue-500/20 text-blue-300 font-mono text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-md border border-blue-500/30">
                   Current: v{currentVersion}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-[11px] text-slate-400 mt-0.5 hidden sm:block">
                 Full list of feature releases, enhancements, and system updates.
               </p>
             </div>
@@ -71,7 +71,7 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors"
+            className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>

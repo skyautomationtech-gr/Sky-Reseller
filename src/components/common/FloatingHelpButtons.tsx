@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { MessageSquare, PhoneCall, Headphones, X } from 'lucide-react';
 
-export const FloatingHelpButtons: React.FC = () => {
+interface FloatingHelpButtonsProps {
+  className?: string;
+  isResellerMobile?: boolean;
+}
+
+export const FloatingHelpButtons: React.FC<FloatingHelpButtonsProps> = ({ 
+  className = '', 
+  isResellerMobile = false 
+}) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+    <div className={`fixed ${isResellerMobile ? 'bottom-20 md:bottom-6' : 'bottom-6'} right-6 z-40 flex flex-col items-end gap-2 ${className}`}>
       {expanded && (
         <div className="flex flex-col gap-2 animate-in slide-in-from-bottom-2 duration-150">
           <a

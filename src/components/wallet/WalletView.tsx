@@ -9,7 +9,7 @@ import { AdminWithdrawalManager } from './AdminWithdrawalManager';
 import { 
   Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
   XCircle, AlertCircle, Loader2, DollarSign, Building2, Smartphone, Plus,
-  Users, Check, X, ShieldCheck, CreditCard, Edit3, RotateCw
+  Users, Check, X, ShieldCheck, CreditCard, Edit3, RotateCw, Copy
 } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
@@ -1122,108 +1122,204 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
 
       {/* Modal: Request Deposit (Reseller) */}
       {isDepositModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
-              <div className="flex items-center gap-2">
-                <WalletIcon className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold">Request Balance Deposit</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/70 backdrop-blur-xs">
+          <div className="fixed sm:relative inset-0 sm:inset-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-md bg-white sm:rounded-2xl border-0 sm:border border-slate-200 shadow-2xl flex flex-col overflow-hidden animate-in fade-in sm:zoom-in-95 duration-150">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-4 bg-slate-900 text-white shrink-0 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md shadow-emerald-600/30">
+                  <WalletIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Wallet Recharge</h3>
+                  <p className="text-[11px] text-slate-400">Add funds to your wallet balance</p>
+                </div>
               </div>
               <button
                 onClick={() => setIsDepositModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleRequestDeposit} className="p-6 space-y-4">
-              {depositError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{depositError}</span>
+            <form onSubmit={handleRequestDeposit} className="flex-1 flex flex-col overflow-hidden">
+              {/* Scrollable Form Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                {depositError && (
+                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="font-medium">{depositError}</span>
+                  </div>
+                )}
+
+                {/* 1. Deposit Amount */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Deposit Amount (BDT) <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none font-bold text-slate-400 text-base">
+                      ৳
+                    </div>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={100}
+                      placeholder="e.g. 1000"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      className="w-full h-12 sm:h-11 pl-9 pr-3.5 text-base sm:text-sm font-extrabold font-mono bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none"
+                      required
+                    />
+                  </div>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Deposit Amount (BDT)
-                </label>
-                <input
-                  type="number"
-                  placeholder="e.g. 1000"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Payment Method
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['bkash', 'nagad', 'bank_transfer'] as PaymentMethod[]).map((m) => (
+                {/* Quick Amount Chips */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[500, 1000, 2000, 5000].map((amt) => (
                     <button
+                      key={amt}
                       type="button"
-                      key={m}
-                      onClick={() => setDepositPaymentMethod(m)}
-                      className={`p-2.5 rounded-xl border text-center text-xs font-bold uppercase transition-all ${
-                        depositPaymentMethod === m
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      onClick={() => setDepositAmount(amt.toString())}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all min-h-[38px] flex items-center justify-center cursor-pointer ${
+                        depositAmount === amt.toString()
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                       }`}
                     >
-                      {m === 'bank_transfer' ? 'Bank' : m}
+                      ৳{amt}
                     </button>
                   ))}
                 </div>
+
+                {/* 2. Payment Method Cards */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Select Payment Method <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {[
+                      { id: 'bkash', label: 'bKash', color: 'bg-pink-50 border-pink-300 text-pink-700', subText: 'Merchant Cash Out' },
+                      { id: 'nagad', label: 'Nagad', color: 'bg-orange-50 border-orange-300 text-orange-700', subText: 'Send Money' },
+                      { id: 'bank_transfer', label: 'Bank', color: 'bg-blue-50 border-blue-300 text-blue-700', subText: 'Online Bank Transfer' },
+                    ].map((m) => {
+                      const isSelected = depositPaymentMethod === m.id;
+                      return (
+                        <button
+                          type="button"
+                          key={m.id}
+                          onClick={() => setDepositPaymentMethod(m.id as PaymentMethod)}
+                          className={`p-3 min-h-[60px] rounded-xl border-2 text-left flex items-center justify-between transition-all cursor-pointer ${
+                            isSelected
+                              ? `${m.color} ring-2 ring-emerald-500/20 shadow-xs font-bold`
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div>
+                            <span className="text-sm font-extrabold uppercase block">{m.label}</span>
+                            <span className="text-[10px] opacity-75 font-medium block">{m.subText}</span>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            isSelected ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Payment Instructions Card with Account Number & Copy */}
+                <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl space-y-2 shadow-inner">
+                  <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider">
+                    <span>Deposit Instructions</span>
+                    <span className="text-emerald-400 font-extrabold">{depositPaymentMethod === 'bank_transfer' ? 'Bank Transfer' : depositPaymentMethod.toUpperCase()}</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Send funds to our official merchant account below, then enter your transaction details:
+                  </p>
+                  
+                  <div className="p-3 bg-slate-800 border border-slate-700 rounded-xl flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Official {depositPaymentMethod === 'bank_transfer' ? 'Bank A/C' : depositPaymentMethod} Number</span>
+                      <span className="font-mono text-sm font-extrabold text-white tracking-wider truncate block">
+                        {depositPaymentMethod === 'bkash' ? '01700-112233' : depositPaymentMethod === 'nagad' ? '01800-445566' : 'BRAC Bank: 1501203948571'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const num = depositPaymentMethod === 'bkash' ? '01700112233' : depositPaymentMethod === 'nagad' ? '01800445566' : '1501203948571';
+                        navigator.clipboard.writeText(num);
+                        alert('Account number copied to clipboard!');
+                      }}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 min-h-[44px] cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Sender Account / Mobile Number */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Sender Account / Mobile Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode={depositPaymentMethod === 'bank_transfer' ? 'text' : 'numeric'}
+                    placeholder="e.g. 01700000000 or Bank A/C Number"
+                    value={depositAccountNumber}
+                    onChange={(e) => setDepositAccountNumber(e.target.value)}
+                    className="w-full h-11 px-4 text-base sm:text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none"
+                    required
+                  />
+                </div>
+
+                {/* 5. Transaction ID (TxID) / Ref */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Transaction ID (TxID) / Ref <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 9K27B6X19W"
+                    value={depositTransactionId}
+                    onChange={(e) => setDepositTransactionId(e.target.value)}
+                    className="w-full h-11 px-4 text-base sm:text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none"
+                    required
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Sender Account / Mobile Number
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 01700000000 or Bank A/C Number"
-                  value={depositAccountNumber}
-                  onChange={(e) => setDepositAccountNumber(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Transaction ID (TxID) / Ref
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 9K27B6X19W"
-                  value={depositTransactionId}
-                  onChange={(e) => setDepositTransactionId(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+              {/* Sticky Footer */}
+              <div className="sticky bottom-0 z-20 bg-slate-50 px-4 sm:px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsDepositModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600"
+                  className="px-5 py-3 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm sm:text-xs rounded-xl transition-colors min-h-[44px] sm:min-h-[38px] flex items-center justify-center cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingDeposit}
-                  className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-6 py-3 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-extrabold text-sm sm:text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer active:scale-98 min-h-[44px] sm:min-h-[38px]"
                 >
-                  {submittingDeposit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Submit Request</span>
+                  {submittingDeposit ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Submit Recharge Request</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
