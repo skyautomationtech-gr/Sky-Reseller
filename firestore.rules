@@ -1,0 +1,137 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      allow read, list: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+
+    // Categories collection rules
+    match /categories/{categoryId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Brands collection rules
+    match /brands/{brandId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Products collection rules
+    match /products/{productId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Orders collection rules
+    match /orders/{orderId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Wallets collection rules
+    match /wallets/{walletId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Transactions collection rules
+    match /transactions/{transactionId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Commission Settings rules
+    match /commissionSettings/{settingId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Counters collection rules (for order numbering)
+    match /counters/{counterId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Notices collection rules
+    match /notices/{noticeId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Notice reads tracking rules
+    match /noticeReads/{readId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Support Tickets collection rules
+    match /supportTickets/{ticketId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Audit logs collection rules
+    match /auditLogs/{logId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // User sessions tracking rules
+    match /userSessions/{sessionId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // System settings rules
+    match /settings/{settingId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // App Version configuration
+    match /appVersion/{versionId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Withdrawal Requests collection rules
+    match /withdrawalRequests/{requestId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Payout Change Requests collection rules
+    match /payoutChangeRequests/{requestId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Product Reviews collection rules
+    match /productReviews/{reviewId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Feedback collection rules
+    match /feedback/{feedbackId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Changelogs collection rules
+    match /changelogs/{changelogId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}
+

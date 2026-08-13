@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Android CameraX / Scanner FIT_CENTER Preview Styles */
+#qr-reader-container {
+  width: 100% !important;
+  position: relative !important;
+  background-color: #0f172a !important;
+  overflow: hidden !important;
+  border-radius: 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#qr-reader-container video {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important; /* ScaleType FIT_CENTER: full sensor preview, no cropping */
+  object-position: center !important;
+  transform: none !important;
+}
+
+#qr-reader-container canvas {
+  object-fit: contain !important;
+}
+
+/* Hide html5-qrcode extra status text */
+#qr-reader-container__header_message,
+#qr-reader-container__status_span {
+  font-size: 11px !important;
+  color: #94a3b8 !important;
+}

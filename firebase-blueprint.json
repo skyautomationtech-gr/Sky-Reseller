@@ -1,0 +1,34 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile entity",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "shopName": { "type": "string", "maxLength": 100 },
+        "mobile": { "type": "string", "maxLength": 20 },
+        "email": { "type": "string", "maxLength": 100 },
+        "division": { "type": "string" },
+        "district": { "type": "string" },
+        "upazila": { "type": "string" },
+        "address": { "type": "string", "maxLength": 300 },
+        "profilePhotoUrl": { "type": "string" },
+        "shopPhotoUrl": { "type": "string" },
+        "nidUrl": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "admin", "reseller"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "suspended"] },
+        "rejectReason": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "fullName", "shopName", "mobile", "email", "role", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles collection"
+    }
+  }
+}
