@@ -75,14 +75,24 @@ function AppContent() {
 
     checkIfLockNeeded();
 
-    let appListener: any = null;
+    let appListenerHandle: any = null;
+    let isSubscribed = true;
+
     try {
-      appListener = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
         if (!isActive) {
           localStorage.setItem('appBackgroundedAt', Date.now().toString());
         } else {
           checkIfLockNeeded();
         }
+      }).then((handle) => {
+        if (isSubscribed) {
+          appListenerHandle = handle;
+        } else if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      }).catch((err) => {
+        console.warn('Capacitor App listener not active:', err);
       });
     } catch (err) {
       console.warn('Capacitor App listener not active:', err);
@@ -98,8 +108,13 @@ function AppContent() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (appListener && typeof appListener.remove === 'function') {
-        appListener.remove();
+      isSubscribed = false;
+      if (appListenerHandle && typeof appListenerHandle.remove === 'function') {
+        try {
+          appListenerHandle.remove();
+        } catch (e) {
+          // ignore
+        }
       }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };

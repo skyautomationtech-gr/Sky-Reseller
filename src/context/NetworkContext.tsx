@@ -78,11 +78,20 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           updateOnlineState(status.connected, status.connectionType);
         }
 
-        statusListener = await Network.addListener('networkStatusChange', (status) => {
+        const handle = await Network.addListener('networkStatusChange', (status) => {
           if (active) {
             updateOnlineState(status.connected, status.connectionType);
           }
         });
+        if (active) {
+          statusListener = handle;
+        } else if (handle && typeof handle.remove === 'function') {
+          try {
+            handle.remove();
+          } catch (e) {
+            // ignore
+          }
+        }
       } catch (err) {
         console.warn('Capacitor Network plugin not fully available, using window/navigator fallback:', err);
         if (active) {
