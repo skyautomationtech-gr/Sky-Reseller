@@ -134,15 +134,27 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
           throw new Error('Order document does not exist.');
         }
 
-        const currentOrderData = orderSnap.data() as Order;
+        const currentOrderData = {
+          ...orderSnap.data(),
+          id: orderSnap.id,
+        } as Order;
         const prevStatus = currentOrderData.status;
 
         // Case 1: Transitioning TO "delivered" for the first time
         if (newStatus === 'delivered' && prevStatus !== 'delivered') {
-          // A. Deduct stock from product / variant
           const productRef = doc(db, 'products', currentOrderData.productId);
-          const productSnap = await transaction.get(productRef);
+          const settingsRef = doc(db, 'commissionSettings', 'global');
+          const walletRef = doc(db, 'wallets', currentOrderData.resellerId);
 
+          // 1. ALL READS FIRST
+          const [productSnap, settingsSnap, walletSnap] = await Promise.all([
+            transaction.get(productRef),
+            transaction.get(settingsRef),
+            transaction.get(walletRef),
+          ]);
+
+          // Compute stock deduction
+          let productUpdatePayload: any = null;
           if (productSnap.exists()) {
             const productData = productSnap.data();
             let newMainStock = productData.stock || 0;
@@ -155,30 +167,25 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                 }
                 return v;
               });
-              // Recalculate main stock as sum of variants
               newMainStock = updatedVariants.reduce((sum: number, v: any) => sum + (v.stock || 0), 0);
-              transaction.update(productRef, {
+              productUpdatePayload = {
                 variants: updatedVariants,
                 stock: newMainStock,
                 updatedAt: serverTimestamp(),
-              });
+              };
             } else {
               newMainStock = Math.max(0, newMainStock - currentOrderData.quantity);
-              transaction.update(productRef, {
+              productUpdatePayload = {
                 stock: newMainStock,
                 updatedAt: serverTimestamp(),
-              });
+              };
             }
           }
 
-          // B. Calculate Commission
-          let calculatedCommission = currentOrderData.sellAmount; // Default: Sell Amount mode
-          const settingsRef = doc(db, 'commissionSettings', 'global');
-          const settingsSnap = await transaction.get(settingsRef);
-
+          // Compute Commission
+          let calculatedCommission = currentOrderData.sellAmount || 0; // Default: Sell Amount mode
           if (settingsSnap.exists()) {
             const settings = settingsSnap.data();
-            // Check category overrides
             const catOverride = settings.categoryOverrides?.find(
               (c: any) => c.categoryId === currentOrderData.categoryId
             );
@@ -187,43 +194,68 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
 
             if (activeType === 'percentage') {
               const pct = catOverride ? catOverride.value : settings.percentageValue || 10;
-              calculatedCommission = (currentOrderData.totalAmount * pct) / 100;
+              calculatedCommission = ((currentOrderData.totalAmount || 0) * pct) / 100;
             } else if (activeType === 'fixed') {
               const fixedVal = catOverride ? catOverride.value : settings.fixedValue || 100;
-              calculatedCommission = fixedVal * currentOrderData.quantity;
+              calculatedCommission = fixedVal * (currentOrderData.quantity || 1);
             }
           }
 
-          // C. Create Commission Transaction
+          // 2. ALL WRITES AFTER READS
+          if (productUpdatePayload) {
+            transaction.update(productRef, productUpdatePayload);
+          }
+
+          // Defensive verification of required transaction parameters
+          const resolvedOrderId = String(currentOrderData.id || orderSnap.id || order.id || '').trim();
+          const resolvedResellerId = String(currentOrderData.resellerId || order.resellerId || '').trim();
+          const resolvedOrderNumber = String(currentOrderData.orderNumber || order.orderNumber || 'ORD-UNKNOWN').trim();
+          const resolvedResellerName = String(currentOrderData.resellerName || order.resellerName || 'Reseller').trim();
+          const resolvedResellerShopName = String(currentOrderData.resellerShopName || order.resellerShopName || 'Shop').trim();
+          const resolvedAmount = Number(calculatedCommission) || 0;
+
+          if (!resolvedOrderId) {
+            console.error('Critical transaction failure: orderId is missing or undefined.', {
+              currentOrderData,
+              orderSnapId: orderSnap.id,
+              orderId: order.id,
+            });
+            throw new Error('Transaction aborted: orderId is required but was undefined.');
+          }
+
+          if (!resolvedResellerId) {
+            console.error('Critical transaction failure: resellerId is missing or undefined.', {
+              currentOrderData,
+              resellerId: order.resellerId,
+            });
+            throw new Error('Transaction aborted: resellerId is required but was undefined.');
+          }
+
           const newTxRef = doc(collection(db, 'transactions'));
           transaction.set(newTxRef, {
-            resellerId: currentOrderData.resellerId,
-            resellerName: currentOrderData.resellerName,
-            resellerShopName: currentOrderData.resellerShopName,
+            resellerId: resolvedResellerId,
+            resellerName: resolvedResellerName,
+            resellerShopName: resolvedResellerShopName,
             type: 'commission',
-            amount: calculatedCommission,
+            amount: resolvedAmount,
             status: 'approved',
-            orderId: currentOrderData.id,
-            orderNumber: currentOrderData.orderNumber,
+            orderId: resolvedOrderId,
+            orderNumber: resolvedOrderNumber,
             createdAt: serverTimestamp(),
           });
-
-          // D. Update Reseller Wallet
-          const walletRef = doc(db, 'wallets', currentOrderData.resellerId);
-          const walletSnap = await transaction.get(walletRef);
 
           if (walletSnap.exists()) {
             const wData = walletSnap.data();
             transaction.update(walletRef, {
-              balance: (wData.balance || 0) + calculatedCommission,
-              totalEarned: (wData.totalEarned || 0) + calculatedCommission,
+              balance: (wData.balance || 0) + resolvedAmount,
+              totalEarned: (wData.totalEarned || 0) + resolvedAmount,
               updatedAt: serverTimestamp(),
             });
           } else {
             transaction.set(walletRef, {
-              resellerId: currentOrderData.resellerId,
-              balance: calculatedCommission,
-              totalEarned: calculatedCommission,
+              resellerId: resolvedResellerId,
+              balance: resolvedAmount,
+              totalEarned: resolvedAmount,
               totalWithdrawn: 0,
               updatedAt: serverTimestamp(),
             });
@@ -232,10 +264,17 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
 
         // Case 2: Transitioning TO "cancelled" or "returned" AFTER it was already "delivered"
         if ((newStatus === 'cancelled' || newStatus === 'returned') && prevStatus === 'delivered') {
-          // Restore stock
           const productRef = doc(db, 'products', currentOrderData.productId);
-          const productSnap = await transaction.get(productRef);
+          const walletRef = doc(db, 'wallets', currentOrderData.resellerId);
 
+          // 1. ALL READS FIRST
+          const [productSnap, walletSnap] = await Promise.all([
+            transaction.get(productRef),
+            transaction.get(walletRef),
+          ]);
+
+          // Compute restored stock
+          let productUpdatePayload: any = null;
           if (productSnap.exists()) {
             const productData = productSnap.data();
             let newMainStock = productData.stock || 0;
@@ -248,23 +287,25 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                 return v;
               });
               newMainStock = updatedVariants.reduce((sum: number, v: any) => sum + (v.stock || 0), 0);
-              transaction.update(productRef, {
+              productUpdatePayload = {
                 variants: updatedVariants,
                 stock: newMainStock,
                 updatedAt: serverTimestamp(),
-              });
+              };
             } else {
               newMainStock = newMainStock + currentOrderData.quantity;
-              transaction.update(productRef, {
+              productUpdatePayload = {
                 stock: newMainStock,
                 updatedAt: serverTimestamp(),
-              });
+              };
             }
           }
 
-          // Reverse / deduct commission from wallet
-          const walletRef = doc(db, 'wallets', currentOrderData.resellerId);
-          const walletSnap = await transaction.get(walletRef);
+          // 2. ALL WRITES AFTER READS
+          if (productUpdatePayload) {
+            transaction.update(productRef, productUpdatePayload);
+          }
+
           if (walletSnap.exists()) {
             const wData = walletSnap.data();
             const revAmount = currentOrderData.sellAmount;
