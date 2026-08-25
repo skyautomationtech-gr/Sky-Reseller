@@ -1,7 +1,7 @@
 {
   "name": "Sky Reseller",
   "description": "Reseller Management System for Sky Automation Tech (Bangladesh)",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
 

@@ -8,12 +8,17 @@ interface ResellerNoticeListProps {
   user: UserProfile;
 }
 
-const TYPE_CONFIG: Record<NoticeType, { label: string; bg: string; text: string; border: string }> = {
+const TYPE_CONFIG: Partial<Record<NoticeType, { label: string; bg: string; text: string; border: string }>> = {
   new_product: { label: 'New Product', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   offer: { label: 'Offer / Promotion', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   holiday_notice: { label: 'Holiday Notice', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
   maintenance: { label: 'System Maintenance', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   payment_notice: { label: 'Payment Notice', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+  commission: { label: 'Commission Credit', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  payout: { label: 'Withdrawal Payout', bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
+  new_order: { label: 'New Order', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  order_status: { label: 'Order Update', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+  general: { label: 'General Announcement', bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200' },
 };
 
 export const ResellerNoticeList: React.FC<ResellerNoticeListProps> = ({ user }) => {
@@ -45,7 +50,11 @@ export const ResellerNoticeList: React.FC<ResellerNoticeListProps> = ({ user }) 
       const nList: Notice[] = [];
       noticesSnap.forEach((d) => {
         const n = Object.assign({ id: d.id }, d.data()) as unknown as Notice;
-        if (n.targetAudience === 'all' || n.targetResellerId === user.uid) {
+        const isTargetReseller = n.targetResellerId === user.uid;
+        const isAudienceAll = n.targetAudience === 'all' || !n.targetAudience;
+        const isAudienceReseller = n.targetAudience === 'reseller' && (!n.targetResellerId || isTargetReseller);
+
+        if (isAudienceAll || isAudienceReseller || isTargetReseller) {
           nList.push(n);
         }
       });
@@ -115,7 +124,7 @@ export const ResellerNoticeList: React.FC<ResellerNoticeListProps> = ({ user }) 
         ) : (
           <div className="divide-y divide-slate-100">
             {notices.map((n) => {
-              const conf = TYPE_CONFIG[n.type] || TYPE_CONFIG.new_product;
+              const conf = TYPE_CONFIG[n.type] || { label: n.type ? n.type.replace(/_/g, ' ').toUpperCase() : 'Notification', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' };
               const isRead = readNoticeIds.has(n.id);
               const dateObj = n.createdAt?.toDate ? n.createdAt.toDate() : new Date(n.createdAt || 0);
               const formattedDate = dateObj.toLocaleDateString('en-GB', {
@@ -158,9 +167,13 @@ export const ResellerNoticeList: React.FC<ResellerNoticeListProps> = ({ user }) 
 
                     <div className="pt-1">
                       {isRead ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500" title="Read" />
+                        <span title="Read">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        </span>
                       ) : (
-                        <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" title="Unread" />
+                        <span title="Unread">
+                          <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
+                        </span>
                       )}
                     </div>
                   </div>

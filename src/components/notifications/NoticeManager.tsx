@@ -12,12 +12,17 @@ interface NoticeManagerProps {
   user: UserProfile;
 }
 
-const TYPE_CONFIG: Record<NoticeType, { label: string; bg: string; text: string; border: string }> = {
+const TYPE_CONFIG: Partial<Record<NoticeType, { label: string; bg: string; text: string; border: string }>> = {
   new_product: { label: 'New Product', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   offer: { label: 'Offer / Promotion', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   holiday_notice: { label: 'Holiday Notice', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
   maintenance: { label: 'System Maintenance', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   payment_notice: { label: 'Payment Notice', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+  commission: { label: 'Commission Credit', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  payout: { label: 'Withdrawal Payout', bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
+  new_order: { label: 'New Order', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  order_status: { label: 'Order Update', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+  general: { label: 'General Announcement', bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200' },
 };
 
 export const NoticeManager: React.FC<NoticeManagerProps> = ({ user }) => {

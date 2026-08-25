@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Product, UserProfile } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Package, ShieldCheck, Tag, Layers, CheckCircle2, Star, MessageSquare, Info } from 'lucide-react';
+import { X, Package, ShieldCheck, Tag, Layers, CheckCircle2, Star, MessageSquare, Info, Share2, Sparkles } from 'lucide-react';
 import { ProductReviewsList } from '../reviews/ProductReviewsList';
 import { ProductReviewForm } from '../reviews/ProductReviewForm';
+import { SocialShareModal } from './SocialShareModal';
+import { AIMarketingModal } from '../marketing/AIMarketingModal';
+import { Bot } from 'lucide-react';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -21,6 +24,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<'details' | 'reviews'>('details');
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [isWritingReview, setIsWritingReview] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   if (!isOpen || !product) return null;
 
@@ -37,15 +42,38 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <Package className="w-5 h-5 text-blue-400" />
               <span className="font-bold text-sm">Product Detail View</span>
             </div>
-            <button
-              onClick={() => {
-                setIsWritingReview(false);
-                onClose();
-              }}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {user && (
+                <>
+                  <button
+                    onClick={() => setIsAIModalOpen(true)}
+                    className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-blue-600/20 transition-all cursor-pointer select-none"
+                    title="Generate Facebook / TikTok Bengali Caption with Gemini AI"
+                  >
+                    <Bot className="w-3.5 h-3.5 text-amber-300" />
+                    <span>AI Caption</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsShareModalOpen(true)}
+                    className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-orange-500/20 transition-all cursor-pointer select-none"
+                    title="Create Watermarked Marketing Image & Caption"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Poster Maker</span>
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => {
+                  setIsWritingReview(false);
+                  onClose();
+                }}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Nav Tabs */}
@@ -243,18 +271,65 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-4 sm:px-6 py-4 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0">
+        <div className="px-4 sm:px-6 py-4 bg-slate-100 border-t border-slate-200 flex items-center justify-between shrink-0">
+          {user ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsAIModalOpen(true)}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-blue-600/20 transition-all cursor-pointer select-none"
+              >
+                <Bot className="w-4 h-4 text-amber-300" />
+                <span>🤖 AI Caption</span>
+              </button>
+
+              <button
+                onClick={() => setIsShareModalOpen(true)}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-orange-500/20 transition-all cursor-pointer select-none"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Poster Maker</span>
+              </button>
+            </div>
+          ) : (
+            <div />
+          )}
+
           <button
             onClick={() => {
               setIsWritingReview(false);
               onClose();
             }}
-            className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors"
+            className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
           >
             Close
           </button>
         </div>
       </div>
+
+      {/* Social Share / Marketing Poster Maker Modal */}
+      {user && (
+        <SocialShareModal
+          product={product}
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          user={user}
+        />
+      )}
+
+      {/* Gemini AI Marketing Assistant Modal */}
+      {user && (
+        <AIMarketingModal
+          product={product}
+          initialProduct={product}
+          isOpen={isAIModalOpen}
+          onClose={() => setIsAIModalOpen(false)}
+          user={user}
+          onOpenSocialShare={(prod) => {
+            setIsAIModalOpen(false);
+            setIsShareModalOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 };

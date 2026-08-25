@@ -11,6 +11,7 @@ import { CommissionSummary } from '../commission/CommissionSummary';
 import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { ResellerNoticeList } from '../notifications/ResellerNoticeList';
 import { SupportSystem } from '../support/SupportSystem';
+import { LiveChatWindow } from '../chat/LiveChatWindow';
 import { ResellerSettings } from '../settings/ResellerSettings';
 import { ResellerProfilePage } from '../profile/ResellerProfilePage';
 import { ResellerHomePage } from '../home/ResellerHomePage';
@@ -209,6 +210,24 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
         return <ResellerNoticeList user={user} />;
       case 'support':
         return <SupportSystem user={user} />;
+      case 'chat':
+      case 'live_chat':
+        return (
+          <div className="h-[calc(100vh-8.5rem)]">
+            <LiveChatWindow
+              chatId={`chat_${user.uid}`}
+              currentUser={user}
+              partnerInfo={{
+                name: 'Sky Admin Team',
+                shopName: 'Official Helpdesk & Order Support',
+                role: 'admin',
+              }}
+              onOpenOrder={(ordId) => setActiveTab('orders')}
+              onOpenProduct={(prodId) => setActiveTab('products')}
+              className="h-full"
+            />
+          </div>
+        );
       case 'profile':
         return <ResellerProfilePage user={user} />;
       case 'settings':

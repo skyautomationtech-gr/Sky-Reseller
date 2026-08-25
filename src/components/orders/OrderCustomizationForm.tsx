@@ -509,7 +509,7 @@ export const OrderCustomizationForm: React.FC<OrderCustomizationFormProps> = ({
                           {/* Swatch Circle - Minimum 32px diameter */}
                           <span
                             className="w-8 h-8 rounded-full border-2 border-white shadow-md shrink-0 flex items-center justify-center"
-                            style={{ backgroundColor: variant.colorCode || '#cbd5e1' }}
+                            style={{ backgroundColor: (variant as any).colorCode || '#cbd5e1' }}
                           >
                             {isSelected && <Check className="w-4 h-4 text-white drop-shadow-md stroke-[3]" />}
                           </span>

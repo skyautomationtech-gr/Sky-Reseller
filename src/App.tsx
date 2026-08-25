@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { NoInternetOverlay, TopBannerIndicator } from './components/common/OfflineIndicators';
 import { registerPushNotificationListeners, requestAndRegisterPushNotifications } from './lib/pushNotifications';
 import { InAppPushBanner, PushBannerNotification } from './components/notifications/InAppPushBanner';
+import { subscribeToRealtimeNotifications } from './lib/notificationHelper';
 
 function AppContent() {
   const { isOnline } = useNetwork();
@@ -241,7 +242,7 @@ function AppContent() {
         if (profile && profile.status === 'approved') {
           checkVersionPopup(profile);
 
-          // Setup Push Notifications
+          // Setup Native / Capacitor Push Notifications
           registerPushNotificationListeners(
             profile.uid,
             (payload) => {
@@ -256,6 +257,11 @@ function AppContent() {
               handlePushActionNavigation(data);
             }
           );
+
+          // Setup Realtime In-App Firestore Notifications with Sound & Banner
+          const unsubNotifs = subscribeToRealtimeNotifications(profile, (notif) => {
+            setActivePushBanner(notif);
+          });
 
           // Request push notification permission on first launch/login
           if (!localStorage.getItem('push_permission_prompted')) {

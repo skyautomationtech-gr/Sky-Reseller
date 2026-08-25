@@ -5,6 +5,7 @@ import {
 import { db } from '../../lib/firebase';
 import { UserProfile, Wallet, WithdrawalRequest } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
+import { createAppNotification } from '../../lib/notificationHelper';
 import { 
   Clock, CheckCircle2, XCircle, AlertCircle, Loader2, Check, X, 
   Eye, FileText, Building2, Smartphone, Search, Filter, RefreshCw
@@ -115,6 +116,25 @@ export const AdminWithdrawalManager: React.FC<AdminWithdrawalManagerProps> = ({ 
         `Approved withdrawal request ${reqItem.requestId} for ৳${reqItem.amount} to ${reqItem.resellerName}`
       );
 
+      // Notify Reseller
+      try {
+        await createAppNotification({
+          title: `Withdrawal Approved! ৳${reqItem.amount} 💸`,
+          message: `Your withdrawal request #${reqItem.requestId} (৳${reqItem.amount}) was approved and processed to your account.`,
+          type: 'payout',
+          targetAudience: 'reseller',
+          targetResellerId: reqItem.resellerId,
+          metadata: {
+            requestId: reqItem.id,
+            amount: reqItem.amount,
+            type: 'payout',
+          },
+          priority: 'high',
+        });
+      } catch (notifErr) {
+        console.error('Failed to notify reseller of approved withdrawal:', notifErr);
+      }
+
       fetchWithdrawalRequests();
     } catch (err: any) {
       console.error('Approval failed:', err);
@@ -151,6 +171,25 @@ export const AdminWithdrawalManager: React.FC<AdminWithdrawalManagerProps> = ({ 
         selectedReqToReject.id,
         `Rejected withdrawal request ${selectedReqToReject.requestId} for ৳${selectedReqToReject.amount}. Reason: ${rejectionNotes.trim()}`
       );
+
+      // Notify Reseller
+      try {
+        await createAppNotification({
+          title: `Withdrawal Request Rejected ❌`,
+          message: `Your withdrawal request #${selectedReqToReject.requestId} (৳${selectedReqToReject.amount}) was declined. Reason: ${rejectionNotes.trim()}`,
+          type: 'payout',
+          targetAudience: 'reseller',
+          targetResellerId: selectedReqToReject.resellerId,
+          metadata: {
+            requestId: selectedReqToReject.id,
+            amount: selectedReqToReject.amount,
+            type: 'payout',
+          },
+          priority: 'normal',
+        });
+      } catch (notifErr) {
+        console.error('Failed to notify reseller of rejected withdrawal:', notifErr);
+      }
 
       setSelectedReqToReject(null);
       setRejectionNotes('');

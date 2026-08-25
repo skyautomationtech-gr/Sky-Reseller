@@ -52,27 +52,33 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
           signInErr.code === 'auth/user-not-found' ||
           signInErr.code === 'auth/wrong-password'
         ) {
-          console.log(`Demo account ${email} not found in Auth during quick login. Provisioning now...`);
-          const createCredential = await createUserWithEmailAndPassword(auth, email, pass);
-          const uid = createCredential.user.uid;
-          
-          const userDocRef = doc(db, 'users', uid);
-          await setDoc(userDocRef, {
-            uid,
-            fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
-            shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
-            mobile: role === 'super_admin' ? '01711111111' : '01722222222',
-            email,
-            role,
-            status: 'approved',
-            division: 'Dhaka',
-            district: 'Dhaka',
-            upazila: 'Tejgaon',
-            address: 'Sky Shebang Tower, Dhaka',
-            plainPassword: pass,
-            createdAt: serverTimestamp()
-          });
-          userCredential = createCredential;
+          console.log(`Demo account ${email} not found in Auth or credentials mismatch. Provisioning...`);
+          try {
+            const createCredential = await createUserWithEmailAndPassword(auth, email, pass);
+            const uid = createCredential.user.uid;
+            
+            const userDocRef = doc(db, 'users', uid);
+            await setDoc(userDocRef, {
+              uid,
+              fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
+              shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
+              mobile: role === 'super_admin' ? '01711111111' : '01722222222',
+              email,
+              role,
+              status: 'approved',
+              division: 'Dhaka',
+              district: 'Dhaka',
+              upazila: 'Tejgaon',
+              address: 'Sky Shebang Tower, Dhaka',
+              plainPassword: pass,
+              createdAt: serverTimestamp()
+            });
+            userCredential = createCredential;
+          } catch (createErr: any) {
+            if (createErr.code !== 'auth/email-already-in-use') {
+              throw createErr;
+            }
+          }
         } else {
           throw signInErr;
         }
@@ -108,7 +114,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
       return;
     }
 
-    if (!identifier || !password) {
+    if (!identifier.trim() || !password) {
       setError('Please enter your email/mobile and password.');
       return;
     }
@@ -126,9 +132,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
 
       const rawInput = identifier.trim();
       let targetEmail = rawInput.toLowerCase();
+      let isMobileLogin = false;
 
       // Check if identifier is a mobile number (does not contain @)
       if (!rawInput.includes('@')) {
+        isMobileLogin = true;
         const cleanMobile = rawInput.replace(/[^0-9+]/g, ''); // Strip spaces, hyphens, parentheses
 
         // Prepare candidate mobile formats to check in Firestore
@@ -146,18 +154,26 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         } else if (cleanMobile.startsWith('0')) {
           mobileCandidates.push('+88' + cleanMobile);
           mobileCandidates.push('88' + cleanMobile);
+          mobileCandidates.push(cleanMobile.slice(1)); // 17... (10 digits)
+        } else if (cleanMobile.length === 10 && cleanMobile.startsWith('1')) {
+          mobileCandidates.push('0' + cleanMobile);
+          mobileCandidates.push('+880' + cleanMobile);
+          mobileCandidates.push('880' + cleanMobile);
         }
 
         // Deduplicate non-empty candidates
         mobileCandidates = Array.from(new Set(mobileCandidates.filter(Boolean)));
 
         let foundEmail = '';
+        let foundUserDoc: any = null;
+
         for (const mNum of mobileCandidates) {
           try {
             const q = query(collection(db, 'users'), where('mobile', '==', mNum), limit(1));
             const querySnapshot = await getDocs(q);
             if (!querySnapshot.empty) {
-              foundEmail = querySnapshot.docs[0].data().email;
+              foundUserDoc = querySnapshot.docs[0].data();
+              foundEmail = foundUserDoc.email;
               break;
             }
           } catch (qErr) {
@@ -166,11 +182,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         }
 
         if (!foundEmail) {
-          setError('No reseller account found with this mobile number. Please check or use your registered email.');
+          setError('এই মোবাইল নম্বরে কোনো অ্যাকাউন্ট পাওয়া যায়নি। অনুগ্রহ করে সঠিক মোবাইল বা ইমেইল দিয়ে চেষ্টা করুন। (No account found with this mobile number)');
           setLoading(false);
           return;
         }
-        targetEmail = foundEmail;
+        targetEmail = foundEmail.toLowerCase().trim();
       }
 
       const signInPromise = signInWithEmailAndPassword(auth, targetEmail, password);
@@ -185,33 +201,57 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         const cleanEmail = targetEmail.toLowerCase().trim();
         // Self-heal demo credentials on-the-fly
         if (
-          (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-not-found') &&
+          (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password') &&
           password === 'shebang123' &&
           (cleanEmail === 'admin@skyshebang.com' || cleanEmail === 'reseller@skyshebang.com')
         ) {
           console.log(`Demo account ${cleanEmail} not found in Auth. Provisioning now...`);
           const role = cleanEmail === 'admin@skyshebang.com' ? 'super_admin' : 'reseller';
-          const createCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-          const uid = createCredential.user.uid;
-          
-          const userDocRef = doc(db, 'users', uid);
-          await setDoc(userDocRef, {
-            uid,
-            fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
-            shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
-            mobile: role === 'super_admin' ? '01711111111' : '01722222222',
-            email: cleanEmail,
-            role,
-            status: 'approved',
-            division: 'Dhaka',
-            district: 'Dhaka',
-            upazila: 'Tejgaon',
-            address: 'Sky Shebang Tower, Dhaka',
-            plainPassword: password,
-            createdAt: serverTimestamp()
-          });
-          userCredential = createCredential;
+          try {
+            const createCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+            const uid = createCredential.user.uid;
+            
+            const userDocRef = doc(db, 'users', uid);
+            await setDoc(userDocRef, {
+              uid,
+              fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
+              shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
+              mobile: role === 'super_admin' ? '01711111111' : '01722222222',
+              email: cleanEmail,
+              role,
+              status: 'approved',
+              division: 'Dhaka',
+              district: 'Dhaka',
+              upazila: 'Tejgaon',
+              address: 'Sky Shebang Tower, Dhaka',
+              plainPassword: password,
+              createdAt: serverTimestamp()
+            });
+            userCredential = createCredential;
+          } catch (cErr) {
+            throw authErr;
+          }
         } else {
+          // Check Firestore to see if account exists and give precise user feedback
+          try {
+            const q = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const uData = snap.docs[0].data();
+              if (uData.status === 'pending') {
+                setError('আপনার অ্যাকাউন্টটি এখনও অ্যাডমিন অনুমোদনের (Pending Approval) অপেক্ষায় রয়েছে। অনুমোদিত হলে লগইন করতে পারবেন।');
+                setLoading(false);
+                return;
+              } else if (uData.status === 'rejected') {
+                setError(`আপনার অ্যাকাউন্ট রেজিস্ট্রেশন বাতিল করা হয়েছে। কারণ: ${uData.rejectReason || 'বিস্তারিত তথ্যের জন্য সাপোর্টে যোগাযোগ করুন।'}`);
+                setLoading(false);
+                return;
+              }
+            }
+          } catch (fsErr) {
+            console.warn('Could not check user status in Firestore:', fsErr);
+          }
+
           throw authErr;
         }
       }
@@ -233,21 +273,22 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
 
       onLoginSuccess();
     } catch (err: any) {
-      console.error('Login error:', err);
-      let msg = 'Invalid email/mobile or password. Please try again.';
+      console.warn('Login attempt failed:', err?.code || err?.message);
+      let msg = 'ভুল ইমেইল/মোবাইল বা পাসওয়ার্ড। অনুগ্রহ করে আবার চেষ্টা করুন।';
       if (err.message === 'timeout') {
-        msg = 'Connection lost or timed out. Please check your internet connection and try again.';
+        msg = 'সার্ভার সংযোগ সময় শেষ হয়ে গেছে। আপনার ইন্টারনেট কানেকশন চেক করে পুনরায় চেষ্টা করুন। (Connection timed out)';
       } else if (
         err.code === 'auth/invalid-credential' ||
         err.code === 'auth/user-not-found' ||
-        err.code === 'auth/wrong-password' ||
-        err.code === 'auth/invalid-email'
+        err.code === 'auth/wrong-password'
       ) {
-        msg = 'Invalid email/mobile or password. Please try again or click Register below.';
+        msg = 'ইমেইল/মোবাইল অথবা পাসওয়ার্ড সঠিক নয়। পাসওয়ার্ড ভুলে গেলে নিচে "Forgot Password?" অপশনে ক্লিক করুন বা নতুন অ্যাকাউন্ট রেজিস্টার করুন।';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'ইমেইল অ্যাড্রেসের ফরম্যাট সঠিক নয়। সঠিক ইমেইল বা ১১ ডিজিটের মোবাইল নম্বর দিন।';
       } else if (err.code === 'auth/network-request-failed') {
-        msg = 'Network request failed. Please check your internet connection on your Android device and try again.';
+        msg = 'ইন্টারনেট সংযোগ পাওয়া যায়নি। আপনার ডিভাইস বা মোবাইল ডাটা/ওয়াইফাই চেক করে আবার চেষ্টা করুন।';
       } else if (err.code === 'auth/too-many-requests') {
-        msg = 'Access to this account has been temporarily disabled due to many failed login attempts. Please try again later.';
+        msg = 'অতিরিক্ত ভুল চেষ্টার কারণে অ্যাকাউন্ট সাময়িকভাবে বন্ধ রাখা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন বা পাসওয়ার্ড রিসেট করুন।';
       } else if (err.message && !err.message.includes('auth/')) {
         msg = err.message;
       }

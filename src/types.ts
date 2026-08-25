@@ -246,18 +246,20 @@ export interface CommissionSettings {
 }
 
 // Phase 5 Types
-export type NoticeType = 'new_product' | 'offer' | 'holiday_notice' | 'maintenance' | 'payment_notice';
-export type NoticeAudience = 'all' | 'specific';
+export type NoticeType = 'new_product' | 'offer' | 'holiday_notice' | 'maintenance' | 'payment_notice' | 'new_order' | 'order_status' | 'commission' | 'payout' | 'general';
+export type NoticeAudience = 'all' | 'specific' | 'admin' | 'reseller';
 
 export interface Notice {
   id: string;
   type: NoticeType;
   title: string;
   message: string;
+  content?: string;
   targetAudience: NoticeAudience;
   targetResellerId?: string | null;
   targetResellerName?: string | null;
-  publishedBy: string;
+  metadata?: Record<string, any>;
+  publishedBy?: string;
   publishedByName?: string;
   createdAt: any;
 }
@@ -430,6 +432,55 @@ export interface WithdrawalRequest {
   transactionId?: string | null;
 }
 
+export type ChatMessageType = 'text' | 'image' | 'voice' | 'order_link' | 'product_link';
 
+export interface ChatMessage {
+  id: string;
+  chatId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  senderPhotoUrl?: string;
+  text?: string;
+  type: ChatMessageType;
+  mediaUrl?: string;
+  mediaPath?: string;
+  mediaDuration?: number; // Voice duration in seconds
+  mediaName?: string;
+  mediaSize?: number;
+  orderId?: string;
+  orderNumber?: string;
+  orderStatus?: string;
+  orderAmount?: number;
+  productId?: string;
+  productName?: string;
+  productImage?: string;
+  productPrice?: number;
+  readBy?: string[];
+  read: boolean;
+  createdAt: any;
+}
 
-
+export interface ChatConversation {
+  id: string;
+  resellerId: string;
+  resellerName: string;
+  resellerShopName?: string;
+  resellerPhotoUrl?: string;
+  resellerMobile?: string;
+  resellerEmail?: string;
+  lastMessage?: string;
+  lastMessageType?: ChatMessageType;
+  lastSenderId?: string;
+  lastSenderName?: string;
+  lastSenderRole?: UserRole;
+  lastMessageAt: any;
+  unreadAdminCount: number;
+  unreadResellerCount: number;
+  typingReseller?: boolean;
+  typingAdmin?: boolean;
+  typingAdminName?: string;
+  isPinned?: boolean;
+  createdAt: any;
+  updatedAt: any;
+}

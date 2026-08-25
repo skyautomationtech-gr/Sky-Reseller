@@ -795,7 +795,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ user }) => {
 
           {/* TAB 7: RESELLER FEEDBACK */}
           {activeTab === 'feedback' && (
-            <AdminFeedbackList user={user || { uid: 'admin', fullName: 'Admin', role: 'admin', email: '' }} />
+            <AdminFeedbackList user={user} />
           )}
         </div>
       )}

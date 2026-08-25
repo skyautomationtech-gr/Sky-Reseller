@@ -6,6 +6,7 @@ import { db } from '../../lib/firebase';
 import { Product, ProductVariant, UserProfile, CartItem } from '../../types';
 import { X, ShoppingBag, Search, Check, AlertCircle, Loader2, Sparkles, AlertTriangle, WifiOff } from 'lucide-react';
 import { useNetwork } from '../../context/NetworkContext';
+import { createAppNotification } from '../../lib/notificationHelper';
 
 interface CreateOrderModalProps {
   isOpen: boolean;
@@ -317,6 +318,30 @@ export const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
           });
         }
       });
+
+      // Notify Admins
+      try {
+        const primaryOrderNumber = isCartMode && cartItems && cartItems.length > 0 
+          ? `Cart (${cartItems.length} items)` 
+          : 'New';
+
+        await createAppNotification({
+          title: `New Order: #${primaryOrderNumber} 📦`,
+          message: `Reseller ${user.fullName || user.shopName || 'Reseller'} placed a new order for ${customerName.trim()} (৳${totalAmount}).`,
+          type: 'new_order',
+          targetAudience: 'admin',
+          metadata: {
+            orderNumber: primaryOrderNumber,
+            resellerId: user.uid,
+            customerName: customerName.trim(),
+            totalAmount,
+            type: 'new_order',
+          },
+          priority: 'high',
+        });
+      } catch (notifErr) {
+        console.error('Failed to notify admin of new order:', notifErr);
+      }
 
       onOrderCreated();
       onClose();

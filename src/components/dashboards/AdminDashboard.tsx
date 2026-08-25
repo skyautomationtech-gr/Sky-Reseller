@@ -16,6 +16,7 @@ import { CommissionSettingsView } from '../commission/CommissionSettings';
 import { ReportsPage } from '../reports/ReportsPage';
 import { NoticeManager } from '../notifications/NoticeManager';
 import { SupportSystem } from '../support/SupportSystem';
+import { AdminLiveChatHub } from '../chat/AdminLiveChatHub';
 import { SettingsPage } from '../settings/SettingsPage';
 import { SecurityPage } from '../security/SecurityPage';
 import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
@@ -144,6 +145,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         return <NoticeManager user={user} />;
       case 'support':
         return <SupportSystem user={user} />;
+      case 'chat':
+      case 'live_chat':
+        return (
+          <AdminLiveChatHub
+            user={user}
+            onOpenOrder={(ordId) => setActiveTab('orders')}
+            onOpenProduct={(prodId) => setActiveTab('products')}
+          />
+        );
       case 'settings':
         return <SettingsPage user={user} onNavigateCommission={() => setActiveTab('commission')} onLogout={onLogout} />;
       case 'audit':

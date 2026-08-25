@@ -14,6 +14,7 @@ import {
   ChevronRight, Calendar, FileText, Star, Sparkles, Gift, RotateCw
 } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
+import { createAppNotification } from '../../lib/notificationHelper';
 
 interface OrderListProps {
   user: UserProfile;
@@ -126,6 +127,9 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
     setUpdatingStatusId(order.id);
     setActionError('');
 
+    let currentOrderData: any = null;
+    let calculatedCommission = 0;
+
     try {
       await runTransaction(db, async (transaction) => {
         const orderRef = doc(db, 'orders', order.id);
@@ -134,7 +138,7 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
           throw new Error('Order document does not exist.');
         }
 
-        const currentOrderData = {
+        currentOrderData = {
           ...orderSnap.data(),
           id: orderSnap.id,
         } as Order;
@@ -183,7 +187,7 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
           }
 
           // Compute Commission
-          let calculatedCommission = currentOrderData.sellAmount || 0; // Default: Sell Amount mode
+          calculatedCommission = currentOrderData.sellAmount || 0; // Default: Sell Amount mode
           if (settingsSnap.exists()) {
             const settings = settingsSnap.data();
             const catOverride = settings.categoryOverrides?.find(
@@ -323,6 +327,47 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
           updatedAt: serverTimestamp(),
         });
       });
+
+      // Dispatch in-app and system notification to the reseller
+      try {
+        const orderNum = currentOrderData.orderNumber || 'ORD-UNKNOWN';
+        const prodName = currentOrderData.productName || 'product';
+        const formattedStatus = newStatus.replace(/_/g, ' ').toUpperCase();
+
+        if (newStatus === 'delivered') {
+          await createAppNotification({
+            title: `Order #${orderNum} Delivered! ৳${calculatedCommission} Earned 🎉`,
+            message: `Your order for "${prodName}" was delivered successfully. ৳${calculatedCommission} commission added to your wallet!`,
+            type: 'commission',
+            targetAudience: 'reseller',
+            targetResellerId: currentOrderData.resellerId,
+            metadata: {
+              orderId: order.id,
+              orderNumber: orderNum,
+              type: 'commission',
+              amount: calculatedCommission,
+            },
+            priority: 'high',
+          });
+        } else {
+          await createAppNotification({
+            title: `Order #${orderNum}: ${formattedStatus} 🚚`,
+            message: `Status of order #${orderNum} (${prodName}) has been updated to "${formattedStatus}".`,
+            type: 'order_status',
+            targetAudience: 'reseller',
+            targetResellerId: currentOrderData.resellerId,
+            metadata: {
+              orderId: order.id,
+              orderNumber: orderNum,
+              type: 'order_status',
+              status: newStatus,
+            },
+            priority: 'normal',
+          });
+        }
+      } catch (notifErr) {
+        console.error('Failed to dispatch status notification:', notifErr);
+      }
 
       fetchOrders();
     } catch (err: any) {
@@ -623,10 +668,18 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
 
                         {/* Actions */}
                         <td className="px-5 py-4 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setSelectedOrderForInvoice(order)}
+                              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1 border border-blue-200 shadow-2xs"
+                              title="Generate/Print Customer Cash Memo"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>ক্যাশ মেমো</span>
+                            </button>
                             <button
                               onClick={() => setSelectedOrderForDetails(order)}
-                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-slate-200"
                               title="View Order Details"
                             >
                               <Eye className="w-4 h-4" />
@@ -748,6 +801,14 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                       )}
 
                       <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                          onClick={() => setSelectedOrderForInvoice(order)}
+                          className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1 border border-blue-200 shadow-2xs"
+                          title="Generate/Print Customer Cash Memo"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>মেমো</span>
+                        </button>
                         <button
                           onClick={() => setSelectedOrderForDetails(order)}
                           className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 rounded-xl transition-all font-semibold text-xs flex items-center gap-1 border border-slate-200"
@@ -940,10 +1001,10 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                       setSelectedOrderForDetails(null);
                       setSelectedOrderForInvoice(orderToInv);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-sm transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
                   >
                     <FileText className="w-4 h-4" />
-                    <span>{selectedOrderForDetails.invoiceNumber ? 'View Invoice' : 'Generate Invoice'}</span>
+                    <span>কাস্টমার ক্যাশ মেমো / ইনভয়েস</span>
                   </button>
                 )}
                 {selectedOrderForDetails.status === 'delivered' && (
@@ -989,6 +1050,7 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
       <InvoiceModal
         isOpen={!!selectedOrderForInvoice}
         order={selectedOrderForInvoice}
+        currentUser={user}
         onClose={() => setSelectedOrderForInvoice(null)}
         onInvoiceGenerated={(updatedOrder) => {
           setOrders((prev) =>

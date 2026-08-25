@@ -275,7 +275,9 @@ export const VariantManager: React.FC<VariantManagerProps> = ({
                   </button>
                   <input
                     type="file"
-                    ref={(el) => (fileInputRefs.current[idx] = el)}
+                    ref={(el) => {
+                      fileInputRefs.current[idx] = el;
+                    }}
                     onChange={(e) => handleVariantImageUpload(idx, e)}
                     multiple
                     accept="image/*"

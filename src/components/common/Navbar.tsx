@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../../types';
 import { GlobalSearchBar } from './GlobalSearchBar';
 import { QrScannerModal } from './QrScannerModal';
 import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
+import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
 import { SkyLogo } from './SkyLogo';
-import { LogOut, Menu, Store, QrCode, RotateCw, Search, ArrowLeft } from 'lucide-react';
+import { LogOut, Menu, Store, QrCode, RotateCw, Search, ArrowLeft, MessagesSquare } from 'lucide-react';
 import { useRefresh } from '../../context/RefreshContext';
 
 interface NavbarProps {
@@ -25,7 +26,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isAdminOrSuperAdmin = user.role === 'super_admin' || user.role === 'admin';
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const { isRefreshing, refreshCurrentPage, formattedLastUpdated } = useRefresh();
+
+  useEffect(() => {
+    const unsub = subscribeToTotalUnreadChatCount(user.role, user.uid, (cnt) => {
+      setUnreadChatCount(cnt);
+    });
+    return () => unsub();
+  }, [user.role, user.uid]);
 
   // Expanded search overlay mode for mobile
   if (isSearchExpanded && isAdminOrSuperAdmin) {
@@ -33,7 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <header className="bg-white border-b border-slate-200 h-16 px-4 flex items-center sticky top-0 z-20 shadow-xs gap-3">
         <button
           onClick={() => setIsSearchExpanded(false)}
-          className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
+          className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0 cursor-pointer"
           title="Back"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -54,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {onToggleMobileMenu && (
           <button
             onClick={onToggleMobileMenu}
-            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
             title="Open Menu"
           >
             <Menu className="w-5 h-5" />
@@ -80,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {isAdminOrSuperAdmin && (
           <button
             onClick={() => setIsSearchExpanded(true)}
-            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+            className="md:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
             title="Search"
           >
             <Search className="w-5 h-5" />
@@ -91,7 +100,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={() => refreshCurrentPage()}
           disabled={isRefreshing}
-          className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold py-2 px-3 rounded-xl transition-all border border-blue-200/80 disabled:opacity-50 group min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 justify-center"
+          className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold py-2 px-3 rounded-xl transition-all border border-blue-200/80 disabled:opacity-50 group min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 justify-center cursor-pointer"
           title={`Refresh data (Press R)\nLast updated: ${formattedLastUpdated}`}
         >
           <RotateCw className={`w-4 h-4 text-blue-600 transition-transform ${isRefreshing ? 'animate-spin text-blue-800' : 'group-hover:rotate-180 duration-500'}`} />
@@ -102,7 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {isAdminOrSuperAdmin && (
           <button
             onClick={() => setIsQrModalOpen(true)}
-            className="hidden sm:flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-2 px-3 rounded-xl transition-colors min-h-[38px]"
+            className="hidden sm:flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-2 px-3 rounded-xl transition-colors min-h-[38px] cursor-pointer"
             title="Scan QR Code"
           >
             <QrCode className="w-4 h-4 text-blue-600" />
@@ -116,6 +125,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="text-slate-300">|</span>
           <span className="capitalize text-slate-500 font-medium">{user.role.replace('_', ' ')}</span>
         </div>
+
+        {/* Live Chat Direct Shortcut Button */}
+        <button
+          onClick={() => onNavigateTab && onNavigateTab('chat')}
+          className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
+          title="Open Live Chat"
+        >
+          <MessagesSquare className="w-5 h-5 text-slate-700 hover:text-blue-600" />
+          {unreadChatCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 bg-rose-500 text-white font-black text-[10px] w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-white animate-bounce">
+              {unreadChatCount > 9 ? '9+' : unreadChatCount}
+            </span>
+          )}
+        </button>
 
         {/* Realtime Notification Bell with Badge & Dropdown */}
         <NotificationBellDropdown
@@ -134,7 +157,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="Go to Profile"
         >
           {user.profilePhotoUrl ? (
-            <img src={user.profilePhotoUrl} alt={user.fullName} className="w-full h-full object-cover referrerPolicy='no-referrer'" />
+            <img src={user.profilePhotoUrl} alt={user.fullName} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase">
               {user.fullName.charAt(0)}
@@ -148,5 +171,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-
-

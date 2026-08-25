@@ -6,12 +6,14 @@ import { db } from '../../lib/firebase';
 import { Product, ProductVariant, UserProfile, Wallet, Category, CompanySettings, CartItem } from '../../types';
 import { ProductDetailModal } from '../inventory/ProductDetailModal';
 import { CreateOrderModal } from '../orders/CreateOrderModal';
+import { SocialShareModal } from '../inventory/SocialShareModal';
+import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SkyLogo } from '../common/SkyLogo';
 import { 
   Store, Search, Wallet as WalletIcon, ShoppingBag, Clock, ArrowRight, 
   Sparkles, Layers, ChevronRight, AlertCircle, Headphones, Watch, Zap, 
   Cable, Speaker, BatteryCharging, Smartphone, Package, Check, ChevronLeft,
-  ShoppingCart, Trash2, Plus, Minus, AlertTriangle
+  ShoppingCart, Trash2, Plus, Minus, AlertTriangle, Share2, Bot
 } from 'lucide-react';
 
 interface ResellerHomePageProps {
@@ -49,6 +51,12 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
   // Modals
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  const [shareModalProduct, setShareModalProduct] = useState<Product | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  const [aiModalProduct, setAiModalProduct] = useState<Product | null>(null);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   const [orderProduct, setOrderProduct] = useState<Product | null>(null);
   const [orderVariant, setOrderVariant] = useState<ProductVariant | null>(null);
@@ -582,6 +590,14 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                           }}
                           onAddToCart={(prod) => handleAddToCartClick(prod)}
                           onBuyNow={(prod) => handleBuyNowClick(prod)}
+                          onShareClick={(prod) => {
+                            setShareModalProduct(prod);
+                            setIsShareModalOpen(true);
+                          }}
+                          onAICopyClick={(prod) => {
+                            setAiModalProduct(prod);
+                            setIsAIModalOpen(true);
+                          }}
                         />
                       ))}
                     </div>
@@ -629,6 +645,14 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                         }}
                         onAddToCart={(prod) => handleAddToCartClick(prod)}
                         onBuyNow={(prod) => handleBuyNowClick(prod)}
+                        onShareClick={(prod) => {
+                          setShareModalProduct(prod);
+                          setIsShareModalOpen(true);
+                        }}
+                        onAICopyClick={(prod) => {
+                          setAiModalProduct(prod);
+                          setIsAIModalOpen(true);
+                        }}
                       />
                     ))}
                 </div>
@@ -646,6 +670,34 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         onClose={() => {
           setIsDetailOpen(false);
           setDetailProduct(null);
+        }}
+      />
+
+      {/* SOCIAL SHARE & MARKETING POST MAKER MODAL */}
+      <SocialShareModal
+        product={shareModalProduct}
+        isOpen={isShareModalOpen}
+        onClose={() => {
+          setIsShareModalOpen(false);
+          setShareModalProduct(null);
+        }}
+        user={user}
+      />
+
+      {/* GEMINI AI MARKETING ASSISTANT MODAL */}
+      <AIMarketingModal
+        product={aiModalProduct}
+        initialProduct={aiModalProduct}
+        isOpen={isAIModalOpen}
+        onClose={() => {
+          setIsAIModalOpen(false);
+          setAiModalProduct(null);
+        }}
+        user={user}
+        onOpenSocialShare={(prod) => {
+          setIsAIModalOpen(false);
+          setShareModalProduct(prod);
+          setIsShareModalOpen(true);
         }}
       />
 
@@ -1026,6 +1078,8 @@ interface ProductCardProps {
   onDetailClick: () => void;
   onAddToCart: (product: Product) => void;
   onBuyNow: (product: Product) => void;
+  onShareClick?: (product: Product) => void;
+  onAICopyClick?: (product: Product) => void;
   isGridMode?: boolean;
 }
 
@@ -1034,6 +1088,8 @@ const ProductCard: React.FC<ProductCardProps> = ({
   onDetailClick,
   onAddToCart,
   onBuyNow,
+  onShareClick,
+  onAICopyClick,
   isGridMode = false
 }) => {
   const coverImage = product.images?.[0]?.url;
@@ -1055,26 +1111,30 @@ const ProductCard: React.FC<ProductCardProps> = ({
       <div>
         {/* Card Image Area */}
         <div 
-          onClick={onDetailClick}
-          className="relative aspect-square bg-slate-100 overflow-hidden cursor-pointer"
+          className="relative aspect-square bg-slate-100 overflow-hidden"
         >
-          {coverImage ? (
-            <img 
-              src={coverImage} 
-              alt={product.name} 
-              className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-                isOutOfStock ? 'opacity-40 filter grayscale' : ''
-              }`}
-            />
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-              <Package className="w-8 h-8 mb-1 opacity-50" />
-              <span className="text-[10px] font-semibold">No Image</span>
-            </div>
-          )}
+          <div 
+            onClick={onDetailClick}
+            className="w-full h-full cursor-pointer"
+          >
+            {coverImage ? (
+              <img 
+                src={coverImage} 
+                alt={product.name} 
+                className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                  isOutOfStock ? 'opacity-40 filter grayscale' : ''
+                }`}
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                <Package className="w-8 h-8 mb-1 opacity-50" />
+                <span className="text-[10px] font-semibold">No Image</span>
+              </div>
+            )}
+          </div>
 
           {/* Badges Overlays */}
-          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start">
+          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start pointer-events-none">
             {isOutOfStock ? (
               <span className="bg-rose-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-xs uppercase">
                 Out of Stock
@@ -1086,7 +1146,36 @@ const ProductCard: React.FC<ProductCardProps> = ({
             ) : null}
           </div>
 
-          <span className="absolute bottom-2.5 right-2.5 bg-slate-900/80 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-md">
+          {/* Quick Floating Buttons (AI Copy + Poster Maker) */}
+          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+            {onAICopyClick && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAICopyClick(product);
+                }}
+                className="w-8 h-8 rounded-full bg-blue-600/90 hover:bg-blue-600 backdrop-blur-xs text-white flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                title="Generate AI Marketing Caption (Facebook / TikTok)"
+              >
+                <Bot className="w-4 h-4 text-amber-300" />
+              </button>
+            )}
+
+            {onShareClick && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShareClick(product);
+                }}
+                className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-orange-600 backdrop-blur-xs text-white flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                title="Create Custom Watermarked Poster & Share Caption"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" />
+              </button>
+            )}
+          </div>
+
+          <span className="absolute bottom-2.5 right-2.5 bg-slate-900/80 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-md pointer-events-none">
             SKU: {product.sku}
           </span>
         </div>
@@ -1094,9 +1183,32 @@ const ProductCard: React.FC<ProductCardProps> = ({
         {/* Card Body Info */}
         <div className="p-3.5 space-y-2">
           <div>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 block">
-              {product.categoryName || 'Gadgets'}
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600">
+                {product.categoryName || 'Gadgets'}
+              </span>
+              <div className="flex items-center gap-2">
+                {onAICopyClick && (
+                  <button
+                    onClick={() => onAICopyClick(product)}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 hover:underline cursor-pointer"
+                    title="Generate AI Facebook / TikTok Post"
+                  >
+                    <Bot className="w-3 h-3 text-blue-600" />
+                    <span>AI Copy</span>
+                  </button>
+                )}
+                {onShareClick && (
+                  <button
+                    onClick={() => onShareClick(product)}
+                    className="text-[10px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>Poster</span>
+                  </button>
+                )}
+              </div>
+            </div>
             <h3 
               onClick={onDetailClick}
               className="text-xs font-extrabold text-slate-900 leading-snug line-clamp-2 hover:text-blue-600 cursor-pointer mt-0.5"

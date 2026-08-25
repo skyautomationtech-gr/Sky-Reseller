@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../../types';
 import { getCurrentAppVersion } from '../../lib/versionService';
+import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
 import { ChangelogModal } from '../version/ChangelogModal';
 import { SkyLogo } from './SkyLogo';
 import { doc, getDoc } from 'firebase/firestore';
@@ -9,7 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, Shield, Users, CheckCircle2, Package, 
   Layers, Tag, ShoppingBag, Wallet, Percent, BarChart3, 
-  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X, Store, Sparkles, Star, MessageSquare
+  Bell, LifeBuoy, Settings, FileText, User as UserIcon, LogOut, X, Store, Sparkles, Star, MessageSquare, MessagesSquare
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('Sky Reseller');
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
 
   useEffect(() => {
     getCurrentAppVersion().then((v) => {
@@ -55,12 +57,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     };
     fetchLogo();
-  }, []);
+
+    // Subscribe to unread live chat count
+    const unsubChat = subscribeToTotalUnreadChatCount(user.role, user.uid, (cnt) => {
+      setUnreadChatCount(cnt);
+    });
+
+    return () => unsubChat();
+  }, [user.role, user.uid]);
 
   const getMenuItems = () => {
     if (role === 'super_admin') {
       return [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'chat', label: 'Live Chat', icon: MessagesSquare, badge: unreadChatCount },
         { id: 'approvals', label: 'Approvals', icon: CheckCircle2 },
         { id: 'admin', label: 'Admin Management', icon: Shield, action: onOpenAddAdmin },
         { id: 'resellers', label: 'Resellers', icon: Users },
@@ -72,13 +82,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'commission', label: 'Commission', icon: Percent },
         { id: 'reports', label: 'Reports', icon: BarChart3 },
         { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'support', label: 'Support', icon: LifeBuoy },
+        { id: 'support', label: 'Support & Tickets', icon: LifeBuoy },
         { id: 'settings', label: 'Settings', icon: Settings },
         { id: 'audit', label: 'Audit Logs', icon: FileText },
       ];
     } else if (role === 'admin') {
       return [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'chat', label: 'Live Chat', icon: MessagesSquare, badge: unreadChatCount },
         { id: 'approvals', label: 'Approvals', icon: CheckCircle2 },
         { id: 'resellers', label: 'Resellers', icon: Users },
         { id: 'products', label: 'Products', icon: Package },
@@ -89,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'commission', label: 'Commission', icon: Percent },
         { id: 'reports', label: 'Reports', icon: BarChart3 },
         { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'support', label: 'Support', icon: LifeBuoy },
+        { id: 'support', label: 'Support & Tickets', icon: LifeBuoy },
         { id: 'settings', label: 'Settings', icon: Settings },
       ];
     } else {
@@ -97,6 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return [
         { id: 'home', label: 'Home', icon: Store },
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'chat', label: 'Live Chat', icon: MessagesSquare, badge: unreadChatCount },
         { id: 'products', label: 'Products', icon: Package },
         { id: 'orders', label: 'Orders', icon: ShoppingBag },
         { id: 'reviews', label: 'Write Review', icon: Star },
@@ -104,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'wallet', label: 'Wallet', icon: Wallet },
         { id: 'commission', label: 'Commission', icon: Percent },
         { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'support', label: 'Support', icon: LifeBuoy },
+        { id: 'support', label: 'Support & Help', icon: LifeBuoy },
         { id: 'profile', label: 'Profile', icon: UserIcon },
         { id: 'settings', label: 'Settings', icon: Settings },
       ];
@@ -120,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0"
+            className="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -138,7 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
           <div className="overflow-hidden">
             <p className="text-xs font-semibold text-white truncate">{user.fullName}</p>
-            <p className="text-[10px] text-slate-400 truncate">{user.shopName}</p>
+            <p className="text-[10px] text-slate-400 truncate">{user.shopName || user.role}</p>
           </div>
         </div>
       </div>
@@ -147,6 +159,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
+          const badgeCount = item.badge || 0;
+
           return (
             <button
               key={item.id}
@@ -158,14 +172,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }
                 if (onCloseMobile) onCloseMobile();
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors min-h-[44px] ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors min-h-[44px] cursor-pointer ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="truncate">{item.label}</span>
+              <div className="flex items-center gap-3 min-w-0">
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </div>
+
+              {badgeCount > 0 && (
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                  isActive ? 'bg-white text-blue-600' : 'bg-rose-500 text-white animate-pulse'
+                }`}>
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+              )}
             </button>
           );
         })}
@@ -174,7 +198,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-t border-slate-800 space-y-2">
         <button
           onClick={() => setIsChangelogOpen(true)}
-          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors group min-h-[36px]"
+          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors group min-h-[36px] cursor-pointer"
         >
           <div className="flex items-center gap-1.5 text-[11px]">
             <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
@@ -185,6 +209,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
         </button>
       </div>
+
+      {isChangelogOpen && (
+        <ChangelogModal
+          isOpen={isChangelogOpen}
+          onClose={() => setIsChangelogOpen(false)}
+          currentVersion={currentVersion}
+        />
+      )}
     </aside>
   );
 
@@ -221,12 +253,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
       </AnimatePresence>
-
-      <ChangelogModal
-        isOpen={isChangelogOpen}
-        onClose={() => setIsChangelogOpen(false)}
-        currentVersion={currentVersion}
-      />
     </>
   );
 };

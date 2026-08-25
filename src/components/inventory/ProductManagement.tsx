@@ -4,10 +4,12 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Product, Category, Brand, UserProfile, ProductMedia, ProductVideoMedia, ProductVariant } from '../../types';
 import { VariantManager } from './VariantManager';
+import { SocialShareModal } from './SocialShareModal';
+import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { 
   Package, Plus, Edit2, Trash2, Search, AlertTriangle, 
   CheckCircle2, XCircle, QrCode as QrIcon, Loader2, 
-  Upload, Play, Download, Eye, ChevronLeft, ChevronRight, Palette, RotateCw
+  Upload, Play, Download, Eye, ChevronLeft, ChevronRight, Palette, RotateCw, Sparkles, Share2, Bot
 } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { QRCodeSVG } from 'qrcode.react';
@@ -38,6 +40,10 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [viewingQrProduct, setViewingQrProduct] = useState<Product | null>(null);
   const [viewingProductDetails, setViewingProductDetails] = useState<Product | null>(null);
+  const [shareModalProduct, setShareModalProduct] = useState<Product | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [aiModalProduct, setAiModalProduct] = useState<Product | null>(null);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
@@ -659,8 +665,18 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                   <span className="text-[10px] text-slate-400 font-medium">Tap card for details</span>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
+                      onClick={() => {
+                        setAiModalProduct(p);
+                        setIsAIModalOpen(true);
+                      }}
                       className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                      title="Generate AI Marketing Caption"
+                    >
+                      <Bot className="w-4 h-4 text-blue-600" />
+                    </button>
+                    <button
+                      onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
+                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
                     >
                       <Eye className="w-4 h-4" />
                       <span>View</span>
@@ -828,6 +844,16 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setAiModalProduct(p);
+                            setIsAIModalOpen(true);
+                          }}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Generate AI Marketing Caption (Gemini AI)"
+                        >
+                          <Bot className="w-4 h-4 text-blue-600" />
+                        </button>
                         <button
                           onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
                           className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1087,10 +1113,25 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                     </div>
                   )}
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
-                    <p className="font-bold">Marketing Toolkit</p>
-                    <p className="text-blue-600 text-[11px]">
-                      Download product images and videos directly to your device for publishing on Facebook, Instagram, TikTok, or WhatsApp status.
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <span>Reseller Marketing Hub</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShareModalProduct(viewingProductDetails);
+                          setIsShareModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-orange-500/20 transition-all cursor-pointer select-none"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Create Social Post & Watermark</span>
+                      </button>
+                    </div>
+                    <p className="text-blue-700 text-[11px] leading-relaxed">
+                      Generate branded 1:1 square posts with your custom resale price, shop logo/watermark, and pre-formatted Facebook/WhatsApp marketing captions with one click!
                     </p>
                   </div>
                 </div>
@@ -1587,6 +1628,34 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
           </div>
         </div>
       )}
+
+      {/* Social Share & Marketing Post Maker Modal */}
+      <SocialShareModal
+        product={shareModalProduct}
+        isOpen={isShareModalOpen}
+        onClose={() => {
+          setIsShareModalOpen(false);
+          setShareModalProduct(null);
+        }}
+        user={user}
+      />
+
+      {/* Gemini AI Marketing Assistant Modal */}
+      <AIMarketingModal
+        product={aiModalProduct}
+        initialProduct={aiModalProduct}
+        isOpen={isAIModalOpen}
+        onClose={() => {
+          setIsAIModalOpen(false);
+          setAiModalProduct(null);
+        }}
+        user={user}
+        onOpenSocialShare={(prod) => {
+          setIsAIModalOpen(false);
+          setShareModalProduct(prod);
+          setIsShareModalOpen(true);
+        }}
+      />
     </div>
   );
 };
