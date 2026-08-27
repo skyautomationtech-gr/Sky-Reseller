@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, PayoutChangeRequest } from '../../types';
-import { CheckCircle2, XCircle, Clock, Store, Phone, MapPin, Mail, Eye, AlertCircle, FileText, CreditCard, Shield, UserCheck, ArrowRight, Key } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, Store, Phone, MapPin, Mail, Eye, AlertCircle, FileText, CreditCard, Shield, UserCheck, ArrowRight, Key, MessageCircle } from 'lucide-react';
 
 interface ApprovalListProps {
   user?: UserProfile;
@@ -274,9 +274,22 @@ export const ApprovalList: React.FC<ApprovalListProps> = ({ user: currentUser })
                     </div>
 
                     <div className="bg-slate-50 rounded-xl p-3.5 space-y-2 text-xs text-slate-600">
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-medium text-slate-900">{user.mobile}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-medium text-slate-900">{user.mobile}</span>
+                        </div>
+                        {user.whatsappNumber && (
+                          <a
+                            href={`https://wa.me/88${user.whatsappNumber.replace(/\D/g, '').replace(/^88/, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 hover:bg-emerald-100"
+                          >
+                            <MessageCircle className="w-3 h-3 text-emerald-600" />
+                            <span>WhatsApp: {user.whatsappNumber}</span>
+                          </a>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />

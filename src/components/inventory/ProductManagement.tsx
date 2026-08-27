@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, storage } from '../../lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { normalizeProduct } from '../../lib/productHelper';
 import { Product, Category, Brand, UserProfile, ProductMedia, ProductVideoMedia, ProductVariant } from '../../types';
 import { VariantManager } from './VariantManager';
 import { SocialShareModal } from './SocialShareModal';
@@ -41,6 +42,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
   const [viewingQrProduct, setViewingQrProduct] = useState<Product | null>(null);
   const [viewingProductDetails, setViewingProductDetails] = useState<Product | null>(null);
   const [shareModalProduct, setShareModalProduct] = useState<Product | null>(null);
+  const [shareModalCaption, setShareModalCaption] = useState<string | undefined>(undefined);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [aiModalProduct, setAiModalProduct] = useState<Product | null>(null);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
@@ -84,6 +86,21 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
   useEffect(() => {
     fetchData();
+
+    // Real-time products listener (syncs immediately when Sky Inventory pushes new products or edits price/stock)
+    const unsubProducts = onSnapshot(collection(db, 'products'), (prodSnap) => {
+      const prodList: Product[] = prodSnap.docs.map(docSnap => normalizeProduct(docSnap.id, docSnap.data()));
+      const validList = prodList.filter(p => p.status !== 'deleted');
+      setProducts(validList);
+      setLoading(false);
+    }, (err) => {
+      console.error('Realtime products listener error:', err);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubProducts();
+    };
   }, []);
 
   useEffect(() => {
@@ -115,31 +132,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
       const catList: Category[] = catSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
       const brandList: Brand[] = brandSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Brand));
-      const prodList: Product[] = prodSnap.docs.map(doc => {
-        const data = doc.data();
-        // Normalize legacy image strings to ProductMedia objects if needed
-        const rawImages = data.images || [];
-        const normalizedImages: ProductMedia[] = rawImages.map((img: any, idx: number) => {
-          if (typeof img === 'string') {
-            return { url: img, path: '', isCover: idx === 0 };
-          }
-          return img;
-        });
-        const rawVideos = data.videos || [];
-        const normalizedVideos: ProductVideoMedia[] = rawVideos.map((vid: any) => {
-          if (typeof vid === 'string') {
-            return { url: vid, path: '' };
-          }
-          return vid;
-        });
-
-        return {
-          id: doc.id,
-          ...data,
-          images: normalizedImages,
-          videos: normalizedVideos,
-        } as Product;
-      });
+      const prodList: Product[] = prodSnap.docs.map(doc => normalizeProduct(doc.id, doc.data()));
 
       setCategories(catList);
       setBrands(brandList);
@@ -1636,8 +1629,10 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
         onClose={() => {
           setIsShareModalOpen(false);
           setShareModalProduct(null);
+          setShareModalCaption(undefined);
         }}
         user={user}
+        initialCaption={shareModalCaption}
       />
 
       {/* Gemini AI Marketing Assistant Modal */}
@@ -1650,9 +1645,10 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
           setAiModalProduct(null);
         }}
         user={user}
-        onOpenSocialShare={(prod) => {
+        onOpenSocialShare={(prod, caption) => {
           setIsAIModalOpen(false);
           setShareModalProduct(prod);
+          setShareModalCaption(caption);
           setIsShareModalOpen(true);
         }}
       />

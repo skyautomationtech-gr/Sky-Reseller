@@ -4,7 +4,7 @@ import { doc, setDoc, serverTimestamp, collection, getDocs, query, where, limit 
 import { auth, db, storage } from '../../lib/firebase';
 import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
 import { SkyLogo } from '../common/SkyLogo';
-import { Eye, EyeOff, Upload, ShieldCheck, Store, MapPin, Phone, Mail, Lock, User, FileText, AlertCircle, CheckCircle, WifiOff } from 'lucide-react';
+import { Eye, EyeOff, Upload, ShieldCheck, Store, MapPin, Phone, Mail, Lock, User, FileText, AlertCircle, CheckCircle, WifiOff, MessageCircle } from 'lucide-react';
 import { useNetwork } from '../../context/NetworkContext';
 
 interface RegisterFormProps {
@@ -58,6 +58,8 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const [fullName, setFullName] = useState('');
   const [shopName, setShopName] = useState('');
   const [mobile, setMobile] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [sameAsMobile, setSameAsMobile] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -140,6 +142,17 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       return;
     }
 
+    const actualWhatsApp = (sameAsMobile ? mobile : whatsappNumber).trim();
+    if (!actualWhatsApp) {
+      setError('Please enter your WhatsApp number.');
+      return;
+    }
+
+    if (!validateBangladeshMobile(actualWhatsApp)) {
+      setError('Please enter a valid Bangladesh WhatsApp number (e.g., 01712345678 or +8801712345678).');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       return;
@@ -191,6 +204,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         fullName,
         shopName,
         mobile,
+        whatsappNumber: actualWhatsApp,
         email,
         division,
         district,
@@ -304,7 +318,13 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   type="text"
                   required
                   value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMobile(val);
+                    if (sameAsMobile) {
+                      setWhatsappNumber(val);
+                    }
+                  }}
                   placeholder="01712345678"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
                 />
@@ -313,22 +333,62 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Email Address *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  WhatsApp Number *
+                </label>
+                <label className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={sameAsMobile}
+                    onChange={(e) => {
+                      const isChecked = e.target.checked;
+                      setSameAsMobile(isChecked);
+                      if (isChecked) {
+                        setWhatsappNumber(mobile);
+                      }
+                    }}
+                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span>Same as mobile</span>
+                </label>
+              </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Mail className="w-4 h-4" />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-emerald-600">
+                  <MessageCircle className="w-4 h-4" />
                 </div>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="rahim@telecom.com"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+                  value={sameAsMobile ? mobile : whatsappNumber}
+                  disabled={sameAsMobile}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="01712345678"
+                  className={`w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-600 focus:border-transparent text-sm ${
+                    sameAsMobile ? 'bg-slate-50 text-slate-700 cursor-not-allowed' : 'bg-white'
+                  }`}
                 />
               </div>
+              <span className="text-[10px] text-emerald-600 font-medium mt-1 block">For order updates & instant support</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Email Address *
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Mail className="w-4 h-4" />
+              </div>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="rahim@telecom.com"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+              />
             </div>
           </div>
 

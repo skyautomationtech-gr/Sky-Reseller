@@ -7,7 +7,7 @@ import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
 import { logAuditAction } from '../../lib/auditLogger';
 import { 
   User, Store, Phone, MapPin, Key, Image as ImageIcon, 
-  Save, Lock, CheckCircle2, AlertCircle, Loader2, Shield
+  Save, Lock, CheckCircle2, AlertCircle, Loader2, Shield, MessageCircle
 } from 'lucide-react';
 
 interface ResellerProfilePageProps {
@@ -18,6 +18,7 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
   // Profile Form State
   const [shopName, setShopName] = useState(user.shopName || '');
   const [mobile, setMobile] = useState(user.mobile || '');
+  const [whatsappNumber, setWhatsappNumber] = useState(user.whatsappNumber || user.mobile || '');
   const [division, setDivision] = useState(user.division || '');
   const [district, setDistrict] = useState(user.district || '');
   const [upazila, setUpazila] = useState(user.upazila || '');
@@ -70,6 +71,7 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
       await updateDoc(userRef, {
         shopName,
         mobile,
+        whatsappNumber,
         division,
         district,
         upazila,
@@ -243,6 +245,30 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
                 value={mobile}
                 onChange={(e) => setMobile(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600 inline" />
+                  <span>WhatsApp Number</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWhatsappNumber(mobile)}
+                  className="text-[10px] text-emerald-600 hover:text-emerald-700 font-medium"
+                >
+                  Copy from mobile
+                </button>
+              </label>
+              <input
+                type="text"
+                value={whatsappNumber}
+                onChange={(e) => setWhatsappNumber(e.target.value)}
+                placeholder="01712345678"
+                className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                 required
               />
             </div>

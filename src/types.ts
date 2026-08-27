@@ -29,6 +29,7 @@ export interface UserProfile {
   fullName: string;
   shopName: string;
   mobile: string;
+  whatsappNumber?: string;
   email: string;
   division: string;
   district: string;

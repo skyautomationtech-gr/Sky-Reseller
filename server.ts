@@ -206,8 +206,8 @@ Provide ONLY the final ready-to-copy marketing copy text with hashtags at the en
       let usedAI = false;
 
       if (ai) {
-        // Try models in order: gemini-2.5-flash -> gemini-1.5-flash -> gemini-2.0-flash
-        const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+        // Try active modern models
+        const modelsToTry = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.6-pro'];
         
         for (const modelName of modelsToTry) {
           try {
@@ -225,9 +225,8 @@ Provide ONLY the final ready-to-copy marketing copy text with hashtags at the en
               usedAI = true;
               break;
             }
-          } catch (modelErr: any) {
-            console.warn(`Gemini generation with ${modelName} encountered: ${modelErr?.message || modelErr}`);
-            // continue to next model or fallback
+          } catch {
+            // Silently proceed to next model or fallback
           }
         }
       }

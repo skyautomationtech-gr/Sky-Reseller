@@ -235,7 +235,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
     {
       id: 'faq-7',
       question: 'How do I contact support?',
-      answer: 'You can reach us instantly via WhatsApp (+8801577351518), direct phone call (01577351518), or by opening a Support Ticket in this portal.'
+      answer: 'You can reach us instantly via WhatsApp (+8801722063777), direct phone call (01722063777), or by opening a Support Ticket in this portal.'
     }
   ];
 
@@ -2484,20 +2484,20 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <a
-                      href="https://wa.me/8801577351518"
+                      href="https://wa.me/8801722063777"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 p-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer min-h-[44px]"
                     >
                       <MessageCircle className="w-4 h-4" />
-                      <span>WhatsApp (+8801577351518)</span>
+                      <span>WhatsApp (+8801722063777)</span>
                     </a>
                     <a
-                      href="tel:01577351518"
+                      href="tel:01722063777"
                       className="flex items-center justify-center gap-2 p-3 bg-white/15 hover:bg-white/25 text-white border border-white/20 font-bold text-xs rounded-xl transition-colors cursor-pointer min-h-[44px]"
                     >
                       <PhoneCall className="w-4 h-4" />
-                      <span>Call Support (01577351518)</span>
+                      <span>Call Support (01722063777)</span>
                     </a>
                   </div>
                 </div>
@@ -2557,7 +2557,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
 
                   {/* WhatsApp Group */}
                   <a
-                    href="https://wa.me/8801577351518"
+                    href="https://wa.me/8801722063777"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-emerald-300 hover:bg-emerald-50/30 transition-all group cursor-pointer min-h-[72px] flex items-center justify-between"

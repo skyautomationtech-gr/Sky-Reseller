@@ -25,6 +25,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [isWritingReview, setIsWritingReview] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareCaption, setShareCaption] = useState<string | undefined>(undefined);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   if (!isOpen || !product) return null;
@@ -311,8 +312,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <SocialShareModal
           product={product}
           isOpen={isShareModalOpen}
-          onClose={() => setIsShareModalOpen(false)}
+          onClose={() => {
+            setIsShareModalOpen(false);
+            setShareCaption(undefined);
+          }}
           user={user}
+          initialCaption={shareCaption}
         />
       )}
 
@@ -324,8 +329,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           isOpen={isAIModalOpen}
           onClose={() => setIsAIModalOpen(false)}
           user={user}
-          onOpenSocialShare={(prod) => {
+          onOpenSocialShare={(prod, caption) => {
             setIsAIModalOpen(false);
+            setShareCaption(caption);
             setIsShareModalOpen(true);
           }}
         />

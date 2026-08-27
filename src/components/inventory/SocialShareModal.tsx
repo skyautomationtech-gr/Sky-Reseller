@@ -13,6 +13,7 @@ interface SocialShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserProfile;
+  initialCaption?: string;
 }
 
 type CaptionTemplateType = 'hot_deal' | 'cod_delivery' | 'whatsapp_quick' | 'warranty_quality';
@@ -22,6 +23,7 @@ export const SocialShareModal: React.FC<SocialShareModalProps> = ({
   isOpen,
   onClose,
   user,
+  initialCaption,
 }) => {
   if (!isOpen || !product) return null;
 
@@ -50,7 +52,7 @@ export const SocialShareModal: React.FC<SocialShareModalProps> = ({
   const [aiPlatform, setAiPlatform] = useState<AICopyPlatform>('facebook_post');
   const [aiTone, setAiTone] = useState<AICopyTone>('engaging');
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
-  const [customCaption, setCustomCaption] = useState<string>('');
+  const [customCaption, setCustomCaption] = useState<string>(initialCaption || '');
   const [copied, setCopied] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
@@ -151,11 +153,15 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
     }
   };
 
-  // Update caption whenever parameters change
+  // Update caption whenever parameters change (unless initial custom caption was provided and untouched)
   useEffect(() => {
+    if (initialCaption) {
+      setCustomCaption(initialCaption);
+      return;
+    }
     const text = generateCaptionText(activeTemplate, sellingPrice, originalPrice, shopName, contactNumber);
     setCustomCaption(text);
-  }, [activeTemplate, sellingPrice, originalPrice, shopName, contactNumber, product]);
+  }, [activeTemplate, sellingPrice, originalPrice, shopName, contactNumber, product, initialCaption]);
 
   // Handle Logo Upload
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

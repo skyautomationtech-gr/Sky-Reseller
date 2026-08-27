@@ -5,7 +5,7 @@ import { UserProfile, UserRole, UserStatus } from '../../types';
 import { 
   X, Shield, User, Store, Phone, Mail, MapPin, CreditCard, 
   Percent, FileText, CheckCircle2, AlertCircle, Eye, EyeOff, Key, Lock,
-  Building2, Landmark, Smartphone, Save
+  Building2, Landmark, Smartphone, Save, MessageCircle
 } from 'lucide-react';
 
 interface EditUserModalProps {
@@ -29,6 +29,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
     fullName: '',
     shopName: '',
     mobile: '',
+    whatsappNumber: '',
     email: '',
     role: 'reseller' as UserRole,
     status: 'approved' as UserStatus,
@@ -62,6 +63,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
         fullName: targetUser.fullName || '',
         shopName: targetUser.shopName || '',
         mobile: targetUser.mobile || '',
+        whatsappNumber: targetUser.whatsappNumber || targetUser.mobile || '',
         email: targetUser.email || '',
         role: targetUser.role || 'reseller',
         status: targetUser.status || 'approved',
@@ -106,6 +108,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
         fullName: formData.fullName.trim(),
         shopName: formData.shopName.trim(),
         mobile: formData.mobile.trim(),
+        whatsappNumber: formData.whatsappNumber.trim(),
         email: formData.email.trim(),
         role: formData.role,
         status: formData.status,
@@ -308,6 +311,32 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     value={formData.mobile}
                     onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1 text-emerald-700">
+                      <MessageCircle className="w-3.5 h-3.5 inline" />
+                      <span>WhatsApp Number</span>
+                    </span>
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, whatsappNumber: formData.mobile })}
+                        className="text-[10px] text-emerald-600 hover:text-emerald-700 font-medium"
+                      >
+                        Copy mobile
+                      </button>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!isSuperAdmin}
+                    value={formData.whatsappNumber}
+                    onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                    placeholder="01712345678"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed font-mono"
                   />
                 </div>
 

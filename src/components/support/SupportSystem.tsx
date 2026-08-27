@@ -220,21 +220,21 @@ export const SupportSystem: React.FC<SupportSystemProps> = ({ user, initialTab =
         <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-3">
           <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Fast Contact:</span>
           <a
-            href="https://wa.me/8801577351518"
+            href="https://wa.me/8801722063777"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>WhatsApp (+8801577351518)</span>
+            <span>WhatsApp (+8801722063777)</span>
             <ExternalLink className="w-3 h-3 opacity-70" />
           </a>
           <a
-            href="tel:01577351518"
+            href="tel:01722063777"
             className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all"
           >
             <PhoneCall className="w-3.5 h-3.5 text-blue-400" />
-            <span>Hotline (01577351518)</span>
+            <span>Hotline (01722063777)</span>
           </a>
         </div>
       </div>

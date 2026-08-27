@@ -769,7 +769,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     </div>
                     <p className="text-[11px] text-slate-600 leading-snug">
                       House-12, Road-04, Block-B, Mirpur, Dhaka, Bangladesh<br />
-                      Phone: 01577351518, 01571542070 | Email: skyautomationtech@gmail.com
+                      Phone: 01722063777 | Email: skyautomationtech@gmail.com
                     </p>
                   </div>
                 )}

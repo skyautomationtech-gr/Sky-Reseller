@@ -3,7 +3,7 @@ import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, UserStatus } from '../../types';
 import { EditUserModal } from './EditUserModal';
-import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff, RotateCw } from 'lucide-react';
+import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff, RotateCw, MessageCircle } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface AllResellersListProps {
@@ -254,11 +254,23 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
                     <td className="py-4 px-4">
                       {getRoleBadge(u.role)}
                     </td>
-                    <td className="py-4 px-4 space-y-0.5 text-slate-600">
+                    <td className="py-4 px-4 space-y-1 text-slate-600">
                       <div className="flex items-center gap-1.5 font-medium text-slate-900">
                         <Phone className="w-3 h-3 text-slate-400" />
                         <span>{u.mobile}</span>
                       </div>
+                      {u.whatsappNumber && (
+                        <a
+                          href={`https://wa.me/88${u.whatsappNumber.replace(/\D/g, '').replace(/^88/, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 w-fit"
+                          title="Open WhatsApp Chat"
+                        >
+                          <MessageCircle className="w-2.5 h-2.5 text-emerald-600" />
+                          <span>WA: {u.whatsappNumber}</span>
+                        </a>
+                      )}
                       <div className="flex items-center gap-1.5 text-slate-500">
                         <MapPin className="w-3 h-3 text-slate-400" />
                         <span>{u.upazila || 'N/A'}, {u.district || 'N/A'}</span>
@@ -395,6 +407,17 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
                       <Phone className="w-3 h-3 text-slate-400 shrink-0" />
                       <span>{u.mobile}</span>
                     </div>
+                    {u.whatsappNumber && (
+                      <a
+                        href={`https://wa.me/88${u.whatsappNumber.replace(/\D/g, '').replace(/^88/, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 w-fit"
+                      >
+                        <MessageCircle className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>WA: {u.whatsappNumber}</span>
+                      </a>
+                    )}
                     <div className="flex items-center gap-1 text-slate-500 text-[10px] truncate">
                       <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
                       <span>{u.upazila || 'N/A'}, {u.district || 'N/A'}</span>

@@ -37,7 +37,7 @@ export const FloatingHelpButtons: React.FC<FloatingHelpButtonsProps> = ({
           </button>
 
           <a
-            href="https://wa.me/8801577351518"
+            href="https://wa.me/8801722063777"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-2xl shadow-xl transition-all hover:scale-105"
@@ -47,7 +47,7 @@ export const FloatingHelpButtons: React.FC<FloatingHelpButtonsProps> = ({
           </a>
 
           <a
-            href="tel:01577351518"
+            href="tel:01722063777"
             className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl shadow-xl transition-all hover:scale-105"
           >
             <PhoneCall className="w-4 h-4 text-blue-400" />

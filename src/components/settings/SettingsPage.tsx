@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS: CompanySettings = {
   companyName: 'Sky Automation Tech',
   logoUrl: '',
   address: 'House-12, Road-04, Block-B, Mirpur, Dhaka, Bangladesh',
-  phoneNumbers: '01577351518, 01571542070',
+  phoneNumbers: '01722063777',
   email: 'skyautomationtech@gmail.com',
   currencySymbol: '৳ BDT',
   vatPercentage: 0,

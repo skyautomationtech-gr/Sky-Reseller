@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  collection, query, where, getDocs, doc, getDoc 
+  collection, query, where, getDocs, doc, getDoc, onSnapshot 
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { normalizeProduct } from '../../lib/productHelper';
 import { Product, ProductVariant, UserProfile, Wallet, Category, CompanySettings, CartItem } from '../../types';
 import { ProductDetailModal } from '../inventory/ProductDetailModal';
 import { CreateOrderModal } from '../orders/CreateOrderModal';
@@ -53,6 +54,7 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const [shareModalProduct, setShareModalProduct] = useState<Product | null>(null);
+  const [shareModalCaption, setShareModalCaption] = useState<string | undefined>(undefined);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   const [aiModalProduct, setAiModalProduct] = useState<Product | null>(null);
@@ -91,31 +93,42 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
   }, [toastMessage]);
 
   useEffect(() => {
-    fetchInitialData();
-  }, [user.uid]);
-
-  const fetchInitialData = async () => {
-    setLoading(true);
-    try {
-      // 1. Fetch Products
-      const pQuery = query(collection(db, 'products'), where('status', '==', 'active'));
-      const pSnap = await getDocs(pQuery);
+    // 1. Real-time Products listener from Firestore
+    const pQuery = query(collection(db, 'products'), where('status', '==', 'active'));
+    const unsubProducts = onSnapshot(pQuery, (pSnap) => {
       const pList: Product[] = [];
       pSnap.forEach((docSnap) => {
-        pList.push(Object.assign({ id: docSnap.id }, docSnap.data()) as unknown as Product);
+        pList.push(normalizeProduct(docSnap.id, docSnap.data()));
       });
       setProducts(pList);
+      setLoading(false);
+    }, (err) => {
+      console.error('Error in products real-time listener:', err);
+      setLoading(false);
+    });
 
-      // 2. Fetch Categories
-      const cQuery = query(collection(db, 'categories'), where('status', '==', 'active'));
-      const cSnap = await getDocs(cQuery);
+    // 2. Real-time Categories listener
+    const cQuery = query(collection(db, 'categories'), where('status', '==', 'active'));
+    const unsubCategories = onSnapshot(cQuery, (cSnap) => {
       const cList: Category[] = [];
       cSnap.forEach((docSnap) => {
         cList.push(Object.assign({ id: docSnap.id }, docSnap.data()) as unknown as Category);
       });
       setCategories(cList);
+    });
 
-      // 3. Fetch Company Banner Settings
+    fetchInitialData();
+
+    return () => {
+      unsubProducts();
+      unsubCategories();
+    };
+  }, [user.uid]);
+
+  const fetchInitialData = async () => {
+    setLoading(true);
+    try {
+      // Fetch Company Banner Settings
       const sRef = doc(db, 'settings', 'general');
       const sSnap = await getDoc(sRef);
       if (sSnap.exists()) {
@@ -680,8 +693,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         onClose={() => {
           setIsShareModalOpen(false);
           setShareModalProduct(null);
+          setShareModalCaption(undefined);
         }}
         user={user}
+        initialCaption={shareModalCaption}
       />
 
       {/* GEMINI AI MARKETING ASSISTANT MODAL */}
@@ -694,9 +709,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           setAiModalProduct(null);
         }}
         user={user}
-        onOpenSocialShare={(prod) => {
+        onOpenSocialShare={(prod, caption) => {
           setIsAIModalOpen(false);
           setShareModalProduct(prod);
+          setShareModalCaption(caption);
           setIsShareModalOpen(true);
         }}
       />
