@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, Wallet, WithdrawalRequest } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { logAuditAction } from '../../lib/auditLogger';
 import { createAppNotification } from '../../lib/notificationHelper';
 import { 
@@ -329,7 +330,12 @@ export const AdminWithdrawalManager: React.FC<AdminWithdrawalManagerProps> = ({ 
                       </td>
 
                       <td className="px-4 py-3">
-                        <p className="font-bold text-slate-900">{reqItem.resellerShopName || reqItem.resellerName}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-bold text-slate-900">{reqItem.resellerShopName || reqItem.resellerName}</p>
+                          <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                            {formatResellerId(reqItem.resellerId)}
+                          </span>
+                        </div>
                         <p className="text-[10px] text-slate-500">{reqItem.resellerName}</p>
                       </td>
 
@@ -439,7 +445,12 @@ export const AdminWithdrawalManager: React.FC<AdminWithdrawalManagerProps> = ({ 
                   {/* Reseller Shop details */}
                   <div className="flex justify-between items-start text-xs">
                     <div>
-                      <span className="text-[9px] text-slate-400 font-bold block uppercase">Reseller</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase">Reseller</span>
+                        <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                          {formatResellerId(reqItem.resellerId)}
+                        </span>
+                      </div>
                       <span className="font-extrabold text-slate-900">{reqItem.resellerShopName || reqItem.resellerName}</span>
                       <span className="text-[10px] text-slate-500 block">{reqItem.resellerName}</span>
                     </div>

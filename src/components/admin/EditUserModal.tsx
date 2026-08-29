@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, UserRole, UserStatus } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { 
   X, Shield, User, Store, Phone, Mail, MapPin, CreditCard, 
   Percent, FileText, CheckCircle2, AlertCircle, Eye, EyeOff, Key, Lock,
-  Building2, Landmark, Smartphone, Save, MessageCircle
+  Building2, Landmark, Smartphone, Save, MessageCircle, Tag
 } from 'lucide-react';
 
 interface EditUserModalProps {
@@ -183,11 +184,17 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   {formData.role.replace('_', ' ')}
                 </span>
               </div>
-              <p className="text-xs text-blue-200 mt-1 flex items-center gap-1.5">
+              <p className="text-xs text-blue-200 mt-1 flex items-center gap-1.5 flex-wrap">
                 <Store className="w-3.5 h-3.5 opacity-80" />
                 <span>{formData.shopName || 'No Shop Name'}</span>
-                <span className="opacity-40">•</span>
-                <span>UID: {targetUser.uid.substring(0, 10)}...</span>
+                {formData.role === 'reseller' && (
+                  <>
+                    <span className="opacity-40">•</span>
+                    <span className="font-mono font-bold text-amber-300 bg-black/20 px-1.5 py-0.5 rounded">
+                      ID: {formatResellerId(targetUser)}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>

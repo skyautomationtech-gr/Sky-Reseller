@@ -7,10 +7,12 @@ import { Product, Category, Brand, UserProfile, ProductMedia, ProductVideoMedia,
 import { VariantManager } from './VariantManager';
 import { SocialShareModal } from './SocialShareModal';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
+import { BulkProductImportModal } from './BulkProductImportModal';
 import { 
   Package, Plus, Edit2, Trash2, Search, AlertTriangle, 
   CheckCircle2, XCircle, QrCode as QrIcon, Loader2, 
-  Upload, Play, Download, Eye, ChevronLeft, ChevronRight, Palette, RotateCw, Sparkles, Share2, Bot
+  Upload, Play, Download, Eye, ChevronLeft, ChevronRight, Palette, RotateCw, Sparkles, Share2, Bot,
+  FileSpreadsheet
 } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { QRCodeSVG } from 'qrcode.react';
@@ -48,6 +50,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
 
@@ -503,7 +506,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
             {isReseller ? 'Browse accessories catalog, check reseller prices, and download marketing media.' : 'Manage inventory, pricing, stock levels, and media uploads.'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => handleRefresh()}
             disabled={isRefreshing || loading}
@@ -513,6 +516,16 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
             <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh Products</span>
           </button>
+          {isSuperAdmin && (
+            <button
+              onClick={() => setIsBulkImportOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2"
+              title="Import Products (.csv / .xlsx)"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Import Products (CSV/Excel)</span>
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={handleOpenAdd}
@@ -843,7 +856,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                             setIsAIModalOpen(true);
                           }}
                           className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Generate AI Marketing Caption (Gemini AI)"
+                          title="Generate AI Marketing Caption (SAT AI)"
                         >
                           <Bot className="w-4 h-4 text-blue-600" />
                         </button>
@@ -1651,6 +1664,19 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
           setShareModalCaption(caption);
           setIsShareModalOpen(true);
         }}
+      />
+      {/* Bulk CSV / Excel Import Modal */}
+      <BulkProductImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onSuccess={(summary) => {
+          handleRefresh();
+        }}
+        user={user}
+        existingProducts={products}
+        categories={categories}
+        brands={brands}
+        onRefreshData={handleRefresh}
       />
     </div>
   );

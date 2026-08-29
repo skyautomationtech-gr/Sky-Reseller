@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, ChatConversation, Wallet } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { subscribeToConversations, getOrCreateChatConversation } from '../../lib/chatService';
 import { LiveChatWindow } from './LiveChatWindow';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -328,6 +329,9 @@ export const AdminLiveChatHub: React.FC<AdminLiveChatHubProps> = ({
                       <Store className="w-3.5 h-3.5 text-blue-600" />
                       <span>{selectedChat.resellerShopName || 'Reseller'}</span>
                     </p>
+                    <span className="inline-block mt-1 font-mono text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      ID: {formatResellerId(selectedResellerProfile || selectedChat.resellerId)}
+                    </span>
                   </div>
                 </div>
 

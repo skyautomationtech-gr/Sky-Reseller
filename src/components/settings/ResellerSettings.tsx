@@ -3,8 +3,9 @@ import bcrypt from 'bcryptjs';
 import { updatePassword, updateEmail, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
-import { UserProfile, PayoutMethod, NotificationPreferences, AppVersionConfig, ChangelogEntry } from '../../types';
+import { UserProfile, PayoutMethod, NotificationPreferences, AppVersionConfig, ChangelogEntry, DEFAULT_DEMO_PRODUCT } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from '../../lib/versionService';
 import { requestAndRegisterPushNotifications, checkPushNotificationPermission } from '../../lib/pushNotifications';
 import { WhatsNewModal } from '../version/WhatsNewModal';
@@ -12,6 +13,8 @@ import { ChangelogModal } from '../version/ChangelogModal';
 import { SupportTicketForm } from '../support/SupportTicketForm';
 import { SupportSystem } from '../support/SupportSystem';
 import { FeedbackForm } from '../feedback/FeedbackForm';
+import { AIMarketingModal } from '../marketing/AIMarketingModal';
+import { SocialShareModal } from '../inventory/SocialShareModal';
 import { 
   User, CreditCard, Shield, Lock, Bell, Palette, Smartphone, FileText, 
   HelpCircle, LogOut, ChevronRight, ArrowLeft, Key, Mail, Phone, MapPin,
@@ -19,7 +22,7 @@ import {
   SmartphoneNfc, Laptop, Eye, EyeOff, ShieldCheck, Copy, Sparkles, Building,
   Volume2, VolumeX, Moon, Sun, Globe, DollarSign, Tag, Calendar, History,
   Megaphone, Info, CheckSquare, PhoneCall, MessageCircle, Users, ChevronDown,
-  ChevronUp, Bug, UserX, ShieldAlert, MessageSquare
+  ChevronUp, Bug, UserX, ShieldAlert, MessageSquare, Bot
 } from 'lucide-react';
 
 interface ResellerSettingsProps {
@@ -37,6 +40,28 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
   // User Profile Document State (fresh copy from Firestore)
   const [profile, setProfile] = useState<UserProfile>(user);
   const [loadingProfile, setLoadingProfile] = useState(false);
+
+  // AI Marketing & Smart Assist State
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [showPosterModal, setShowPosterModal] = useState(false);
+  const [selectedPosterProduct, setSelectedPosterProduct] = useState<any>(null);
+  const [allProductsList, setAllProductsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'products'));
+        const prods = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setAllProductsList(prods);
+        if (prods.length > 0) {
+          setSelectedPosterProduct(prods[0]);
+        }
+      } catch (err) {
+        console.error('Error fetching products for AI tools in settings:', err);
+      }
+    };
+    loadProducts();
+  }, []);
 
   // ==========================================
   // SECTION 1: ACCOUNT & PROFILE STATE
@@ -758,6 +783,14 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
       isReady: true,
     },
     {
+      id: 'aimarketing',
+      title: 'AI Marketing & Smart Tools',
+      subtitle: 'Bengali captions, Facebook/TikTok posts & poster creator',
+      icon: Sparkles,
+      color: 'bg-indigo-50 text-indigo-600 border-indigo-200',
+      isReady: true,
+    },
+    {
       id: 'payout',
       title: 'Payout Settings',
       subtitle: 'Manage bKash, Nagad, and Bank accounts',
@@ -943,6 +976,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
                   key={sec.id}
                   onClick={() => {
                     if (sec.id === 'account') setActiveSection('account');
+                    else if (sec.id === 'aimarketing') setShowAiModal(true);
                     else if (sec.id === 'payout') setActiveSection('payout');
                     else if (sec.id === 'security') setActiveSection('security');
                     else if (sec.id === 'notifications') setActiveSection('notifications');
@@ -993,13 +1027,83 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
          ========================================== */}
       {activeSection === 'account' && (
         <div className="space-y-6">
+          {/* AI Marketing & Smart Assist Card (Moved into Account) */}
+          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-5 sm:p-6 rounded-2xl border border-indigo-500/20 text-white shadow-md relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-amber-300">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm sm:text-base text-white">AI Marketing & Smart Tools</h3>
+                    <p className="text-[11px] text-slate-300">Generate high-converting Facebook captions, TikTok scripts & product posters</p>
+                  </div>
+                </div>
+                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase">
+                  SAT AI
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAiModal(true)}
+                  className="p-3.5 bg-blue-600/90 hover:bg-blue-600 rounded-xl border border-blue-400/30 text-left transition-all hover:scale-[1.02] active:scale-98 cursor-pointer flex items-center gap-3 group shadow-sm"
+                >
+                  <div className="w-9 h-9 rounded-full bg-blue-700/80 text-amber-300 flex items-center justify-center border border-white/20 shrink-0 shadow-inner group-hover:rotate-12 transition-transform">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                      <span>AI Caption & Copywriter</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-blue-200" />
+                    </div>
+                    <p className="text-[10px] text-blue-100/80 mt-0.5">Auto Bengali & English captions for posts</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    let prodToUse = selectedPosterProduct;
+                    if (!prodToUse && allProductsList.length > 0) {
+                      prodToUse = allProductsList[0];
+                      setSelectedPosterProduct(prodToUse);
+                    }
+                    if (!prodToUse) {
+                      prodToUse = DEFAULT_DEMO_PRODUCT;
+                      setSelectedPosterProduct(prodToUse);
+                    }
+                    setShowPosterModal(true);
+                  }}
+                  className="p-3.5 bg-slate-900/90 hover:bg-slate-800 rounded-xl border border-slate-700 text-left transition-all hover:scale-[1.02] active:scale-98 cursor-pointer flex items-center gap-3 group shadow-sm"
+                >
+                  <div className="w-9 h-9 rounded-full bg-slate-800 text-amber-300 flex items-center justify-center border border-white/20 shrink-0 shadow-inner group-hover:rotate-12 transition-transform">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                      <span>Smart Poster Studio</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-amber-200" />
+                    </div>
+                    <p className="text-[10px] text-slate-300 mt-0.5">Watermarked photos & marketing graphics</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <form onSubmit={handleSaveAccountProfile} className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <User className="w-5 h-5 text-blue-600" />
                 <span>Personal & Account Details</span>
               </h3>
-              <span className="text-xs text-slate-400 font-mono">UID: {user.uid.slice(0, 8)}...</span>
+              <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                Reseller ID: {formatResellerId(user)}
+              </span>
             </div>
 
             {/* Profile Photo */}
@@ -2877,6 +2981,28 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
         onClose={() => setShowChangelogModal(false)}
         currentVersion={appVersionInfo?.version || '1.0.0'}
       />
+
+      {/* AI Marketing & Smart Assist Modal */}
+      <AIMarketingModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        user={user}
+        allProducts={allProductsList}
+        onOpenSocialShare={(prod) => {
+          setSelectedPosterProduct(prod || DEFAULT_DEMO_PRODUCT);
+          setShowPosterModal(true);
+        }}
+      />
+
+      {/* Social Share / Poster Studio Modal */}
+      {showPosterModal && (
+        <SocialShareModal
+          isOpen={showPosterModal}
+          onClose={() => setShowPosterModal(false)}
+          product={selectedPosterProduct || (allProductsList.length > 0 ? allProductsList[0] : DEFAULT_DEMO_PRODUCT)}
+          user={user}
+        />
+      )}
 
       {/* ==========================================
           LOGOUT CONFIRMATION MODAL

@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { Brand, Product } from '../../types';
-import { Tag, Plus, Edit2, Trash2, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Brand, Product, UserProfile } from '../../types';
+import { Tag, Plus, Edit2, Trash2, CheckCircle2, XCircle, Loader2, FileSpreadsheet } from 'lucide-react';
+import { BulkBrandImportModal } from './BulkBrandImportModal';
 
 interface BrandManagementProps {
   isAdminOrSuperAdmin: boolean;
+  user?: UserProfile;
 }
 
-export const BrandManagement: React.FC<BrandManagementProps> = ({ isAdminOrSuperAdmin }) => {
+export const BrandManagement: React.FC<BrandManagementProps> = ({ isAdminOrSuperAdmin, user }) => {
+  const isSuperAdmin = user?.role === 'super_admin' || isAdminOrSuperAdmin;
   const [brands, setBrands] = useState<Brand[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   const [brandToDelete, setBrandToDelete] = useState<Brand | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -160,13 +164,25 @@ export const BrandManagement: React.FC<BrandManagementProps> = ({ isAdminOrSuper
           <p className="text-xs text-slate-500">Manage manufacturers and tech accessory brands.</p>
         </div>
         {isAdminOrSuperAdmin && (
-          <button
-            onClick={handleOpenAdd}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-md flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Brand</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isSuperAdmin && (
+              <button
+                onClick={() => setIsBulkImportOpen(true)}
+                className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2"
+                title="Bulk Import Brands (.csv / .xlsx)"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Bulk Import Brands</span>
+              </button>
+            )}
+            <button
+              onClick={handleOpenAdd}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-md flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Brand</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -451,6 +467,17 @@ export const BrandManagement: React.FC<BrandManagementProps> = ({ isAdminOrSuper
           </div>
         </div>
       )}
+      {/* Bulk CSV / Excel Import Modal */}
+      <BulkBrandImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onSuccess={() => {
+          fetchData();
+        }}
+        user={user}
+        existingBrands={brands}
+        onRefreshData={fetchData}
+      />
     </div>
   );
 };

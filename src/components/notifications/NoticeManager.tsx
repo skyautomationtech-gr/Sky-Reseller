@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, Notice, NoticeType, NoticeAudience } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { logAuditAction } from '../../lib/auditLogger';
 import { 
   Bell, Plus, Send, Trash2, Archive, Search, Tag, Users, AlertCircle, 
@@ -317,8 +318,13 @@ export const NoticeManager: React.FC<NoticeManagerProps> = ({ user }) => {
                       }`}
                     >
                       <div>
-                        <span className="font-semibold">{r.fullName}</span>
-                        <span className="opacity-75 text-[10px] ml-2">({r.shopName})</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold">{r.fullName}</span>
+                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-blue-700 border border-slate-200">
+                            {formatResellerId(r)}
+                          </span>
+                        </div>
+                        <span className="opacity-75 text-[10px]">Shop: {r.shopName || 'N/A'}</span>
                       </div>
                       <span className="font-mono text-[10px]">{r.mobile}</span>
                     </div>

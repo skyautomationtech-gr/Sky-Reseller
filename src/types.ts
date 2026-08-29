@@ -50,6 +50,7 @@ export interface UserProfile {
   payoutMethods?: PayoutMethod[];
   customCommissionRate?: number;
   adminNotes?: string;
+  resellerCode?: string;
   role: UserRole;
   status: UserStatus;
   rejectReason?: string | null;
@@ -155,6 +156,32 @@ export interface Product {
   createdAt: any;
   updatedAt?: any;
 }
+
+export const DEFAULT_DEMO_PRODUCT: Product = {
+  id: 'demo-poster-product',
+  sku: 'SAT-DEMO-01',
+  barcodeValue: 'SAT-DEMO-01',
+  qrValue: 'SAT-DEMO-01',
+  categoryId: 'gadgets',
+  categoryName: 'স্মার্ট গ্যাজেটস',
+  brandId: 'sat',
+  brandName: 'SAT AI',
+  name: 'T900 Ultra 2 Smartwatch (স্মার্ট পোস্টার ডেমো)',
+  costPrice: 650,
+  resellerPrice: 850,
+  retailPrice: 1250,
+  stock: 99,
+  lowStockThreshold: 5,
+  warranty: '১ বছর রিপ্লেসমেন্ট ওয়ারেন্টি',
+  description: 'হাই-কোয়ালিটি HD ডিসপ্লে, ব্লুটুথ কলিং, হার্ট রেট ও প্রিমিয়াম স্টাইলিশ ফিনিশিং। ওয়াটারমার্ক পোষ্টার তৈরির সেরা ডেমো আইটেম।',
+  images: [
+    { url: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80', path: '' },
+    { url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&auto=format&fit=crop&q=80', path: '' }
+  ],
+  videos: [],
+  status: 'active',
+  createdAt: new Date().toISOString()
+};
 
 export type OrderStatus = 'pending' | 'accepted' | 'packing' | 'ready_to_ship' | 'shipped' | 'delivered' | 'cancelled' | 'returned';
 export type OrderPaymentStatus = 'unpaid' | 'paid' | 'partial';

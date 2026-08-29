@@ -36,6 +36,9 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
   const effectiveProduct = initialProduct || product || null;
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(effectiveProduct);
   
+  // Mobile Tab State
+  const [activeMobileTab, setActiveMobileTab] = useState<'inputs' | 'output'>('inputs');
+
   // Form fields
   const [productName, setProductName] = useState<string>('');
   const [categoryName, setCategoryName] = useState<string>('');
@@ -98,6 +101,8 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
 
     setLoading(true);
     setIsCopied(false);
+    // On mobile, switch automatically to output tab when generating
+    setActiveMobileTab('output');
 
     try {
       const result = await generateAICopy({
@@ -147,54 +152,81 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[94vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-amber-300 shadow-inner">
-              <Bot className="w-6 h-6" />
+        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 text-white p-3.5 sm:p-5 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-amber-300 shadow-inner shrink-0">
+              <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-extrabold text-white">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-lg font-extrabold text-white truncate">
                   AI Marketing Assistant (বাংলা কপিরাইটার)
                 </h2>
-                <span className="text-[10px] font-bold bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 fill-slate-950" /> Gemini 3.7 Flash
+                <span className="text-[9px] sm:text-[10px] font-extrabold bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shrink-0">
+                  <Sparkles className="w-3 h-3 fill-slate-950" /> SAT AI
                 </span>
               </div>
-              <p className="text-xs text-blue-100/90 mt-0.5">
-                ফেসবুক পেজ, টিকটক স্ক্রিপ্ট ও হোয়াটসঅ্যাপের জন্য ১-ক্লিকে আকর্ষণীয় বাংলা সেলস ক্যাপশন তৈরি করুন
+              <p className="text-[11px] sm:text-xs text-blue-100/90 mt-0.5 truncate">
+                ফেসবুক পেজ, টিকটক স্ক্রিপ্ট ও হোয়াটসঅ্যাপের জন্য ১-ক্লিকে বাংলা পোস্ট ক্যাপশন
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shrink-0 ml-2"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {/* Mobile View Tab Switcher */}
+        <div className="flex sm:hidden border-b border-slate-200 bg-slate-50 px-2 shrink-0">
+          <button
+            onClick={() => setActiveMobileTab('inputs')}
+            className={`flex-1 py-2.5 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
+              activeMobileTab === 'inputs' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-slate-500'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>১. তথ্য প্রদান (Inputs)</span>
+          </button>
+          <button
+            onClick={() => setActiveMobileTab('output')}
+            className={`flex-1 py-2.5 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors relative ${
+              activeMobileTab === 'output' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-slate-500'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>২. AI পোস্ট কপি (Output)</span>
+            {generatedCopy && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 absolute top-2 right-4" />
+            )}
+          </button>
+        </div>
+
         {/* Content Body */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-y-auto divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-y-auto divide-y lg:divide-y-0 lg:divide-x divide-slate-200 min-h-0">
           
           {/* LEFT COLUMN: Controls & Product Info (5 cols) */}
-          <div className="lg:col-span-5 p-4 sm:p-5 space-y-4 bg-slate-50/70 overflow-y-auto">
+          <div className={`lg:col-span-5 p-3.5 sm:p-5 space-y-3.5 bg-slate-50/70 overflow-y-auto ${
+            activeMobileTab === 'output' ? 'hidden sm:block' : 'block'
+          }`}>
             
             {/* Product Selector / Quick Pick */}
             {allProducts.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
                   Select Product from Inventory
                 </label>
                 <select
                   value={selectedProduct?.id || ''}
                   onChange={handleProductSelect}
-                  className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 >
                   <option value="">-- Custom Product Input --</option>
                   {allProducts.map((p) => (
@@ -217,7 +249,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   value={productName}
                   onChange={(e) => setProductName(e.target.value)}
                   placeholder="e.g. T900 Ultra Smartwatch"
-                  className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 />
               </div>
 
@@ -231,7 +263,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                     value={sellingPrice}
                     onChange={(e) => setSellingPrice(parseFloat(e.target.value) || 0)}
                     placeholder="990"
-                    className="w-full text-xs font-bold bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full text-xs font-bold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
 
@@ -244,7 +276,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                     value={originalPrice}
                     onChange={(e) => setOriginalPrice(parseFloat(e.target.value) || 0)}
                     placeholder="1450"
-                    className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 shadow-2xs focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
               </div>
@@ -260,7 +292,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   <button
                     key={opt.id}
                     onClick={() => setPlatform(opt.id)}
-                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                    className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer min-h-[52px] ${
                       platform === opt.id
                         ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-600/30'
                         : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100/80'
@@ -268,9 +300,9 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   >
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm">{opt.icon}</span>
-                      <span className="text-[11px] font-bold leading-tight">{opt.label}</span>
+                      <span className="text-[11px] font-bold leading-tight truncate">{opt.label}</span>
                     </div>
-                    <span className={`text-[9px] mt-1 leading-tight ${
+                    <span className={`text-[9px] mt-1 leading-tight truncate ${
                       platform === opt.id ? 'text-blue-100' : 'text-slate-400'
                     }`}>
                       {opt.subLabel}
@@ -308,14 +340,14 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer py-1"
               >
-                <Sliders className="w-3 h-3" />
+                <Sliders className="w-3.5 h-3.5" />
                 <span>{showAdvanced ? 'Hide Custom Details' : '+ Add Custom Shop & Contact Info'}</span>
               </button>
 
               {showAdvanced && (
-                <div className="mt-2.5 p-3 bg-white rounded-xl border border-slate-200 space-y-2.5 animate-in fade-in duration-150">
+                <div className="mt-2 p-3 bg-white rounded-xl border border-slate-200 space-y-2.5 animate-in fade-in duration-150">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase">Shop Name</label>
@@ -386,10 +418,12 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
           </div>
 
           {/* RIGHT COLUMN: Live Output & Action Hub (7 cols) */}
-          <div className="lg:col-span-7 p-4 sm:p-5 flex flex-col justify-between space-y-4 bg-white">
+          <div className={`lg:col-span-7 p-3.5 sm:p-5 flex flex-col justify-between space-y-3.5 bg-white overflow-y-auto ${
+            activeMobileTab === 'inputs' ? 'hidden sm:flex' : 'flex'
+          }`}>
             
             {/* Output Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -417,14 +451,14 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
             </div>
 
             {/* Output Display Area */}
-            <div className="flex-1 min-h-[300px] sm:min-h-[360px] flex flex-col">
+            <div className="flex-1 min-h-[260px] sm:min-h-[340px] flex flex-col">
               {loading ? (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 animate-bounce">
                     <Sparkles className="w-6 h-6 text-amber-300" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-slate-800">Gemini AI লিখছে...</h4>
+                    <h4 className="text-sm font-bold text-slate-800">SAT AI লিখছে...</h4>
                     <p className="text-xs text-slate-500 max-w-xs">
                       আপনার পণ্যের জন্য আকর্ষণীয় হুক, বাংলা সেলস বুলেট ও হ্যাশট্যাগ তৈরি করা হচ্ছে।
                     </p>
@@ -435,18 +469,18 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   <textarea
                     value={generatedCopy}
                     onChange={(e) => setGeneratedCopy(e.target.value)}
-                    className="flex-1 w-full p-4 text-xs sm:text-sm font-medium text-slate-800 bg-slate-50/70 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none leading-relaxed resize-none shadow-inner"
-                    rows={12}
+                    className="flex-1 w-full p-3.5 text-xs sm:text-sm font-medium text-slate-800 bg-slate-50/70 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none leading-relaxed resize-none shadow-inner min-h-[220px]"
+                    rows={10}
                   />
 
                   {/* Preset quick tone chips */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px]">
-                    <span className="text-slate-400 font-bold shrink-0">Try Variations:</span>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] scrollbar-thin">
+                    <span className="text-slate-400 font-bold shrink-0">Variations:</span>
                     <button
                       onClick={() => handleGenerate('urgent', 'urgency_flash_sale')}
                       className="px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-md font-bold whitespace-nowrap hover:bg-amber-100"
                     >
-                      ⚡ ফ্ল্যাশ সেল ভার্সন
+                      ⚡ ফ্ল্যাশ সেল
                     </button>
                     <button
                       onClick={() => handleGenerate('engaging', 'tiktok_script')}
@@ -463,19 +497,19 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3 bg-slate-50 rounded-2xl border border-slate-200">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                    <Sparkles className="w-7 h-7" />
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-50 rounded-2xl border border-slate-200">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Sparkles className="w-6 h-6" />
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-slate-800">কোন কপি তৈরি হয়নি</h4>
                     <p className="text-xs text-slate-500 max-w-sm">
-                      বামে প্রোডাক্ট সিলেক্ট করে <span className="font-semibold text-blue-600">"১-ক্লিকে বাংলা পোস্ট তৈরি করুন"</span> বাটনে ক্লিক করুন।
+                      ইনপুট ট্যাবে প্রোডাক্টের তথ্য চেক করে <span className="font-semibold text-blue-600">"১-ক্লিকে বাংলা পোস্ট তৈরি করুন"</span> বাটনে ক্লিক করুন।
                     </p>
                   </div>
                   <button
                     onClick={() => handleGenerate()}
-                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/20 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/20 cursor-pointer active:scale-95 transition-transform"
                   >
                     Generate Sample Copy →
                   </button>
@@ -491,7 +525,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   {/* Copy Button */}
                   <button
                     onClick={handleCopy}
-                    className={`px-3 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none ${
+                    className={`px-3 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none active:scale-95 ${
                       isCopied
                         ? 'bg-emerald-600 text-white'
                         : 'bg-slate-900 hover:bg-slate-800 text-white'
@@ -504,7 +538,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   {/* WhatsApp Share */}
                   <button
                     onClick={handleWhatsAppShare}
-                    className="px-3 py-2.5 rounded-xl font-bold text-xs bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none"
+                    className="px-3 py-2.5 rounded-xl font-bold text-xs bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none"
                   >
                     <MessageCircle className="w-4 h-4" />
                     <span>WhatsApp</span>
@@ -513,7 +547,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                   {/* Facebook Share */}
                   <button
                     onClick={handleFacebookShare}
-                    className="px-3 py-2.5 rounded-xl font-bold text-xs bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none"
+                    className="px-3 py-2.5 rounded-xl font-bold text-xs bg-blue-600 hover:bg-blue-700 active:scale-95 text-white flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none"
                   >
                     <Share2 className="w-4 h-4" />
                     <span>Facebook</span>
@@ -526,7 +560,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
                         onClose();
                         onOpenSocialShare(selectedProduct, generatedCopy);
                       }}
-                      className="px-3 py-2.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none"
+                      className="px-3 py-2.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-700 active:scale-95 text-white flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer select-none col-span-2 sm:col-span-1"
                     >
                       <Layers className="w-4 h-4" />
                       <span>Poster Maker</span>
@@ -544,3 +578,4 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
     </div>
   );
 };
+

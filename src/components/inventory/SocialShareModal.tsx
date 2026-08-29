@@ -202,6 +202,60 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
     }
   };
 
+  // Safe helper to load an image into an HTMLImageElement with multi-step fallback (CORS & Base64 proxy)
+  const loadSafeImage = (src: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      if (!src) {
+        return reject(new Error('Empty image source'));
+      }
+
+      // If already data URL or blob URL, load directly
+      if (src.startsWith('data:') || src.startsWith('blob:')) {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(e);
+        img.src = src;
+        return;
+      }
+
+      // Step 1: Try with crossOrigin anonymous
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => {
+        // Step 2: Try fetching via fetch() to convert to clean ObjectURL (bypasses canvas taint issues)
+        fetch(src, { mode: 'cors' })
+          .then((res) => {
+            if (!res.ok) throw new Error('Fetch failed');
+            return res.blob();
+          })
+          .then((blob) => {
+            const blobUrl = URL.createObjectURL(blob);
+            const blobImg = new Image();
+            blobImg.onload = () => {
+              resolve(blobImg);
+            };
+            blobImg.onerror = () => {
+              // Step 3: Last resort direct load without crossOrigin
+              const fallbackImg = new Image();
+              fallbackImg.onload = () => resolve(fallbackImg);
+              fallbackImg.onerror = (err) => reject(err);
+              fallbackImg.src = src;
+            };
+            blobImg.src = blobUrl;
+          })
+          .catch(() => {
+            // Step 3: Direct fallback
+            const fallbackImg = new Image();
+            fallbackImg.onload = () => resolve(fallbackImg);
+            fallbackImg.onerror = (err) => reject(err);
+            fallbackImg.src = src;
+          });
+      };
+      img.src = src;
+    });
+  };
+
   // Render Poster to Canvas
   const renderCanvasPoster = async (): Promise<HTMLCanvasElement | null> => {
     const canvas = canvasRef.current;
@@ -222,19 +276,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
     // 1. Draw Product Image
     if (currentImageUrl) {
       try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = () => {
-            // Fallback for CORS: try without crossOrigin
-            const fallbackImg = new Image();
-            fallbackImg.onload = resolve;
-            fallbackImg.onerror = reject;
-            fallbackImg.src = currentImageUrl;
-          };
-          img.src = currentImageUrl;
-        });
+        const img = await loadSafeImage(currentImageUrl);
 
         // Fit & Center Image in 1080x1080
         const hRatio = size / img.width;
@@ -503,42 +545,126 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
     currentImageUrl
   ]);
 
-  // Download Generated Poster PNG
+  // Universal file saver helper that works in standard browsers, Android WebViews, APKs, and iOS WebViews
+  const triggerFileDownload = (dataOrBlobUrl: string, fileName: string) => {
+    // 1. Try standard <a> download trigger
+    const link = document.createElement('a');
+    link.href = dataOrBlobUrl;
+    link.download = fileName;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+    }, 200);
+
+    // 2. Android WebView fallback: If in WebView or blob click blocked, open in new window/tab
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      setTimeout(() => {
+        // Fallback open if download didn't automatically start
+        try {
+          const w = window.open(dataOrBlobUrl, '_blank');
+          if (w) {
+            w.focus();
+          }
+        } catch {
+          // ignore popup blocker
+        }
+      }, 500);
+    }
+  };
+
+  // Download Generated Poster PNG (supports Web & APK)
   const handleDownloadPoster = async () => {
     setIsGeneratingImage(true);
+    const fileName = `${product.name.replace(/[^a-zA-Z0-9]/g, '_')}_poster.png`;
+
     try {
       const canvas = await renderCanvasPoster();
       if (!canvas) throw new Error('Canvas render failed');
 
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${product.name.replace(/[^a-zA-Z0-9]/g, '_')}_poster.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        setIsGeneratingImage(false);
-      }, 'image/png');
+      // Attempt 1: toBlob with URL.createObjectURL
+      let exported = false;
+
+      if (typeof canvas.toBlob === 'function') {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const url = URL.createObjectURL(blob);
+                triggerFileDownload(url, fileName);
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+                exported = true;
+                resolve();
+              } else {
+                reject(new Error('toBlob yielded null'));
+              }
+            }, 'image/png');
+          });
+        } catch (e) {
+          console.warn('toBlob export failed, trying toDataURL:', e);
+        }
+      }
+
+      // Attempt 2: Base64 dataURL fallback (extremely robust on Android WebView APKs)
+      if (!exported) {
+        const dataUrl = canvas.toDataURL('image/png');
+        triggerFileDownload(dataUrl, fileName);
+      }
+
+      // Attempt 3: If native Web Share is available, user can also easily save or share to gallery directly
+      if (navigator.canShare && typeof canvas.toBlob === 'function') {
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            try {
+              const file = new File([blob], fileName, { type: 'image/png' });
+              if (navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                  title: product.name,
+                  text: customCaption,
+                  files: [file],
+                });
+              }
+            } catch {
+              // User dismissed native share sheet, download already initiated
+            }
+          }
+        }, 'image/png');
+      }
     } catch (err) {
       console.error('Download failed:', err);
+      // Fallback: If previewBlobUrl exists, trigger download with that
+      if (previewBlobUrl) {
+        triggerFileDownload(previewBlobUrl, fileName);
+      }
+    } finally {
       setIsGeneratingImage(false);
     }
   };
 
-  // Download All Original Images
-  const handleDownloadAllImages = () => {
-    images.forEach((img, idx) => {
-      const a = document.createElement('a');
-      a.href = img.url;
-      a.target = '_blank';
-      a.download = `${product.name}_image_${idx + 1}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    });
+  // Download All Original Images (supports APK & Web)
+  const handleDownloadAllImages = async () => {
+    for (let idx = 0; idx < images.length; idx++) {
+      const img = images[idx];
+      const fileName = `${product.name.replace(/[^a-zA-Z0-9]/g, '_')}_image_${idx + 1}.jpg`;
+      try {
+        const res = await fetch(img.url, { mode: 'cors' });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          triggerFileDownload(url, fileName);
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } else {
+          triggerFileDownload(img.url, fileName);
+        }
+      } catch {
+        triggerFileDownload(img.url, fileName);
+      }
+    }
   };
 
   // Copy Caption to Clipboard
@@ -591,67 +717,67 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1.5 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
       {/* Hidden Offscreen Canvas for HD Export */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      <div className="relative w-full max-w-4xl max-h-[94vh] flex flex-col bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto">
+      <div className="relative w-full max-w-4xl max-h-[96vh] sm:max-h-[92vh] flex flex-col bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto">
         
         {/* Header */}
-        <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
-              <Sparkles className="w-5 h-5 text-white" />
+        <div className="bg-slate-900 text-white px-3.5 sm:px-5 py-3 sm:py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/30 shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-extrabold flex items-center gap-2">
-                Social Share & Marketing Post Maker
-                <span className="text-[10px] bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full font-mono font-bold">
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-base font-extrabold flex items-center gap-1.5 truncate">
+                <span>Social Share & Poster Studio</span>
+                <span className="text-[9px] sm:text-[10px] bg-orange-500/20 text-orange-400 border border-orange-500/30 px-1.5 py-0.2 rounded-full font-mono font-bold shrink-0">
                   Asset Hub
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">
-                এক ক্লিকে প্রাইজ ব্যাজ, শপের ওয়াটারমার্ক এবং ফেসবুক/হোয়াটসঅ্যাপ মার্কেটিং পোস্ট তৈরি করুন
+              <p className="text-[10px] sm:text-xs text-slate-400 truncate">
+                ১-ক্লিকে প্রাইজ ব্যাজ, শপের ওয়াটারমার্ক ও ক্যাপশন তৈরি করুন
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Navigation Tabs on Mobile */}
-        <div className="flex sm:hidden border-b border-slate-200 bg-slate-50 px-2">
+        <div className="flex sm:hidden border-b border-slate-200 bg-slate-50 px-1 shrink-0">
           <button
             onClick={() => setActiveTab('poster')}
-            className={`flex-1 py-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2.5 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
               activeTab === 'poster' ? 'border-orange-500 text-orange-600 bg-white' : 'border-transparent text-slate-500'
             }`}
           >
             <ImageIcon className="w-4 h-4" />
-            <span>Poster Image</span>
+            <span>১. পোষ্টার প্রিভিউ (Poster)</span>
           </button>
           <button
             onClick={() => setActiveTab('caption')}
-            className={`flex-1 py-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2.5 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
               activeTab === 'caption' ? 'border-orange-500 text-orange-600 bg-white' : 'border-transparent text-slate-500'
             }`}
           >
-            <MessageCircle className="w-4 h-4" />
-            <span>Post Caption</span>
+            <MessageCircle className="w-4 h-4 text-emerald-500" />
+            <span>২. কাস্টমাইজেশন (Controls)</span>
           </button>
         </div>
 
         {/* Content Body Grid */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 min-h-0">
           
           {/* LEFT COLUMN: Poster Live Preview & Image Selector (5 Cols) */}
-          <div className={`lg:col-span-5 space-y-4 ${activeTab === 'caption' ? 'hidden sm:block' : 'block'}`}>
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+          <div className={`lg:col-span-5 space-y-3 ${activeTab === 'caption' ? 'hidden sm:block' : 'block'}`}>
+            <div className="bg-slate-50 p-2.5 sm:p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
                   <Eye className="w-4 h-4 text-orange-500" />
@@ -663,7 +789,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
               </div>
 
               {/* Poster Image Preview Box */}
-              <div className="relative aspect-square w-full rounded-2xl bg-slate-900 overflow-hidden shadow-md border border-slate-200 flex items-center justify-center">
+              <div className="relative aspect-square w-full max-w-[320px] sm:max-w-none mx-auto rounded-xl sm:rounded-2xl bg-slate-900 overflow-hidden shadow-md border border-slate-200 flex items-center justify-center">
                 {previewBlobUrl ? (
                   <img
                     src={previewBlobUrl}
@@ -671,7 +797,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                     className="w-full h-full object-contain"
                   />
                 ) : (
-                  <div className="text-slate-400 text-xs flex flex-col items-center gap-2">
+                  <div className="text-slate-400 text-xs flex flex-col items-center gap-2 p-6">
                     <RefreshCw className="w-6 h-6 animate-spin text-orange-500" />
                     <span>Generating live poster...</span>
                   </div>
@@ -680,14 +806,14 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
 
               {/* Product Gallery Selectors */}
               {images.length > 1 && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-slate-600 block">Select Base Image:</span>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="space-y-1">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 block">Select Base Image:</span>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
                     {images.map((img, idx) => (
                       <button
                         key={idx}
                         onClick={() => setSelectedImageIndex(idx)}
-                        className={`w-14 h-14 rounded-xl border-2 overflow-hidden shrink-0 transition-all cursor-pointer ${
+                        className={`w-11 h-11 sm:w-14 sm:h-14 rounded-lg sm:rounded-xl border-2 overflow-hidden shrink-0 transition-all cursor-pointer ${
                           selectedImageIndex === idx
                             ? 'border-orange-500 ring-2 ring-orange-200 scale-102'
                             : 'border-slate-200 opacity-70 hover:opacity-100'
@@ -705,82 +831,82 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                 <button
                   onClick={handleDownloadPoster}
                   disabled={isGeneratingImage}
-                  className="py-2.5 px-3 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                  className="py-2.5 px-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
                 >
-                  <Download className="w-4 h-4 text-orange-400" />
-                  <span>{isGeneratingImage ? 'Exporting...' : 'Download Poster'}</span>
+                  <Download className="w-3.5 h-3.5 text-orange-400" />
+                  <span className="truncate">{isGeneratingImage ? 'Exporting...' : 'Download Poster'}</span>
                 </button>
 
                 <button
                   onClick={handleDownloadAllImages}
-                  className="py-2.5 px-3 bg-white hover:bg-slate-100 active:scale-95 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  className="py-2.5 px-2.5 bg-white hover:bg-slate-100 active:scale-95 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   title="Download all original high-res product photos"
                 >
-                  <ImageIcon className="w-4 h-4 text-blue-500" />
-                  <span>Original Photos</span>
+                  <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="truncate">Original Photos</span>
                 </button>
               </div>
             </div>
           </div>
 
           {/* RIGHT COLUMN: Customization Controls & Post Copywriting (7 Cols) */}
-          <div className={`lg:col-span-7 space-y-5 ${activeTab === 'poster' ? 'hidden sm:block' : 'block'}`}>
+          <div className={`lg:col-span-7 space-y-3.5 ${activeTab === 'poster' ? 'hidden sm:block' : 'block'}`}>
             
             {/* 1. PRICE & WATERMARK CONTROLS ACCORDION */}
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+            <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-blue-600" />
+                  <h3 className="text-[11px] sm:text-xs font-extrabold text-slate-900 uppercase tracking-wider">
                     Poster Customizer (প্রাইজ ও ওয়াটারমার্ক)
                   </h3>
                 </div>
               </div>
 
               {/* Price Settings Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 {/* Selling Price */}
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between mb-1">
-                    <span>আপনার বিক্রয় মূল্য (Selling Price)</span>
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 flex items-center justify-between mb-0.5">
+                    <span>বিক্রয় মূল্য</span>
                     <span className="text-blue-600 font-extrabold font-mono">৳{sellingPrice}</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">৳</span>
+                    <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-400">৳</span>
                     <input
                       type="number"
                       value={sellingPrice}
                       onChange={(e) => setSellingPrice(Number(e.target.value) || 0)}
-                      className="w-full pl-7 pr-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
+                      className="w-full pl-6 pr-2 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                     />
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">
-                    কেনা মূল্য: ৳{product.resellerPrice} | লাভ: ৳{sellingPrice - product.resellerPrice}
+                  <span className="text-[9px] text-slate-400 mt-0.5 block truncate">
+                    লাভ: ৳{sellingPrice - product.resellerPrice}
                   </span>
                 </div>
 
                 {/* Original Strikethrough Price */}
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between mb-1">
-                    <span>নিয়মিত মূল্য (Original / Cut Price)</span>
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 flex items-center justify-between mb-0.5">
+                    <span>নিয়মিত মূল্য</span>
                     <span className="text-slate-400 line-through font-mono">৳{originalPrice}</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">৳</span>
+                    <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-400">৳</span>
                     <input
                       type="number"
                       value={originalPrice}
                       onChange={(e) => setOriginalPrice(Number(e.target.value) || 0)}
-                      className="w-full pl-7 pr-3 py-2 text-xs font-medium bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                      className="w-full pl-6 pr-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Badge Text & Style */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 pt-2 border-t border-slate-200/60">
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 block mb-0.5">
                     ব্যাজ হেডার টেক্সট
                   </label>
                   <input
@@ -788,12 +914,12 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                     value={badgeText}
                     onChange={(e) => setBadgeText(e.target.value)}
                     placeholder="স্পেশাল অফার"
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 block mb-0.5">
                     ব্যাজ কালার থিম
                   </label>
                   <div className="flex items-center gap-1.5 pt-0.5">
@@ -808,7 +934,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                         key={t.id}
                         type="button"
                         onClick={() => setBadgeTheme(t.id as any)}
-                        className={`w-7 h-7 rounded-lg ${t.bg} transition-all cursor-pointer ${
+                        className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg ${t.bg} transition-all cursor-pointer ${
                           badgeTheme === t.id ? 'ring-2 ring-offset-2 ring-slate-800 scale-110' : 'opacity-70 hover:opacity-100'
                         }`}
                       />
@@ -817,13 +943,13 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 block mb-0.5">
                     ব্যাজের পজিশন
                   </label>
                   <select
                     value={badgePosition}
                     onChange={(e) => setBadgePosition(e.target.value as any)}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none font-medium"
+                    className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-orange-500 outline-none font-medium"
                   >
                     <option value="top-right">Top Right (উপরে ডানে)</option>
                     <option value="top-left">Top Left (উপরে বামে)</option>
@@ -835,36 +961,36 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
               </div>
 
               {/* Shop Branding & Contact Overlay */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/60">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 pt-2 border-t border-slate-200/60">
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 block mb-0.5">
                     শপের নাম / ওয়াটারমার্ক
                   </label>
                   <input
                     type="text"
                     value={shopName}
                     onChange={(e) => setShopName(e.target.value)}
-                    placeholder="আপনার পেজ বা শপের নাম"
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                    placeholder="আপনার পেজের নাম"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    হোয়াটসঅ্যাপ / কন্টাক্ট নম্বর
+                  <label className="text-[10px] sm:text-[11px] font-bold text-slate-700 block mb-0.5">
+                    হোয়াটসঅ্যাপ নম্বর
                   </label>
                   <input
                     type="text"
                     value={contactNumber}
                     onChange={(e) => setContactNumber(e.target.value)}
                     placeholder="017XXXXXXXX"
-                    className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                    className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                   />
                 </div>
               </div>
 
               {/* Custom Logo Upload option */}
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <div className="flex items-center gap-2">
                   <input
                     type="file"
@@ -876,10 +1002,10 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                   <button
                     type="button"
                     onClick={() => logoInputRef.current?.click()}
-                    className="text-[11px] font-bold text-slate-700 hover:text-blue-600 bg-white border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="text-[10px] sm:text-[11px] font-bold text-slate-700 hover:text-blue-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                   >
-                    <Upload className="w-3.5 h-3.5 text-blue-500" />
-                    <span>{customLogoUrl ? 'Change Shop Logo' : 'Upload Custom Shop Logo PNG'}</span>
+                    <Upload className="w-3 h-3 text-blue-500" />
+                    <span>{customLogoUrl ? 'Change Logo' : 'Upload Logo PNG'}</span>
                   </button>
 
                   {customLogoUrl && (
@@ -888,55 +1014,55 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                       onClick={() => setCustomLogoUrl(null)}
                       className="text-[10px] font-bold text-rose-500 hover:underline"
                     >
-                      Remove Logo
+                      Remove
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
+                <div className="flex items-center gap-2.5">
+                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={showPriceBadge}
                       onChange={(e) => setShowPriceBadge(e.target.checked)}
                       className="rounded text-orange-600 focus:ring-orange-500"
                     />
-                    <span>Show Price</span>
+                    <span>Price</span>
                   </label>
-                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
+                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={showWatermark}
                       onChange={(e) => setShowWatermark(e.target.checked)}
                       className="rounded text-orange-600 focus:ring-orange-500"
                     />
-                    <span>Show Shop Name</span>
+                    <span>Shop Name</span>
                   </label>
                 </div>
               </div>
             </div>
 
             {/* 2. MARKETING CAPTION GENERATOR */}
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+            <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2 flex-wrap gap-1.5">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center bg-slate-200 p-0.5 rounded-lg text-xs font-bold">
                     <button
                       type="button"
                       onClick={() => setCaptionMode('ai')}
-                      className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                      className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
                         captionMode === 'ai'
                           ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       <Sparkles className="w-3 h-3 text-amber-300" />
-                      <span>🤖 Gemini AI Copy</span>
+                      <span>SAT AI</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setCaptionMode('template')}
-                      className={`px-2.5 py-1 rounded-md transition-all ${
+                      className={`px-2 py-1 rounded-md transition-all ${
                         captionMode === 'template'
                           ? 'bg-white text-slate-900 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
@@ -953,7 +1079,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                       type="button"
                       onClick={() => handleGenerateAICopy()}
                       disabled={isGeneratingAI}
-                      className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                      className="text-[10px] sm:text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
                     >
                       <RotateCw className={`w-3 h-3 ${isGeneratingAI ? 'animate-spin' : ''}`} />
                       <span>{isGeneratingAI ? 'Generating...' : 'Re-generate'}</span>
@@ -962,7 +1088,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
 
                   <button
                     onClick={handleCopyCaption}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+                    className={`text-xs font-bold px-2.5 py-1 rounded-lg sm:rounded-xl flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95 ${
                       copied
                         ? 'bg-emerald-600 text-white'
                         : 'bg-orange-500 hover:bg-orange-600 text-white'
@@ -976,8 +1102,8 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
 
               {captionMode === 'ai' ? (
                 /* AI Controls */
-                <div className="space-y-2.5 animate-in fade-in duration-150">
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin">
                     {PLATFORM_OPTIONS.map((opt) => (
                       <button
                         key={opt.id}
@@ -986,7 +1112,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                           setAiPlatform(opt.id);
                           handleGenerateAICopy(opt.id);
                         }}
-                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0 transition-all border flex items-center gap-1 cursor-pointer ${
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0 transition-all border flex items-center gap-1 cursor-pointer ${
                           aiPlatform === opt.id
                             ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
                             : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -998,7 +1124,7 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[10px]">
+                  <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[9px] sm:text-[10px] scrollbar-thin">
                     <span className="text-slate-400 font-bold shrink-0">টোন:</span>
                     {TONE_OPTIONS.map((t) => (
                       <button
@@ -1021,17 +1147,17 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                 </div>
               ) : (
                 /* Caption Template Chips */
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
                   {[
-                    { id: 'hot_deal', label: '🔥 হট অফার পোস্ট', icon: Flame },
+                    { id: 'hot_deal', label: '🔥 হট অফার', icon: Flame },
                     { id: 'cod_delivery', label: '🚚 ক্যাশ অন ডেলিভারি', icon: Truck },
                     { id: 'whatsapp_quick', label: '💬 হোয়াটসঅ্যাপ মেসেজ', icon: MessageCircle },
-                    { id: 'warranty_quality', label: '🛡️ ওয়ারেন্টি ও কোয়ালিটি', icon: ShieldCheck },
+                    { id: 'warranty_quality', label: '🛡️ ওয়ারেন্টি', icon: ShieldCheck },
                   ].map((tpl) => (
                     <button
                       key={tpl.id}
                       onClick={() => setActiveTemplate(tpl.id as any)}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all border cursor-pointer ${
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0 transition-all border cursor-pointer ${
                         activeTemplate === tpl.id
                           ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                           : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -1048,50 +1174,50 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
                 <textarea
                   value={customCaption}
                   onChange={(e) => setCustomCaption(e.target.value)}
-                  rows={6}
-                  className="w-full p-3 text-xs bg-white border border-slate-300 rounded-xl font-normal leading-relaxed focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none resize-none"
+                  rows={4}
+                  className="w-full p-2.5 text-xs bg-white border border-slate-300 rounded-xl font-normal leading-relaxed focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none resize-none"
                   placeholder="Write or customize your marketing post..."
                 />
                 {isGeneratingAI && (
                   <div className="absolute inset-0 bg-white/80 backdrop-blur-2xs rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-blue-700">
                     <Sparkles className="w-4 h-4 animate-spin text-amber-500" />
-                    <span>Gemini AI বাংলা ক্যাপশন তৈরি করছে...</span>
+                    <span>SAT AI বাংলা ক্যাপশন তৈরি করছে...</span>
                   </div>
                 )}
               </div>
             </div>
 
             {/* 3. DIRECT ONE-CLICK SOCIAL SHARE BAR */}
-            <div className="space-y-2">
-              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block">
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
                 Direct One-Click Share
               </span>
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 {/* WhatsApp Share Button */}
                 <button
                   onClick={handleShareWhatsApp}
-                  className="py-3 px-3 bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                  className="py-2.5 px-2 bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-extrabold rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer"
                 >
-                  <MessageCircle className="w-4 h-4 fill-white" />
-                  <span>WhatsApp</span>
+                  <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                  <span className="truncate">WhatsApp</span>
                 </button>
 
                 {/* Facebook Share Button */}
                 <button
                   onClick={handleShareFacebook}
-                  className="py-3 px-3 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                  className="py-2.5 px-2 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-extrabold rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer"
                 >
-                  <Facebook className="w-4 h-4 fill-white" />
-                  <span>Facebook</span>
+                  <Facebook className="w-3.5 h-3.5 fill-white" />
+                  <span className="truncate">Facebook</span>
                 </button>
 
                 {/* Universal Native Share */}
                 <button
                   onClick={handleNativeShare}
-                  className="py-3 px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                  className="py-3 px-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold rounded-xl shadow-xs flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer"
                 >
-                  <Share2 className="w-4 h-4 text-orange-400" />
-                  <span>More Share</span>
+                  <Share2 className="w-3.5 h-3.5 text-orange-400" />
+                  <span className="truncate">Share</span>
                 </button>
               </div>
             </div>
@@ -1100,13 +1226,13 @@ ${warrantyText ? `🛡️ অফিসিয়াল ওয়ারেন্টি �
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between shrink-0">
-          <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
+        <div className="px-4 py-2.5 sm:py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between shrink-0">
+          <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium hidden sm:block">
             💡 ছবি ডাউনলোড করে ফেসবুক পেজ, গ্রুপ বা হোয়াটসঅ্যাপ স্টোরিতে পোস্ট করুন।
           </p>
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors ml-auto cursor-pointer"
+            className="px-5 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold text-xs rounded-xl transition-all ml-auto cursor-pointer"
           >
             Done / Close
           </button>

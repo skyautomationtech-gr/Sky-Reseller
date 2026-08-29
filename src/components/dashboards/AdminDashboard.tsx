@@ -132,7 +132,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
       case 'categories':
         return <CategoryManagement isAdminOrSuperAdmin={true} />;
       case 'brands':
-        return <BrandManagement isAdminOrSuperAdmin={true} />;
+        return <BrandManagement isAdminOrSuperAdmin={true} user={user} />;
       case 'orders':
         return <OrderList user={user} />;
       case 'wallet':

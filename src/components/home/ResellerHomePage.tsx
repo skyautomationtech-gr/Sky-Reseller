@@ -10,11 +10,13 @@ import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SkyLogo } from '../common/SkyLogo';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { 
   Store, Search, Wallet as WalletIcon, ShoppingBag, Clock, ArrowRight, 
   Sparkles, Layers, ChevronRight, AlertCircle, Headphones, Watch, Zap, 
   Cable, Speaker, BatteryCharging, Smartphone, Package, Check, ChevronLeft,
-  ShoppingCart, Trash2, Plus, Minus, AlertTriangle, Share2, Bot
+  ShoppingCart, Trash2, Plus, Minus, AlertTriangle, Share2, Bot, ShieldCheck,
+  TrendingUp, CheckCircle2
 } from 'lucide-react';
 
 interface ResellerHomePageProps {
@@ -305,8 +307,20 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
     'Power Bank', 'Mobile Accessories', 'Others'
   ];
 
-  const dbCategoryNames = categories.map((c) => c.name);
-  const allCategoryNames = Array.from(new Set([...defaultCategoryNames, ...dbCategoryNames]));
+  // Case-insensitive deduplication of category names
+  const categoryNameMap = new Map<string, string>();
+  defaultCategoryNames.forEach((name) => {
+    categoryNameMap.set(name.trim().toLowerCase(), name.trim());
+  });
+  categories.forEach((c) => {
+    if (c.name && c.name.trim()) {
+      const lower = c.name.trim().toLowerCase();
+      if (!categoryNameMap.has(lower)) {
+        categoryNameMap.set(lower, c.name.trim());
+      }
+    }
+  });
+  const allCategoryNames = Array.from(categoryNameMap.values());
 
   const getCategoryIcon = (catName: string) => {
     const key = catName.toLowerCase();
@@ -326,30 +340,45 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
   });
 
   // Group filtered products by category for "All" view
-  const categoryGroups = allCategoryNames.map((catName) => {
+  const categoryGroups: { name: string; items: Product[] }[] = [];
+  const knownGroupedIds = new Set<string>();
+
+  allCategoryNames.forEach((catName) => {
     const items = filteredProducts.filter(
-      (p) => (p.categoryName || 'Others').toLowerCase() === catName.toLowerCase()
+      (p) => (p.categoryName || 'Others').trim().toLowerCase() === catName.toLowerCase()
     );
-    return { name: catName, items };
-  }).filter((group) => group.items.length > 0);
+    if (items.length > 0) {
+      categoryGroups.push({ name: catName, items });
+      items.forEach((item) => knownGroupedIds.add(item.id));
+    }
+  });
 
   // Handle case where product category doesn't match standard names exactly
-  const knownGroupedIds = new Set(categoryGroups.flatMap(g => g.items.map(i => i.id)));
-  const unclassifiedItems = filteredProducts.filter(p => !knownGroupedIds.has(p.id));
+  const unclassifiedItems = filteredProducts.filter((p) => !knownGroupedIds.has(p.id));
   if (unclassifiedItems.length > 0) {
-    categoryGroups.push({ name: 'Others', items: unclassifiedItems });
+    const existingOthersGroup = categoryGroups.find((g) => g.name.toLowerCase() === 'others');
+    if (existingOthersGroup) {
+      existingOthersGroup.items = [...existingOthersGroup.items, ...unclassifiedItems];
+    } else {
+      categoryGroups.push({ name: 'Others', items: unclassifiedItems });
+    }
   }
 
   return (
     <div className="space-y-6 pb-12">
-      {/* 1. TOP BANNER / HERO SECTION */}
-      <div className="relative rounded-2xl overflow-hidden shadow-xl bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white p-6 sm:p-8">
+      {/* 1. TOP BANNER / HERO SECTION (Modern Luxury Dark Theme, Mobile-Optimized) */}
+      <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 border border-slate-800 text-white p-4 sm:p-5">
+        {/* Subtle Ambient Glows */}
+        <div className="absolute -top-10 -right-10 w-44 h-44 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-10 -left-10 w-44 h-44 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+
         {bannerImages.length > 0 ? (
-          <div className="relative aspect-[21/9] sm:aspect-[24/8] max-h-64 rounded-xl overflow-hidden mb-4">
+          /* Recommended Banner Aspect Ratio: 3:1 (e.g., 1200x400px on PC, 800x266px on Mobile) */
+          <div className="relative aspect-[3/1] sm:aspect-[24/8] max-h-48 rounded-xl overflow-hidden shadow-inner border border-white/10">
             <img 
               src={bannerImages[currentBannerIndex]} 
               alt="Promo Banner" 
-              className="w-full h-full object-cover rounded-xl"
+              className="w-full h-full object-cover"
             />
             {bannerImages.length > 1 && (
               <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
@@ -357,8 +386,8 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                   <button 
                     key={idx}
                     onClick={() => setCurrentBannerIndex(idx)}
-                    className={`h-2 rounded-full transition-all ${
-                      currentBannerIndex === idx ? 'w-6 bg-white' : 'w-2 bg-white/50'
+                    className={`h-1.5 rounded-full transition-all ${
+                      currentBannerIndex === idx ? 'w-5 bg-white' : 'w-1.5 bg-white/50'
                     }`}
                   />
                 ))}
@@ -366,94 +395,127 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             )}
           </div>
         ) : (
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 py-2">
-            <div className="max-w-xl space-y-3">
-              <SkyLogo size="lg" showText={true} />
-              <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed pt-1">
-                Browse official gadget inventory at wholesale prices. Order directly for your customers and enjoy automated wallet payout tracking.
-              </p>
-              <div className="pt-1 text-[11px] text-blue-200/70 font-mono">
-                💡 Admin can upload custom banner images under <span className="underline cursor-pointer" onClick={() => onNavigateTab('settings')}>Settings</span>
+          <div className="relative z-10 space-y-3">
+            {/* Top Row: Shop Name & Reseller ID */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-500/20 border border-blue-400/30 backdrop-blur-md flex items-center justify-center text-amber-300 shrink-0">
+                  <Store className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-xs sm:text-sm font-bold text-white truncate flex items-center gap-1">
+                    <span>{user.shopName || user.fullName}</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  </h3>
+                </div>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-1 bg-slate-800/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-700 shadow-sm">
+                <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">Reseller ID:</span>
+                <span className="font-mono text-[11px] font-extrabold text-amber-300 tracking-wider">
+                  {formatResellerId(user)}
+                </span>
               </div>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-md border border-white/15 p-4 rounded-xl shrink-0 space-y-2 max-w-xs">
-              <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
-                <Store className="w-4 h-4" />
-                <span>{user.shopName || 'Reseller Shop'}</span>
-              </div>
-              <p className="text-[11px] text-slate-200">
-                Approved Reseller Partner ID: <span className="font-mono text-white font-bold">{user.uid.slice(0, 8)}</span>
+            {/* Middle: Clean Punchy Tagline */}
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-slate-100 leading-tight">
+                Sky Wholesale Gadgets & Reselling Portal
               </p>
+              <p className="text-[11px] sm:text-xs text-slate-400 leading-relaxed mt-0.5">
+                Wholesale prices, verified warranty & automated wallet payouts.
+              </p>
+            </div>
+
+            {/* Bottom Row: Feature Pills */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80 text-[10px] text-slate-300 font-medium">
+              <span className="bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/70 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5 text-amber-300" /> 100% Genuine
+              </span>
+              <span className="bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/70 flex items-center gap-1">
+                <TrendingUp className="w-2.5 h-2.5 text-emerald-400" /> High Margins
+              </span>
+              <span className="bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/70 flex items-center gap-1">
+                <ShieldCheck className="w-2.5 h-2.5 text-blue-300" /> Fast Delivery
+              </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* 2. QUICK STATS STRIP */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 2. QUICK STATS STRIP (2x2 Compact Grid) */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
         {/* Wallet Balance Card */}
         <div 
           onClick={() => onNavigateTab('wallet')}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 transition-all cursor-pointer flex items-center justify-between group"
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-emerald-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group"
         >
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Wallet Balance</span>
-            <span className="text-xl font-extrabold text-slate-900 block">৳{walletBalance.toLocaleString()}</span>
-            <span className="text-[10px] font-semibold text-emerald-600 group-hover:underline">View Wallet & Payouts →</span>
+          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Wallet Balance</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">৳{walletBalance.toLocaleString()}</span>
+            <span className="text-[11px] font-bold text-emerald-600 group-hover:underline flex items-center gap-0.5">
+              Payouts →
+            </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-            <WalletIcon className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+            <WalletIcon className="w-4 h-4" />
           </div>
         </div>
 
         {/* Today's Orders */}
         <div 
           onClick={() => onNavigateTab('orders')}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 transition-all cursor-pointer flex items-center justify-between group"
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-blue-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group"
         >
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today's Orders</span>
-            <span className="text-xl font-extrabold text-slate-900 block">{todayOrdersCount} Orders</span>
-            <span className="text-[10px] font-semibold text-blue-600 group-hover:underline">Manage Orders →</span>
+          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Today's Orders</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">{todayOrdersCount} Orders</span>
+            <span className="text-[11px] font-bold text-blue-600 group-hover:underline flex items-center gap-0.5">
+              Orders →
+            </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-            <ShoppingBag className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+            <ShoppingBag className="w-4 h-4" />
           </div>
         </div>
 
         {/* Pending Orders */}
         <div 
           onClick={() => onNavigateTab('orders')}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer flex items-center justify-between group"
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-amber-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group"
         >
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pending Processing</span>
-            <span className="text-xl font-extrabold text-slate-900 block">{pendingOrdersCount} Pending</span>
-            <span className="text-[10px] font-semibold text-amber-600 group-hover:underline">Check Status →</span>
+          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Processing</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">{pendingOrdersCount} Pending</span>
+            <span className="text-[11px] font-bold text-amber-600 group-hover:underline flex items-center gap-0.5">
+              Status →
+            </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-            <Clock className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+            <Clock className="w-4 h-4" />
           </div>
         </div>
 
         {/* Shopping Cart Card */}
         <div 
           onClick={() => setIsCartOpen(true)}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden"
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-orange-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden"
         >
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Shopping Cart</span>
-            <span className="text-xl font-extrabold text-slate-900 block">
+          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Cart</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">
               {cart.reduce((acc, item) => acc + item.quantity, 0)} Items
             </span>
-            <span className="text-[10px] font-semibold text-[#f57224] group-hover:underline">View & Place Order →</span>
+            <span className="text-[11px] font-bold text-[#f57224] group-hover:underline flex items-center gap-0.5">
+              Order Now →
+            </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#f57224] flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-            <ShoppingCart className="w-5 h-5" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-orange-50 text-[#f57224] flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+            <ShoppingCart className="w-4 h-4" />
           </div>
           {cart.length > 0 && (
-            <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
+            <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#f57224]"></span>
             </span>
@@ -461,36 +523,64 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         </div>
       </div>
 
-      {/* 3. CATEGORY ROW (horizontal scrollable) */}
-      <div className="space-y-2">
+      {/* 3. SEARCH BAR (Moved above Categories, sleek modern design) */}
+      <div className="space-y-1.5">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+            <Search className="w-4 h-4 text-blue-500" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search products by title, model, SKU, or category..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-20 py-2.5 sm:py-3 text-xs sm:text-sm bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:border-blue-300 focus:border-blue-500 focus:ring-3 focus:ring-blue-500/15 outline-none transition-all placeholder:text-slate-400 font-medium"
+          />
+          {searchTerm ? (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+            >
+              Clear
+            </button>
+          ) : (
+            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-slate-400 bg-slate-50 border border-slate-200/70 px-2 py-0.5 rounded-md hidden sm:inline-block pointer-events-none">
+              Live Search
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 4. CATEGORY ROW (horizontal scrollable, compact & sleek) */}
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Categories</h2>
+          <h2 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Categories</h2>
           {selectedCategory !== 'All' && (
             <button 
               onClick={() => setSelectedCategory('All')}
-              className="text-xs text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1"
+              className="text-[11px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-0.5"
             >
-              <ChevronLeft className="w-3.5 h-3.5" /> Show All Categories
+              <ChevronLeft className="w-3 h-3" /> Show All
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-200">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-200 -mx-1 px-1">
           {/* All Button */}
           <button
             onClick={() => setSelectedCategory('All')}
-            className={`flex flex-col items-center gap-1.5 p-3 rounded-2xl min-w-[72px] shrink-0 transition-all ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-2.5 rounded-xl min-w-[56px] sm:min-w-[62px] shrink-0 transition-all active:scale-95 cursor-pointer ${
               selectedCategory === 'All'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-600'
-                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1.5 ring-blue-600'
+                : 'bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
             }`}
           >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-              selectedCategory === 'All' ? 'bg-white/20' : 'bg-slate-100 text-slate-600'
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+              selectedCategory === 'All' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
             }`}>
-              <Layers className="w-5 h-5" />
+              <Layers className="w-3.5 h-3.5" />
             </div>
-            <span className="text-[11px] font-bold whitespace-nowrap">All</span>
+            <span className="text-[10px] font-bold whitespace-nowrap leading-none">All</span>
           </button>
 
           {allCategoryNames.map((catName) => {
@@ -500,43 +590,23 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
               <button
                 key={catName}
                 onClick={() => setSelectedCategory(catName)}
-                className={`flex flex-col items-center gap-1.5 p-3 rounded-2xl min-w-[80px] shrink-0 transition-all ${
+                className={`flex flex-col items-center justify-center gap-1 py-2 px-2.5 rounded-xl min-w-[62px] sm:min-w-[68px] shrink-0 transition-all active:scale-95 cursor-pointer ${
                   isSelected
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-600'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1.5 ring-blue-600'
+                    : 'bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
                 }`}
               >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  isSelected ? 'bg-white/20' : 'bg-slate-100 text-blue-600'
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-blue-50/80 text-blue-600'
                 }`}>
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-3.5 h-3.5" />
                 </div>
-                <span className="text-[11px] font-bold whitespace-nowrap truncate max-w-[80px]">{catName}</span>
+                <span className="text-[10px] font-bold whitespace-nowrap truncate max-w-[70px] leading-none">
+                  {catName}
+                </span>
               </button>
             );
           })}
-        </div>
-      </div>
-
-      {/* 4. STICKY SEARCH BAR */}
-      <div className="sticky top-0 z-20 bg-slate-100/90 backdrop-blur-md pt-2 pb-2">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search products by name, SKU, or category..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-slate-300 rounded-2xl shadow-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md"
-            >
-              Clear
-            </button>
-          )}
         </div>
       </div>
 
@@ -1162,35 +1232,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
             ) : null}
           </div>
 
-          {/* Quick Floating Buttons (AI Copy + Poster Maker) */}
-          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
-            {onAICopyClick && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAICopyClick(product);
-                }}
-                className="w-8 h-8 rounded-full bg-blue-600/90 hover:bg-blue-600 backdrop-blur-xs text-white flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95 cursor-pointer"
-                title="Generate AI Marketing Caption (Facebook / TikTok)"
-              >
-                <Bot className="w-4 h-4 text-amber-300" />
-              </button>
-            )}
-
-            {onShareClick && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onShareClick(product);
-                }}
-                className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-orange-600 backdrop-blur-xs text-white flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95 cursor-pointer"
-                title="Create Custom Watermarked Poster & Share Caption"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-              </button>
-            )}
-          </div>
-
+          {/* Product SKU Badge */}
           <span className="absolute bottom-2.5 right-2.5 bg-slate-900/80 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-md pointer-events-none">
             SKU: {product.sku}
           </span>
@@ -1203,27 +1245,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
               <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600">
                 {product.categoryName || 'Gadgets'}
               </span>
-              <div className="flex items-center gap-2">
-                {onAICopyClick && (
-                  <button
-                    onClick={() => onAICopyClick(product)}
-                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 hover:underline cursor-pointer"
-                    title="Generate AI Facebook / TikTok Post"
-                  >
-                    <Bot className="w-3 h-3 text-blue-600" />
-                    <span>AI Copy</span>
-                  </button>
-                )}
-                {onShareClick && (
-                  <button
-                    onClick={() => onShareClick(product)}
-                    className="text-[10px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 hover:underline cursor-pointer"
-                  >
-                    <Share2 className="w-3 h-3" />
-                    <span>Poster</span>
-                  </button>
-                )}
-              </div>
             </div>
             <h3 
               onClick={onDetailClick}

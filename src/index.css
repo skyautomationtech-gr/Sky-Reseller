@@ -1,4 +1,34 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap');
+
+:root {
+  font-family: 'Plus Jakarta Sans', 'Hind Siliguri', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-size: 15px;
+  color: #1e293b;
+  background-color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+/* Ensure minimum comfortable text size across compact mobile classes */
+.text-\[9px\], .text-\[10px\] {
+  font-size: 11px !important;
+}
+
+.text-\[11px\] {
+  font-size: 12px !important;
+}
+
+.text-xs {
+  font-size: 13px !important;
+  line-height: 1.25rem !important;
+}
 
 /* Android CameraX / Scanner FIT_CENTER Preview Styles */
 #qr-reader-container {

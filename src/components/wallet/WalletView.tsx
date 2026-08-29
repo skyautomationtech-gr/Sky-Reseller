@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { PaymentMethod, UserProfile, Wallet, WalletTransaction, PayoutChangeRequest } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { WithdrawalRequestForm } from './WithdrawalRequestForm';
 import { AdminWithdrawalManager } from './AdminWithdrawalManager';
 import { 
@@ -536,7 +537,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
 
             <div className="pt-6 mt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <p className="text-xs text-slate-400">
-                Reseller ID: <span className="text-slate-200 font-mono font-semibold">{user.uid.substring(0, 8)}</span>
+                Reseller ID: <span className="text-white font-mono font-bold bg-white/10 px-2 py-0.5 rounded border border-white/20">{formatResellerId(user)}</span>
               </p>
               <div className="flex items-center gap-2.5">
                 <button

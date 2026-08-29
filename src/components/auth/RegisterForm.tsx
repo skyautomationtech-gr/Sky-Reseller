@@ -6,6 +6,7 @@ import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
 import { SkyLogo } from '../common/SkyLogo';
 import { Eye, EyeOff, Upload, ShieldCheck, Store, MapPin, Phone, Mail, Lock, User, FileText, AlertCircle, CheckCircle, WifiOff, MessageCircle } from 'lucide-react';
 import { useNetwork } from '../../context/NetworkContext';
+import { generateRandomResellerSuffix } from '../../lib/resellerIdHelper';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
@@ -198,9 +199,14 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       const shopPhotoUrl = shopPreview;
       const nidUrl = nidPreview || '';
 
+      // Generate unique SGR Reseller Code (e.g. SGR-ERTY)
+      const randomSuffix = generateRandomResellerSuffix();
+      const resellerCode = `SGR-${randomSuffix}`;
+
       // Create or update Firestore user doc
       await setDoc(doc(db, 'users', uid), {
         uid,
+        resellerCode,
         fullName,
         shopName,
         mobile,

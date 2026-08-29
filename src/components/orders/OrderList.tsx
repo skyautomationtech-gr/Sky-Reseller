@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Order, OrderStatus, UserProfile } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrderCustomizationForm } from './OrderCustomizationForm';
 import { InvoiceModal } from './InvoiceModal';
@@ -760,7 +761,12 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                       </div>
                       {isAdminOrSuperAdmin && (
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Reseller Shop</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Reseller</span>
+                            <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                              {formatResellerId(order.resellerId)}
+                            </span>
+                          </div>
                           <span className="font-semibold text-slate-900 block truncate">{order.resellerShopName}</span>
                           <span className="text-slate-500 text-[10px] block truncate">{order.resellerName}</span>
                         </div>
@@ -912,8 +918,13 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                   <span className="font-mono font-bold text-blue-700">{selectedOrderForDetails.orderNumber}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">order Created name Auto</span>
-                  <span className="font-semibold text-slate-800">{selectedOrderForDetails.resellerName}</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Reseller Creator</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="font-semibold text-slate-800">{selectedOrderForDetails.resellerName}</span>
+                    <span className="font-mono text-[10px] font-bold text-blue-700 bg-white px-1.5 py-0.5 rounded border border-blue-200">
+                      {formatResellerId(selectedOrderForDetails.resellerId)}
+                    </span>
+                  </div>
                 </div>
               </div>
 

@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, UserStatus } from '../../types';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { EditUserModal } from './EditUserModal';
-import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff, RotateCw, MessageCircle } from 'lucide-react';
+import { Store, Phone, Mail, MapPin, Search, Ban, CheckCircle2, Clock, XCircle, Shield, Edit, UserCheck, CreditCard, Percent, Key, Eye, EyeOff, RotateCw, MessageCircle, Tag } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface AllResellersListProps {
@@ -245,7 +246,15 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
                           </div>
                         )}
                         <div>
-                          <div className="font-bold text-slate-900">{u.fullName}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-bold text-slate-900">{u.fullName}</div>
+                            {u.role === 'reseller' && (
+                              <span className="inline-flex items-center gap-0.5 font-mono text-[10px] font-extrabold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
+                                <Tag className="w-2.5 h-2.5 text-blue-500" />
+                                {formatResellerId(u)}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-blue-600 font-medium text-[11px]">{u.shopName || 'No Shop Name'}</div>
                           <div className="text-[10px] text-slate-400">{u.email}</div>
                         </div>
@@ -387,7 +396,14 @@ export const AllResellersList: React.FC<AllResellersListProps> = ({ user: curren
                     </div>
                   )}
                   <div className="space-y-0.5 min-w-0">
-                    <div className="font-extrabold text-slate-900 text-xs truncate">{u.fullName}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="font-extrabold text-slate-900 text-xs truncate">{u.fullName}</div>
+                      {u.role === 'reseller' && (
+                        <span className="inline-flex items-center gap-0.5 font-mono text-[9px] font-extrabold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 shrink-0">
+                          {formatResellerId(u)}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-blue-600 font-bold text-[10px] truncate">{u.shopName || 'No Shop Name'}</div>
                     <div className="text-[10px] text-slate-400 truncate">{u.email}</div>
                   </div>

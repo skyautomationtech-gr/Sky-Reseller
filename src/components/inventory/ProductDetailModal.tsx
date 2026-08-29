@@ -49,7 +49,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <button
                     onClick={() => setIsAIModalOpen(true)}
                     className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-blue-600/20 transition-all cursor-pointer select-none"
-                    title="Generate Facebook / TikTok Bengali Caption with Gemini AI"
+                    title="Generate Facebook / TikTok Bengali Caption with SAT AI"
                   >
                     <Bot className="w-3.5 h-3.5 text-amber-300" />
                     <span>AI Caption</span>

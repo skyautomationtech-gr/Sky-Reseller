@@ -5,9 +5,10 @@ import { auth, db } from '../../lib/firebase';
 import { UserProfile } from '../../types';
 import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
 import { logAuditAction } from '../../lib/auditLogger';
+import { formatResellerId } from '../../lib/resellerIdHelper';
 import { 
   User, Store, Phone, MapPin, Key, Image as ImageIcon, 
-  Save, Lock, CheckCircle2, AlertCircle, Loader2, Shield, MessageCircle
+  Save, Lock, CheckCircle2, AlertCircle, Loader2, Shield, MessageCircle, Tag
 } from 'lucide-react';
 
 interface ResellerProfilePageProps {
@@ -140,7 +141,13 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
             <User className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Reseller Profile Settings</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900">Reseller Profile Settings</h2>
+              <span className="inline-flex items-center gap-1 font-mono text-xs font-extrabold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg border border-blue-200">
+                <Tag className="w-3 h-3 text-blue-500" />
+                {formatResellerId(user)}
+              </span>
+            </div>
             <p className="text-xs text-slate-500 mt-0.5">Manage shop branding, contact information, and account security.</p>
           </div>
         </div>

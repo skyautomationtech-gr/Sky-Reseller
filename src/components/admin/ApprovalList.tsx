@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, PayoutChangeRequest } from '../../types';
-import { CheckCircle2, XCircle, Clock, Store, Phone, MapPin, Mail, Eye, AlertCircle, FileText, CreditCard, Shield, UserCheck, ArrowRight, Key, MessageCircle } from 'lucide-react';
+import { formatResellerId } from '../../lib/resellerIdHelper';
+import { CheckCircle2, XCircle, Clock, Store, Phone, MapPin, Mail, Eye, AlertCircle, FileText, CreditCard, Shield, UserCheck, ArrowRight, Key, MessageCircle, Tag } from 'lucide-react';
 
 interface ApprovalListProps {
   user?: UserProfile;
@@ -261,8 +262,14 @@ export const ApprovalList: React.FC<ApprovalListProps> = ({ user: currentUser })
                           </div>
                         )}
                         <div>
-                          <h3 className="font-bold text-slate-900 text-base">{user.fullName}</h3>
-                          <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-900 text-base">{user.fullName}</h3>
+                            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-extrabold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg border border-blue-200">
+                              <Tag className="w-3 h-3 text-blue-500" />
+                              {formatResellerId(user)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium mt-0.5">
                             <Store className="w-3.5 h-3.5" />
                             <span>{user.shopName}</span>
                           </div>
@@ -391,8 +398,14 @@ export const ApprovalList: React.FC<ApprovalListProps> = ({ user: currentUser })
                   <div className="p-6 space-y-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h3 className="font-bold text-slate-900 text-base">{req.resellerName}</h3>
-                        <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-slate-900 text-base">{req.resellerName}</h3>
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] font-extrabold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg border border-blue-200">
+                            <Tag className="w-3 h-3 text-blue-500" />
+                            {formatResellerId(req.resellerId)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium mt-0.5">
                           <Store className="w-3.5 h-3.5" />
                           <span>{req.shopName || 'Reseller'}</span>
                         </div>
