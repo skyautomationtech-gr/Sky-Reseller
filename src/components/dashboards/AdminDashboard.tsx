@@ -34,6 +34,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
   // Stats
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [pendingProductsCount, setPendingProductsCount] = useState(0);
   const [totalResellersCount, setTotalResellersCount] = useState(0);
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [deliveredOrdersCount, setDeliveredOrdersCount] = useState(0);
@@ -92,16 +93,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
       // Products / Low Stock Alerts
       const productsSnap = await getDocs(collection(db, 'products'));
       let lowStock = 0;
+      let pendingProdCount = 0;
       productsSnap.forEach((docSnap) => {
         const p = docSnap.data();
         if (p.status !== 'deleted') {
-          const threshold = p.lowStockThreshold || 5;
-          if (p.stock <= threshold) {
-            lowStock++;
+          if (p.approvalStatus === 'pending') {
+            pendingProdCount++;
+          } else {
+            const threshold = p.lowStockThreshold || 5;
+            if (p.stock <= threshold) {
+              lowStock++;
+            }
           }
         }
       });
       setLowStockCount(lowStock);
+      setPendingProductsCount(pendingProdCount);
 
       // Support Tickets (Unresolved: open or in_progress)
       const ticketsSnap = await getDocs(collection(db, 'supportTickets'));
@@ -242,6 +249,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 <div>
                   <div className="text-base sm:text-xl font-extrabold text-slate-900">{deliveredOrdersCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Done</span></div>
                   <p className="text-[10px] text-emerald-600 font-bold mt-1 truncate">Completed orders →</p>
+                </div>
+              </div>
+
+              {/* Card 4.5: Pending Products */}
+              <div
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('sky_navigate_tab', { detail: { tab: 'products' } }));
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('sky_product_filter', { detail: { filter: 'pending_approvals' } }));
+                  }, 50);
+                }}
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98 relative"
+              >
+                {pendingProductsCount > 0 && (
+                  <span className="absolute -top-2 -right-2 flex h-5 w-5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-5 w-5 bg-amber-500 text-white text-[9px] font-bold items-center justify-center border-2 border-white">{pendingProductsCount}</span>
+                  </span>
+                )}
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Product Approvals</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Package className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{pendingProductsCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Staged</span></div>
+                  <p className="text-[10px] text-amber-600 font-bold mt-1 truncate">Review queue →</p>
                 </div>
               </div>
 

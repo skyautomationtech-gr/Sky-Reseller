@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-const defaultLogoAsset = '/Sky Automation Tech Logo.jpeg';
+const defaultLogoAsset = '/logo.jpg';
 
 interface SkyLogoProps {
   className?: string;
@@ -62,7 +62,7 @@ export const SkyLogo: React.FC<SkyLogoProps> = ({
         <img
           src={logoUrl}
           alt={companyName}
-          onError={() => setLogoUrl('/logo.jpg')}
+          onError={() => setLogoUrl('/Sky Automation Tech Logo.jpeg')}
           className={`${dimensions.box} object-contain rounded-xl border border-slate-200/20 bg-white/5 p-1 shrink-0 ${imgClassName}`}
         />
       ) : (

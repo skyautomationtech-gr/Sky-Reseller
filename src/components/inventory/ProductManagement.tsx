@@ -36,7 +36,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBrand, setSelectedBrand] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'low_stock'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'low_stock' | 'pending_approvals'>('all');
 
   // Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -101,8 +101,16 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
       setLoading(false);
     });
 
+    const handleFilterChange = (e: any) => {
+      if (e.detail?.filter) {
+        setStatusFilter(e.detail.filter);
+      }
+    };
+    window.addEventListener('sky_product_filter', handleFilterChange);
+
     return () => {
       unsubProducts();
+      window.removeEventListener('sky_product_filter', handleFilterChange);
     };
   }, []);
 
@@ -436,6 +444,39 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
     }
   };
 
+  const handleApproveProduct = async (p: Product) => {
+    try {
+      await updateDoc(doc(db, 'products', p.id), {
+        status: 'active',
+        approvalStatus: 'approved',
+        approvedAt: serverTimestamp(),
+        approvedBy: user.fullName || 'Admin',
+        updatedAt: serverTimestamp(),
+      });
+      fetchData();
+    } catch (err: any) {
+      console.error('Error approving product:', err);
+      alert(`Failed to approve: ${err.message}`);
+    }
+  };
+
+  const handleRejectProduct = async (p: Product) => {
+    try {
+      const reason = window.prompt("Reason for rejection:");
+      if (reason === null) return;
+      await updateDoc(doc(db, 'products', p.id), {
+        status: 'inactive',
+        approvalStatus: 'rejected',
+        rejectReason: reason,
+        updatedAt: serverTimestamp(),
+      });
+      fetchData();
+    } catch (err: any) {
+      console.error('Error rejecting product:', err);
+      alert(`Failed to reject: ${err.message}`);
+    }
+  };
+
   const confirmDeleteProduct = async () => {
     if (!productToDelete) return;
     const id = productToDelete.id;
@@ -475,9 +516,11 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
     const matchesBrand = selectedBrand === 'all' || p.brandId === selectedBrand;
 
     let matchesStatus = true;
-    if (statusFilter === 'active') matchesStatus = p.status === 'active';
-    else if (statusFilter === 'inactive') matchesStatus = p.status === 'inactive';
-    else if (statusFilter === 'low_stock') matchesStatus = p.stock <= (p.lowStockThreshold || 5);
+    if (statusFilter === 'active') matchesStatus = p.status === 'active' && p.approvalStatus !== 'pending';
+    else if (statusFilter === 'inactive') matchesStatus = p.status === 'inactive' && p.approvalStatus !== 'pending';
+    else if (statusFilter === 'low_stock') matchesStatus = p.stock <= (p.lowStockThreshold || 5) && p.approvalStatus !== 'pending';
+    else if (statusFilter === 'pending_approvals') matchesStatus = p.approvalStatus === 'pending';
+    else if (statusFilter === 'all') matchesStatus = p.approvalStatus !== 'pending'; // Hide pending from "all" view
 
     return matchesSearch && matchesCat && matchesBrand && matchesStatus;
   });
@@ -579,10 +622,10 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
           </div>
 
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-            {(['all', 'active', 'low_stock'] as const).map((tab) => (
+            {((isAdmin ? ['all', 'active', 'low_stock', 'pending_approvals'] : ['all', 'active', 'low_stock']) as const).map((tab) => (
               <button
                 key={tab}
-                onClick={() => setStatusFilter(tab)}
+                onClick={() => setStatusFilter(tab as any)}
                 className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold capitalize transition-all ${
                   statusFilter === tab ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
                 }`}
@@ -619,7 +662,11 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-1">
                       <h4 className="font-extrabold text-slate-900 text-sm leading-snug line-clamp-2">{p.name}</h4>
-                      {p.status === 'active' ? (
+                      {p.approvalStatus === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0">
+                          Pending
+                        </span>
+                      ) : p.status === 'active' ? (
                         <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0">
                           Active
                         </span>
@@ -670,45 +717,65 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
                   <span className="text-[10px] text-slate-400 font-medium">Tap card for details</span>
                   <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => {
-                        setAiModalProduct(p);
-                        setIsAIModalOpen(true);
-                      }}
-                      className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
-                      title="Generate AI Marketing Caption"
-                    >
-                      <Bot className="w-4 h-4 text-blue-600" />
-                    </button>
-                    <button
-                      onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
-                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>View</span>
-                    </button>
-                    {!isReseller && (
-                      <button
-                        onClick={() => setViewingQrProduct(p)}
-                        className="p-2.5 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
-                      >
-                        <QrIcon className="w-4 h-4" />
-                      </button>
-                    )}
-                    {isAdmin && (
+                    {isAdmin && p.approvalStatus === 'pending' && (
                       <>
                         <button
-                          onClick={() => handleOpenEdit(p)}
-                          className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                          onClick={() => handleApproveProduct(p)}
+                          className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] justify-center flex-1"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <CheckCircle2 className="w-4 h-4" /> Approve
                         </button>
                         <button
-                          onClick={() => setProductToDelete(p)}
-                          className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                          onClick={() => handleRejectProduct(p)}
+                          className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] justify-center flex-1"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <XCircle className="w-4 h-4" /> Reject
                         </button>
+                      </>
+                    )}
+                    {(!isAdmin || p.approvalStatus !== 'pending') && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setAiModalProduct(p);
+                            setIsAIModalOpen(true);
+                          }}
+                          className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                          title="Generate AI Marketing Caption"
+                        >
+                          <Bot className="w-4 h-4 text-blue-600" />
+                        </button>
+                        <button
+                          onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
+                          className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>View</span>
+                        </button>
+                        {!isReseller && (
+                          <button
+                            onClick={() => setViewingQrProduct(p)}
+                            className="p-2.5 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                          >
+                            <QrIcon className="w-4 h-4" />
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(p)}
+                              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setProductToDelete(p)}
+                              className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl font-bold text-xs flex items-center gap-1 min-h-[44px] min-w-[44px] justify-center"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -837,7 +904,11 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
                     </td>
 
                     <td className="px-6 py-4">
-                      {p.status === 'active' ? (
+                      {p.approvalStatus === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
+                          <CheckCircle2 className="w-3 h-3" /> Pending
+                        </span>
+                      ) : p.status === 'active' ? (
                         <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
                           <CheckCircle2 className="w-3 h-3" /> Active
                         </span>
@@ -850,51 +921,71 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            setAiModalProduct(p);
-                            setIsAIModalOpen(true);
-                          }}
-                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Generate AI Marketing Caption (SAT AI)"
-                        >
-                          <Bot className="w-4 h-4 text-blue-600" />
-                        </button>
-                        <button
-                          onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
-                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="View Details & Media Gallery"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {!isReseller && (
-                          <button
-                            onClick={() => setViewingQrProduct(p)}
-                            className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                            title="View QR & Barcode"
-                          >
-                            <QrIcon className="w-4 h-4" />
-                          </button>
-                        )}
-                        {isAdmin && (
+                        {isAdmin && p.approvalStatus === 'pending' && (
                           <>
                             <button
-                              onClick={() => handleOpenEdit(p)}
-                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Edit Product"
+                              onClick={(e) => { e.stopPropagation(); handleApproveProduct(p); }}
+                              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg font-bold text-xs flex items-center gap-1 transition-colors"
                             >
-                              <Edit2 className="w-4 h-4" />
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Approve
                             </button>
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setProductToDelete(p);
-                              }}
-                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors relative z-10"
-                              title="Delete Product"
+                              onClick={(e) => { e.stopPropagation(); handleRejectProduct(p); }}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-bold text-xs flex items-center gap-1 transition-colors"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <XCircle className="w-3.5 h-3.5" /> Reject
                             </button>
+                          </>
+                        )}
+                        {(!isAdmin || p.approvalStatus !== 'pending') && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setAiModalProduct(p);
+                                setIsAIModalOpen(true);
+                              }}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Generate AI Marketing Caption (SAT AI)"
+                            >
+                              <Bot className="w-4 h-4 text-blue-600" />
+                            </button>
+                            <button
+                              onClick={() => { setViewingProductDetails(p); setActiveMediaIndex(0); }}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="View Details & Media Gallery"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            {!isReseller && (
+                              <button
+                                onClick={() => setViewingQrProduct(p)}
+                                className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                title="View QR & Barcode"
+                              >
+                                <QrIcon className="w-4 h-4" />
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenEdit(p)}
+                                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="Edit Product"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setProductToDelete(p);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors relative z-10"
+                                  title="Delete Product"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
                           </>
                         )}
                       </div>
@@ -1677,6 +1768,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
         categories={categories}
         brands={brands}
         onRefreshData={handleRefresh}
+        onNavigateToApprovals={() => setStatusFilter('pending_approvals')}
       />
     </div>
   );

@@ -25,6 +25,7 @@ interface BulkProductImportModalProps {
   categories: Category[];
   brands: Brand[];
   onRefreshData: () => Promise<any>;
+  onNavigateToApprovals?: () => void;
 }
 
 type ImportStep = 'upload' | 'preview' | 'importing' | 'summary';
@@ -37,7 +38,8 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
   existingProducts,
   categories,
   brands,
-  onRefreshData
+  onRefreshData,
+  onNavigateToApprovals
 }) => {
   const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
   const [fileName, setFileName] = useState('');
@@ -45,6 +47,7 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [parsingError, setParsingError] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+  const [importMode, setImportMode] = useState<'approval' | 'direct'>('approval');
 
   // Parsed Rows & Filter
   const [parsedRows, setParsedRows] = useState<ParsedProductRow[]>([]);
@@ -185,6 +188,9 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
       if (p.id) prodByIdMap.set(p.id.trim(), p);
     });
 
+    const isPendingApproval = importMode === 'approval';
+    const batchId = `BATCH-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
     try {
       for (let i = 0; i < totalCount; i++) {
         const item = validRowsToImport[i];
@@ -258,7 +264,15 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
             description: item.description || (existingProduct ? existingProduct.description : ''),
             hasVariants: item.hasVariants,
             variants: item.variants || [],
-            status: item.status,
+            status: isPendingApproval ? 'inactive' : (item.status || 'active'),
+            approvalStatus: isPendingApproval ? 'pending' : 'approved',
+            isImported: true,
+            importBatchId: batchId,
+            importFileName: fileName,
+            importedAt: serverTimestamp(),
+            importedBy: user.fullName || user.email || 'Admin',
+            approvedAt: isPendingApproval ? null : serverTimestamp(),
+            approvedBy: isPendingApproval ? null : (user.fullName || 'Admin'),
             updatedAt: serverTimestamp()
           };
 
@@ -511,6 +525,66 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
                 </button>
               </div>
 
+              {/* Import Mode Destination Selector */}
+              <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl space-y-2">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  <span>Import Destination & Workflow</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setImportMode('approval')}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                      importMode === 'approval'
+                        ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="importMode"
+                      checked={importMode === 'approval'}
+                      onChange={() => setImportMode('approval')}
+                      className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>Send to Approval Center</span>
+                        <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded">Recommended</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        Items are placed in staging. Admins can review, adjust pricing, and approve them in batch before they appear live to resellers.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setImportMode('direct')}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                      importMode === 'direct'
+                        ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="importMode"
+                      checked={importMode === 'direct'}
+                      onChange={() => setImportMode('direct')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">
+                        <span>Direct Live Publish</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        Immediately publishes all valid imported products to the active reseller catalog without review queue.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Status KPI Chips */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div 
@@ -722,11 +796,19 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
           {currentStep === 'summary' && (
             <div className="space-y-6">
               <div className="text-center space-y-2 py-4">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                  <CheckCircle2 className="w-10 h-10" />
+                <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ${
+                  importMode === 'approval' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                }`}>
+                  {importMode === 'approval' ? <ShieldCheck className="w-10 h-10" /> : <CheckCircle2 className="w-10 h-10" />}
                 </div>
-                <h4 className="text-xl font-black text-slate-900">Product Import Completed!</h4>
-                <p className="text-xs text-slate-500">Your inventory catalog has been updated successfully.</p>
+                <h4 className="text-xl font-black text-slate-900">
+                  {importMode === 'approval' ? 'Products Submitted for Approval!' : 'Product Import Completed!'}
+                </h4>
+                <p className="text-xs text-slate-600 max-w-md mx-auto">
+                  {importMode === 'approval' 
+                    ? 'All valid products are now held in the Admin Approval Center. Review, edit prices, or batch-approve them whenever you are ready.'
+                    : 'Your inventory catalog has been updated and published live successfully.'}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -735,11 +817,11 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
                   <div className="text-xl font-black text-slate-900 mt-0.5">{importResults.total}</div>
                 </div>
                 <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-center text-emerald-800">
-                  <div className="text-[10px] font-bold uppercase">Newly Added</div>
+                  <div className="text-[10px] font-bold uppercase">{importMode === 'approval' ? 'Staged (New)' : 'Newly Added'}</div>
                   <div className="text-xl font-black mt-0.5">{importResults.created}</div>
                 </div>
                 <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-center text-indigo-800">
-                  <div className="text-[10px] font-bold uppercase">Upserted / Updated</div>
+                  <div className="text-[10px] font-bold uppercase">{importMode === 'approval' ? 'Staged (Update)' : 'Upserted / Updated'}</div>
                   <div className="text-xl font-black mt-0.5">{importResults.updated}</div>
                 </div>
                 <div className={`p-4 rounded-2xl text-center border ${importResults.failed > 0 ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
@@ -808,9 +890,11 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
                   type="button"
                   disabled={totalValidCount === 0}
                   onClick={handleExecuteImport}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+                  className={`px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50 ${
+                    importMode === 'approval' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
                 >
-                  <span>Confirm & Import ({totalValidCount})</span>
+                  <span>{importMode === 'approval' ? `Submit for Approval (${totalValidCount})` : `Direct Import & Publish (${totalValidCount})`}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -824,7 +908,7 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
           )}
 
           {currentStep === 'summary' && (
-            <div className="w-full flex items-center justify-between">
+            <div className="w-full flex flex-wrap items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={handleReset}
@@ -832,14 +916,29 @@ export const BulkProductImportModal: React.FC<BulkProductImportModalProps> = ({
               >
                 Import Another File
               </button>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
-              >
-                <Check className="w-4 h-4" />
-                <span>Done & View Catalog</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {importMode === 'approval' && onNavigateToApprovals && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCloseModal();
+                      onNavigateToApprovals();
+                    }}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Open Product Approvals</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Done & View Catalog</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

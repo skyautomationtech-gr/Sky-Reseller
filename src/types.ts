@@ -131,6 +131,8 @@ export interface ProductVariant {
   status: 'active' | 'inactive';
 }
 
+export type ProductApprovalStatus = 'pending' | 'approved' | 'rejected';
+
 export interface Product {
   id: string;
   sku: string;
@@ -153,6 +155,15 @@ export interface Product {
   hasVariants?: boolean;
   variants?: ProductVariant[];
   status: 'active' | 'inactive' | 'deleted';
+  approvalStatus?: ProductApprovalStatus;
+  isImported?: boolean;
+  importBatchId?: string;
+  importFileName?: string;
+  importedAt?: any;
+  importedBy?: string;
+  approvedAt?: any;
+  approvedBy?: string;
+  rejectReason?: string;
   createdAt: any;
   updatedAt?: any;
 }

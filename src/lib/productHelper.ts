@@ -101,6 +101,16 @@ export function normalizeProduct(id: string, data: any): Product {
     hasVariants: Boolean(data.hasVariants),
     variants: Array.isArray(data.variants) ? data.variants : [],
     status: data.status || 'active',
+    approvalStatus: data.approvalStatus || (data.isImported && !data.approvedAt ? 'pending' : 'approved'),
+    isImported: Boolean(data.isImported),
+    importBatchId: data.importBatchId || '',
+    importFileName: data.importFileName || '',
+    importedAt: data.importedAt || null,
+    importedBy: data.importedBy || '',
+    approvedAt: data.approvedAt || null,
+    approvedBy: data.approvedBy || '',
+    rejectReason: data.rejectReason || '',
+    updatedAt: data.updatedAt || null,
     createdAt: data.createdAt || new Date().toISOString(),
   };
 }

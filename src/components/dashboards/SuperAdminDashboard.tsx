@@ -40,6 +40,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
 
   // Real Stats States
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [pendingProductsCount, setPendingProductsCount] = useState(0);
   const [totalResellersCount, setTotalResellersCount] = useState(0);
   const [activeResellersCount, setActiveResellersCount] = useState(0);
   const [suspendedCount, setSuspendedCount] = useState(0);
@@ -113,18 +114,24 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
       const productsSnap = await getDocs(collection(db, 'products'));
       let prodCount = 0;
       let lowStock = 0;
+      let pendingProdCount = 0;
       productsSnap.forEach((docSnap) => {
         const p = docSnap.data();
         if (p.status !== 'deleted') {
-          prodCount++;
-          const threshold = p.lowStockThreshold || 5;
-          if (p.stock <= threshold) {
-            lowStock++;
+          if (p.approvalStatus === 'pending') {
+            pendingProdCount++;
+          } else {
+            prodCount++;
+            const threshold = p.lowStockThreshold || 5;
+            if (p.stock <= threshold) {
+              lowStock++;
+            }
           }
         }
       });
       setTotalProductsCount(prodCount);
       setLowStockCount(lowStock);
+      setPendingProductsCount(pendingProdCount);
 
       // 3. Fetch Orders & calculate counts
       const ordersSnap = await getDocs(collection(db, 'orders'));
@@ -380,7 +387,35 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
                 </div>
               </div>
 
-              {/* Card 6: Total Products */}
+              {/* Card 6: Pending Products */}
+              <div
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('sky_navigate_tab', { detail: { tab: 'products' } }));
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('sky_product_filter', { detail: { filter: 'pending_approvals' } }));
+                  }, 50);
+                }}
+                className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98 relative"
+              >
+                {pendingProductsCount > 0 && (
+                  <span className="absolute -top-2 -right-2 flex h-5 w-5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-5 w-5 bg-amber-500 text-white text-[9px] font-bold items-center justify-center border-2 border-white">{pendingProductsCount}</span>
+                  </span>
+                )}
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">Product Approvals</span>
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <PackageCheck className="w-4 h-4" />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-base sm:text-xl font-extrabold text-slate-900">{pendingProductsCount} <span className="text-xs sm:text-sm font-semibold text-slate-500">Staged</span></div>
+                  <p className="text-[10px] text-amber-600 font-bold mt-1 truncate">Review queue →</p>
+                </div>
+              </div>
+
+              {/* Card 7: Total Products */}
               <div
                 onClick={() => setActiveTab('products')}
                 className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-500 transition-all cursor-pointer group flex flex-col justify-between active:scale-98"
