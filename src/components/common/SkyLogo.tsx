@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-const defaultLogoAsset = '/logo.jpg';
+const defaultLogoAsset = '/logo.jpeg';
 
 interface SkyLogoProps {
   className?: string;
@@ -21,33 +21,27 @@ export const SkyLogo: React.FC<SkyLogoProps> = ({
   lightMode = false,
   customLogoUrl,
 }) => {
-  const [logoUrl, setLogoUrl] = useState<string | null>(customLogoUrl || defaultLogoAsset);
+  const [logoUrl, setLogoUrl] = useState<string | null>(defaultLogoAsset);
   const [companyName, setCompanyName] = useState<string>('SKY AUTOMATION TECH');
 
   useEffect(() => {
-    if (customLogoUrl !== undefined && customLogoUrl !== null) {
-      setLogoUrl(customLogoUrl);
-      return;
-    }
+    // Force local logo asset everywhere
+    setLogoUrl(defaultLogoAsset);
 
     const fetchLogo = async () => {
       try {
         const snap = await getDoc(doc(db, 'settings', 'general'));
         if (snap.exists()) {
           const data = snap.data();
-          if (data.logoUrl) setLogoUrl(data.logoUrl);
           if (data.companyName) setCompanyName(data.companyName);
-        } else {
-          setLogoUrl(defaultLogoAsset);
         }
       } catch (err) {
-        console.error('Error loading logo in SkyLogo component:', err);
-        setLogoUrl(defaultLogoAsset);
+        console.error('Error loading company name in SkyLogo component:', err);
       }
     };
 
     fetchLogo();
-  }, [customLogoUrl]);
+  }, []);
 
   const dimensions = {
     sm: { box: 'w-7 h-7', text: 'text-xs', sub: 'text-[9px]' },
@@ -62,7 +56,7 @@ export const SkyLogo: React.FC<SkyLogoProps> = ({
         <img
           src={logoUrl}
           alt={companyName}
-          onError={() => setLogoUrl('/Sky Automation Tech Logo.jpeg')}
+          onError={() => setLogoUrl('/logo.jpeg')}
           className={`${dimensions.box} object-contain rounded-xl border border-slate-200/20 bg-white/5 p-1 shrink-0 ${imgClassName}`}
         />
       ) : (
