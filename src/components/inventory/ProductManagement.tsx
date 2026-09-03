@@ -622,7 +622,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
           </div>
 
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-            {((isAdmin ? ['all', 'active', 'low_stock', 'pending_approvals'] : ['all', 'active', 'low_stock']) as const).map((tab) => (
+            {(['all', 'active', 'low_stock', 'pending_approvals'] as const).filter(tab => isAdmin || tab !== 'pending_approvals').map((tab) => (
               <button
                 key={tab}
                 onClick={() => setStatusFilter(tab as any)}

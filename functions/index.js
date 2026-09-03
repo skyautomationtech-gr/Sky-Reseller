@@ -78,7 +78,7 @@ exports.sendOrderStatusNotification = functions.firestore
 
     const userData = userDoc.data();
     const notifPref = userData.notificationPreferences || {};
-    if (notifPref.newOrder === false || !Array.isArray(userData.fcmTokens) || userData.fcmTokens.length > 0) {
+    if (notifPref.orderStatus === false || !Array.isArray(userData.fcmTokens) || userData.fcmTokens.length === 0) {
       return null;
     }
 
