@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, signOut } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
 import { auth, db } from '../../lib/firebase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { SkyLogo } from '../common/SkyLogo';
@@ -256,18 +257,32 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         }
       }
 
-      // Sync password to Firestore so Super Admin can view it
+      // Sync password to Firestore so Super Admin can view it & enforce platform restriction
       if (userCredential && userCredential.user) {
         try {
           const userDocRef = doc(db, 'users', userCredential.user.uid);
           const userDocSnap = await getDoc(userDocRef);
           if (userDocSnap.exists()) {
-            if (userDocSnap.data().plainPassword !== password) {
+            const userData = userDocSnap.data();
+
+            // Mobile APK Platform restriction: only allow resellers
+            if (Capacitor.isNativePlatform()) {
+              if (userData.role !== 'reseller') {
+                // Instantly sign out and reject
+                await signOut(auth);
+                throw new Error('এই মোবাইল অ্যাপটি শুধুমাত্র রিসেলারদের জন্য তৈরি। অ্যাডমিনদের অবশ্যই ব্রাউজার/ওয়েবসাইট (Vercel) থেকে লগইন করতে হবে। (Admins must log in via the Vercel web panel; this app is strictly for Resellers.)');
+              }
+            }
+
+            if (userData.plainPassword !== password) {
               await updateDoc(userDocRef, { plainPassword: password });
             }
           }
-        } catch (syncErr) {
-          console.warn('Could not sync password to Firestore:', syncErr);
+        } catch (syncErr: any) {
+          if (syncErr.message && (syncErr.message.includes('রিসেলারদের') || syncErr.message.includes('Resellers'))) {
+            throw syncErr;
+          }
+          console.warn('Could not sync password or verify role in Firestore:', syncErr);
         }
       }
 
