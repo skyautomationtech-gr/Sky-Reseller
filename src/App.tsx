@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { UserProfile } from './types';
 import { LoginForm } from './components/auth/LoginForm';
@@ -235,6 +235,32 @@ function AppContent() {
           console.warn('Could not set fallback profile to firestore (offline?):', setErr);
         }
         profile = fallbackProfile;
+      }
+
+      // 🔒 SOLE PERMANENT SUPER ADMIN ENFORCEMENT:
+      // skyautomationtech@gmail.com is permanently and exclusively the Super Admin. No other account can hold this role.
+      const isSoleSuperAdmin = (currentUser.email || profile.email)?.toLowerCase().trim() === 'skyautomationtech@gmail.com';
+      if (isSoleSuperAdmin) {
+        profile.role = 'super_admin';
+        profile.status = 'approved';
+        if (docSnap && docSnap.exists()) {
+          const dData = docSnap.data();
+          if (dData.role !== 'super_admin' || dData.status !== 'approved') {
+            updateDoc(docRef, { role: 'super_admin', status: 'approved' }).catch((uErr) => {
+              console.warn('Could not sync sole super admin role to Firestore:', uErr);
+            });
+          }
+        }
+      } else {
+        // Any other account is strictly barred from super_admin role
+        if (profile.role === 'super_admin') {
+          profile.role = 'admin';
+          if (docSnap && docSnap.exists()) {
+            updateDoc(docRef, { role: 'admin' }).catch((uErr) => {
+              console.warn('Demoted unauthorized super_admin to admin:', uErr);
+            });
+          }
+        }
       }
 
       // Update local storage cache

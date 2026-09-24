@@ -35,7 +35,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     setLoading(true);
     setError('');
 
-    const email = role === 'super_admin' ? 'admin@skyshebang.com' : 'reseller@skyshebang.com';
+    const email = role === 'super_admin' ? 'skyautomationtech@gmail.com' : 'reseller@skyshebang.com';
     const pass = 'shebang123';
 
     setIdentifier(email);
@@ -65,7 +65,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             const userDocRef = doc(db, 'users', uid);
             await setDoc(userDocRef, {
               uid,
-              fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
+              fullName: role === 'super_admin' ? 'Sky Super Admin' : 'Sky Reseller',
               shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
               mobile: role === 'super_admin' ? '01711111111' : '01722222222',
               email,
@@ -208,10 +208,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         if (
           (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password') &&
           password === 'shebang123' &&
-          (cleanEmail === 'admin@skyshebang.com' || cleanEmail === 'reseller@skyshebang.com')
+          (cleanEmail === 'skyautomationtech@gmail.com' || cleanEmail === 'admin@skyshebang.com' || cleanEmail === 'reseller@skyshebang.com')
         ) {
-          console.log(`Demo account ${cleanEmail} not found in Auth. Provisioning now...`);
-          const role = cleanEmail === 'admin@skyshebang.com' ? 'super_admin' : 'reseller';
+          console.log(`Demo/Admin account ${cleanEmail} not found in Auth. Provisioning now...`);
+          const role = cleanEmail === 'skyautomationtech@gmail.com' ? 'super_admin' : cleanEmail === 'admin@skyshebang.com' ? 'admin' : 'reseller';
           try {
             const createCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
             const uid = createCredential.user.uid;
@@ -219,7 +219,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             const userDocRef = doc(db, 'users', uid);
             await setDoc(userDocRef, {
               uid,
-              fullName: role === 'super_admin' ? 'Sky Admin' : 'Sky Reseller',
+              fullName: role === 'super_admin' ? 'Sky Super Admin' : cleanEmail === 'admin@skyshebang.com' ? 'Sky Admin Staff' : 'Sky Reseller',
               shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
               mobile: role === 'super_admin' ? '01711111111' : '01722222222',
               email: cleanEmail,

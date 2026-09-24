@@ -363,35 +363,46 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Account Role (Super Admin Only)
+                    Account Role {targetUser?.email?.toLowerCase().trim() === 'skyautomationtech@gmail.com' ? '(Permanent Super Admin)' : '(Super Admin Only)'}
                   </label>
-                  <select
-                    disabled={!isSuperAdmin}
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    <option value="reseller">Reseller Account</option>
-                    <option value="admin">Admin Staff Account</option>
-                    <option value="super_admin">Super Admin Account</option>
-                  </select>
+                  {targetUser?.email?.toLowerCase().trim() === 'skyautomationtech@gmail.com' ? (
+                    <div className="w-full px-3.5 py-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
+                      <span>👑 Permanent Sole Super Admin</span>
+                    </div>
+                  ) : (
+                    <select
+                      disabled={!isSuperAdmin}
+                      value={formData.role === 'super_admin' ? 'admin' : formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      <option value="reseller">Reseller Account</option>
+                      <option value="admin">Admin Staff Account</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Account Status
                   </label>
-                  <select
-                    disabled={!isSuperAdmin}
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as UserStatus })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    <option value="approved">Approved (Active)</option>
-                    <option value="pending">Pending Approval</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
+                  {targetUser?.email?.toLowerCase().trim() === 'skyautomationtech@gmail.com' ? (
+                    <div className="w-full px-3.5 py-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2">
+                      <span>✅ Approved (Permanent Active)</span>
+                    </div>
+                  ) : (
+                    <select
+                      disabled={!isSuperAdmin}
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value as UserStatus })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      <option value="approved">Approved (Active)</option>
+                      <option value="pending">Pending Approval</option>
+                      <option value="suspended">Suspended</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  )}
                 </div>
 
                 {isSuperAdmin && (
