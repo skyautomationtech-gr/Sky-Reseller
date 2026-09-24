@@ -402,12 +402,23 @@ function AppContent() {
   }
 
   // 🛠️ Check Maintenance Mode:
-  // If active (via code or Firebase remote switch) and not bypassed
+  // Whitelisted accounts that are PERMANENTLY EXEMPT from Maintenance Mode:
+  // gadgetzu0@gmail.com, skyautomationtech@gmail.com, hmdsahadat929@gmail.com & Admins
   const isMaintenanceActive = IS_UNDER_MAINTENANCE || remoteMaintenance;
-  if (isMaintenanceActive && !bypassMaintenance) {
-    if (userProfile?.role === 'super_admin') {
-      // Super Admin has full uninterrupted access even during maintenance
-    } else if (!firebaseUser || !userProfile) {
+  const MAINTENANCE_EXEMPT_EMAILS = [
+    'gadgetzu0@gmail.com',
+    'skyautomationtech@gmail.com',
+    'hmdsahadat929@gmail.com'
+  ];
+
+  const userEmailLower = (firebaseUser?.email || userProfile?.email || '').toLowerCase().trim();
+  const isMaintenanceExempt = 
+    MAINTENANCE_EXEMPT_EMAILS.includes(userEmailLower) ||
+    userProfile?.role === 'super_admin' ||
+    userProfile?.role === 'admin';
+
+  if (isMaintenanceActive && !bypassMaintenance && !isMaintenanceExempt) {
+    if (!firebaseUser || !userProfile) {
       // If not logged in and admin login was NOT clicked, show maintenance screen
       if (!showAdminLoginInMaintenance) {
         return (
@@ -418,7 +429,7 @@ function AppContent() {
         );
       }
     } else {
-      // Logged in reseller or standard user: block access with maintenance screen
+      // Logged in reseller or standard non-whitelisted user: block access with maintenance screen
       return (
         <MaintenanceScreen
           isAdmin={false}

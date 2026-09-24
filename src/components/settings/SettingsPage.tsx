@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, CompanySettings } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
@@ -7,7 +7,8 @@ import { SkyLogo } from '../common/SkyLogo';
 import { VersionManagerForm } from '../version/VersionManagerForm';
 import { 
   Settings, Building2, Phone, Mail, MapPin, DollarSign, 
-  Percent, Truck, Image as ImageIcon, Save, ArrowRight, Loader2, CheckCircle2, Shield, LogOut
+  Percent, Truck, Image as ImageIcon, Save, ArrowRight, Loader2, CheckCircle2, Shield, LogOut,
+  Wrench, Power, ShieldCheck
 } from 'lucide-react';
 
 interface SettingsPageProps {
@@ -51,9 +52,52 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
   const [error, setError] = useState('');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
+  // Live Maintenance Mode state
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [togglingMaintenance, setTogglingMaintenance] = useState(false);
+
   useEffect(() => {
     fetchSettings();
+
+    const unsubMaintenance = onSnapshot(doc(db, 'systemSettings', 'maintenance'), (snap) => {
+      if (snap.exists()) {
+        setIsMaintenanceMode(!!snap.data().enabled);
+      } else {
+        setIsMaintenanceMode(false);
+      }
+    }, (err) => {
+      console.warn('Maintenance status snapshot error:', err);
+    });
+
+    return () => unsubMaintenance();
   }, []);
+
+  const handleToggleMaintenance = async () => {
+    if (!isSuperAdmin && !isAdmin) return;
+    setTogglingMaintenance(true);
+    try {
+      const nextState = !isMaintenanceMode;
+      await setDoc(doc(db, 'systemSettings', 'maintenance'), {
+        enabled: nextState,
+        updatedBy: user.email || user.fullName,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      await logAuditAction(
+        user.uid,
+        user.fullName,
+        user.role,
+        nextState ? 'ENABLE_MAINTENANCE_MODE' : 'DISABLE_MAINTENANCE_MODE',
+        'systemSettings/maintenance',
+        `Toggled system maintenance mode to ${nextState}`
+      );
+    } catch (err: any) {
+      console.error('Error toggling maintenance mode:', err);
+      alert('Failed to update maintenance mode: ' + (err.message || err));
+    } finally {
+      setTogglingMaintenance(false);
+    }
+  };
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -374,6 +418,71 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
           </div>
         )}
       </form>
+
+      {/* System Maintenance Mode Control (In Settings) */}
+      {(isSuperAdmin || isAdmin) && (
+        <div className={`p-5 rounded-2xl border transition-all ${
+          isMaintenanceMode
+            ? 'bg-amber-50 border-amber-300 shadow-md ring-2 ring-amber-400/50'
+            : 'bg-white border-slate-200 shadow-xs'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                isMaintenanceMode 
+                  ? 'bg-amber-500 text-slate-950 font-black animate-pulse shadow-md shadow-amber-500/30' 
+                  : 'bg-slate-100 text-slate-700'
+              }`}>
+                <Wrench className="w-5.5 h-5.5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-extrabold text-slate-900">সিস্টেম মেইনটেন্যান্স মোড (System Maintenance)</h4>
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wide ${
+                    isMaintenanceMode 
+                      ? 'bg-amber-500 text-slate-950' 
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    {isMaintenanceMode ? '🔴 ACTIVE (সাধারণ ইউজারের জন্য লকড)' : '🟢 LIVE (সবাই সচল)'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
+                  {isMaintenanceMode
+                    ? '⚠️ বর্তমানে মেইনটেন্যান্স মোড চালু আছে। সাধারণ রিসেলাররা অ্যাপ বা ওয়েবসাইটে ঢুকতে পারছে না।'
+                    : 'কোডে কোনো নতুন ফিচার বা আপডেট দেওয়ার সময় এই বাটনে ক্লিক করুন। সাথে সাথে ১ সেকেন্ডে সব সাধারণ রিসেলারের মোবাইল অ্যাপ ও ওয়েবসাইট লক হয়ে যাবে।'}
+                </p>
+                <div className="pt-1.5 flex items-start gap-1.5 text-[11px] font-bold text-slate-600">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>
+                    বিশেষ অনুমতিপ্রাপ্ত ৩টি ইমেইল (<code className="text-blue-700 font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">gadgetzu0@gmail.com</code>, <code className="text-blue-700 font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">skyautomationtech@gmail.com</code>, <code className="text-blue-700 font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">hmdsahadat929@gmail.com</code>) মেইনটেন্যান্স মোড অন থাকলেও কোনো বাধা ছাড়াই স্বাভাবিকভাবে কাজ করতে পারবে!
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleToggleMaintenance}
+              disabled={togglingMaintenance}
+              className={`px-5 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-md active:scale-95 disabled:opacity-50 min-h-[44px] ${
+                isMaintenanceMode
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/25'
+                  : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 shadow-amber-500/25'
+              }`}
+            >
+              <Power className="w-4 h-4" />
+              <span>
+                {togglingMaintenance 
+                  ? 'আপডেট হচ্ছে...' 
+                  : isMaintenanceMode 
+                    ? 'মেইনটেন্যান্স বন্ধ করুন (Go Live)' 
+                    : 'মেইনটেন্যান্স চালু করুন (Turn ON)'
+                }
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* App Version & Changelog Management (Super Admin) */}
       {isSuperAdmin && (

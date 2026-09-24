@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile } from '../../types';
 import { Sidebar } from '../common/Sidebar';
@@ -24,8 +24,7 @@ import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { 
   LayoutDashboard, Users, CheckCircle2, Shield, ShoppingBag, Wallet, Percent, 
   Sparkles, DollarSign, TrendingUp, Clock, PackageCheck, AlertTriangle, 
-  UserCheck, UserX, Package, CalendarDays, BarChart3, HelpCircle, RotateCw,
-  Wrench, Power
+  UserCheck, UserX, Package, CalendarDays, BarChart3, HelpCircle, RotateCw
 } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
@@ -55,10 +54,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
   const [lowStockCount, setLowStockCount] = useState(0);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
 
-  // Live Maintenance Mode state
-  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
-  const [togglingMaintenance, setTogglingMaintenance] = useState(false);
-
   const { isRefreshing, formattedLastUpdated, showToast, refreshCurrentPage } = useRefresh();
 
   const handleRefresh = async () => {
@@ -71,17 +66,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
   useEffect(() => {
     fetchDashboardMetrics();
 
-    // Subscribe to real-time maintenance status
-    const unsubMaintenance = onSnapshot(doc(db, 'systemSettings', 'maintenance'), (snap) => {
-      if (snap.exists()) {
-        setIsMaintenanceMode(!!snap.data().enabled);
-      } else {
-        setIsMaintenanceMode(false);
-      }
-    }, (err) => {
-      console.warn('Maintenance status snapshot error:', err);
-    });
-
     const handlePushNav = (e: any) => {
       if (e.detail?.tab) {
         setActiveTab(e.detail.tab);
@@ -89,33 +73,9 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
     };
     window.addEventListener('sky_navigate_tab', handlePushNav);
     return () => {
-      unsubMaintenance();
       window.removeEventListener('sky_navigate_tab', handlePushNav);
     };
   }, []);
-
-  const handleToggleMaintenance = async () => {
-    setTogglingMaintenance(true);
-    try {
-      const nextState = !isMaintenanceMode;
-      await setDoc(doc(db, 'systemSettings', 'maintenance'), {
-        enabled: nextState,
-        updatedBy: user.email || user.fullName,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      showToast(
-        nextState 
-          ? '⚠️ Maintenance Mode Activated! All resellers are now locked out.' 
-          : '✅ Maintenance Mode Deactivated! App & Web are now live for everyone.', 
-        nextState ? 'info' : 'success'
-      );
-    } catch (err: any) {
-      console.error('Error toggling maintenance mode:', err);
-      showToast('Failed to update maintenance mode: ' + (err.message || err), 'error');
-    } finally {
-      setTogglingMaintenance(false);
-    }
-  };
 
   const fetchDashboardMetrics = async () => {
     setLoadingMetrics(true);
@@ -309,62 +269,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
                 <p className="text-blue-100 text-xs leading-relaxed">
                   Sky Reseller Enterprise Hub (Phases 1, 2, & 3 Active). Manage reseller approvals, product catalog & color variants, order fulfillment, wallet payouts, and global commission settings.
                 </p>
-              </div>
-            </div>
-
-            {/* Live 1-Click System Maintenance Mode Control Widget */}
-            <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-              isMaintenanceMode
-                ? 'bg-amber-50 border-amber-300 shadow-sm ring-2 ring-amber-400/50'
-                : 'bg-white border-slate-200 shadow-xs'
-            }`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start sm:items-center gap-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                    isMaintenanceMode 
-                      ? 'bg-amber-500 text-slate-950 font-black animate-pulse shadow-md shadow-amber-500/30' 
-                      : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    <Wrench className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-slate-900">সিস্টেম মেইনটেন্যান্স মোড (Maintenance Mode)</h4>
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wide ${
-                        isMaintenanceMode 
-                          ? 'bg-amber-500 text-slate-950' 
-                          : 'bg-slate-100 text-slate-600 border border-slate-200'
-                      }`}>
-                        {isMaintenanceMode ? '🔴 ACTIVE (লকড)' : '🟢 LIVE (সবার জন্য উন্মুক্ত)'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {isMaintenanceMode
-                        ? '⚠️ বর্তমানে মোডটি চালু আছে। সাধারণ রিসেলাররা অ্যাপ বা ওয়েবসাইটে ঢুকতে পারছে না। আপনি নতুন ফিচার টেস্ট করে কাজ শেষ হলে বাটনটিতে ক্লিক করে পুনরায় লাইভ করুন।'
-                        : 'কোডে কোনো নতুন ফিচার যোগ করার সময় বা কাজ করার সময় এই বাটনে ক্লিক করুন। সাথে সাথে ১ সেকেন্ডে সব রিসেলারের মোবাইল অ্যাপ লক হয়ে যাবে!'}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleToggleMaintenance}
-                  disabled={togglingMaintenance}
-                  className={`px-5 py-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-md active:scale-95 disabled:opacity-50 ${
-                    isMaintenanceMode
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/25'
-                      : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 shadow-amber-500/25'
-                  }`}
-                >
-                  <Power className="w-4 h-4" />
-                  <span>
-                    {togglingMaintenance 
-                      ? 'আপডেট হচ্ছে...' 
-                      : isMaintenanceMode 
-                        ? 'মেইনটেন্যান্স বন্ধ করুন (Go Live)' 
-                        : 'মেইনটেন্যান্স চালু করুন (Turn ON)'
-                    }
-                  </span>
-                </button>
               </div>
             </div>
 
