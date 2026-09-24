@@ -34,8 +34,8 @@ import { subscribeToRealtimeNotifications } from './lib/notificationHelper';
 // কোনো নতুন ফিচার কোড করার সময় বা কাজ চলার সময় এটি true করে দিন:
 // -> export const IS_UNDER_MAINTENANCE = true;
 // কাজ শেষ হলে পুনরায় false করে দিন:
-// -> export const IS_UNDER_MAINTENANCE = true;
-export const IS_UNDER_MAINTENANCE = true;
+// -> export const IS_UNDER_MAINTENANCE = false;
+export const IS_UNDER_MAINTENANCE = false;
 
 function AppContent() {
   const { isOnline } = useNetwork();
@@ -44,6 +44,7 @@ function AppContent() {
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [loading, setLoading] = useState(true);
   const [bypassMaintenance, setBypassMaintenance] = useState(false);
+  const [showAdminLoginInMaintenance, setShowAdminLoginInMaintenance] = useState(false);
   const [remoteMaintenance, setRemoteMaintenance] = useState<boolean>(false);
 
   // Real-time listener for maintenance mode from Firestore (zero deploy delay)
@@ -375,15 +376,30 @@ function AppContent() {
   }
 
   // 🛠️ Check Maintenance Mode:
-  // If active (via code or Firebase remote switch) and not bypassed by Super Admin
+  // If active (via code or Firebase remote switch) and not bypassed
   const isMaintenanceActive = IS_UNDER_MAINTENANCE || remoteMaintenance;
   if (isMaintenanceActive && !bypassMaintenance) {
-    return (
-      <MaintenanceScreen
-        isAdmin={userProfile?.role === 'super_admin'}
-        onBypassAdmin={() => setBypassMaintenance(true)}
-      />
-    );
+    if (userProfile?.role === 'super_admin') {
+      // Super Admin has full uninterrupted access even during maintenance
+    } else if (!firebaseUser || !userProfile) {
+      // If not logged in and admin login was NOT clicked, show maintenance screen
+      if (!showAdminLoginInMaintenance) {
+        return (
+          <MaintenanceScreen
+            isAdmin={false}
+            onAdminLogin={() => setShowAdminLoginInMaintenance(true)}
+          />
+        );
+      }
+    } else {
+      // Logged in reseller or standard user: block access with maintenance screen
+      return (
+        <MaintenanceScreen
+          isAdmin={false}
+          onRetry={handleLogout}
+        />
+      );
+    }
   }
 
   // Not logged in -> show Login or Register (guarded by full screen overlay)

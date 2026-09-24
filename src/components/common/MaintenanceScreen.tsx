@@ -1,17 +1,19 @@
 import React from 'react';
-import { Wrench, RefreshCw, Clock, ShieldAlert } from 'lucide-react';
+import { Wrench, RefreshCw, Clock, ShieldAlert, Shield } from 'lucide-react';
 import { SkyLogo } from './SkyLogo';
 
 interface MaintenanceScreenProps {
   onRetry?: () => void;
   isAdmin?: boolean;
   onBypassAdmin?: () => void;
+  onAdminLogin?: () => void;
 }
 
 export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
   onRetry = () => window.location.reload(),
   isAdmin = false,
   onBypassAdmin,
+  onAdminLogin,
 }) => {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-center items-center px-4 py-8 select-none">
@@ -66,15 +68,27 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
           রিফ্রেশ করে আবার চেষ্টা করুন
         </button>
 
-        {/* Optional Admin Bypass button */}
-        {isAdmin && onBypassAdmin && (
-          <button
-            onClick={onBypassAdmin}
-            className="mt-4 text-xs text-slate-400 hover:text-white underline transition-colors"
-          >
-            অ্যাডমিন হিসেবে প্রবেশ করুন (Admin Bypass)
-          </button>
-        )}
+        {/* Admin Login / Bypass options */}
+        <div className="mt-4 flex flex-col items-center gap-2">
+          {isAdmin && onBypassAdmin && (
+            <button
+              onClick={onBypassAdmin}
+              className="text-xs text-blue-400 hover:text-blue-300 underline font-medium transition-colors"
+            >
+              অ্যাডমিন হিসেবে প্রবেশ করুন (Admin Bypass)
+            </button>
+          )}
+
+          {!isAdmin && onAdminLogin && (
+            <button
+              onClick={onAdminLogin}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors inline-flex items-center gap-1.5"
+            >
+              <Shield className="w-3.5 h-3.5 text-blue-400" />
+              অ্যাডমিন লগইন (Admin Login)
+            </button>
+          )}
+        </div>
       </div>
 
       <p className="text-xs text-slate-500 mt-6 font-medium">
