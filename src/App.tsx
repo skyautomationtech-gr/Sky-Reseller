@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { UserProfile } from './types';
 import { LoginForm } from './components/auth/LoginForm';
@@ -44,6 +44,22 @@ function AppContent() {
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [loading, setLoading] = useState(true);
   const [bypassMaintenance, setBypassMaintenance] = useState(false);
+  const [remoteMaintenance, setRemoteMaintenance] = useState<boolean>(false);
+
+  // Real-time listener for maintenance mode from Firestore (zero deploy delay)
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'systemSettings', 'maintenance'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setRemoteMaintenance(!!data.enabled);
+      } else {
+        setRemoteMaintenance(false);
+      }
+    }, (err) => {
+      console.warn('Maintenance mode listener error:', err);
+    });
+    return () => unsub();
+  }, []);
 
   // Version pop-up state
   const [whatsNewChangelog, setWhatsNewChangelog] = useState<ChangelogEntry | null>(null);
@@ -359,8 +375,9 @@ function AppContent() {
   }
 
   // 🛠️ Check Maintenance Mode:
-  // If active and not bypassed by Super Admin, block normal access and display maintenance screen
-  if (IS_UNDER_MAINTENANCE && !bypassMaintenance) {
+  // If active (via code or Firebase remote switch) and not bypassed by Super Admin
+  const isMaintenanceActive = IS_UNDER_MAINTENANCE || remoteMaintenance;
+  if (isMaintenanceActive && !bypassMaintenance) {
     return (
       <MaintenanceScreen
         isAdmin={userProfile?.role === 'super_admin'}
