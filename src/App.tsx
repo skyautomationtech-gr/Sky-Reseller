@@ -35,7 +35,7 @@ import { subscribeToRealtimeNotifications } from './lib/notificationHelper';
 // -> export const IS_UNDER_MAINTENANCE = true;
 // কাজ শেষ হলে পুনরায় false করে দিন:
 // -> export const IS_UNDER_MAINTENANCE = true;
-export const IS_UNDER_MAINTENANCE = false;
+export const IS_UNDER_MAINTENANCE = true;
 
 function AppContent() {
   const { isOnline } = useNetwork();
