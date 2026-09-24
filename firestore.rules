@@ -97,6 +97,12 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // System Settings (maintenance mode, etc.)
+    match /systemSettings/{settingId} {
+      allow read, list: if true;
+      allow write: if request.auth != null;
+    }
+
     // App Version configuration
     match /appVersion/{versionId} {
       allow read, list: if true;
