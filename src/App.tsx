@@ -23,9 +23,19 @@ import { NetworkProvider, useNetwork } from './context/NetworkContext';
 import { Store, Loader2, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { NoInternetOverlay, TopBannerIndicator } from './components/common/OfflineIndicators';
+import { MaintenanceScreen } from './components/common/MaintenanceScreen';
 import { registerPushNotificationListeners, requestAndRegisterPushNotifications } from './lib/pushNotifications';
 import { InAppPushBanner, PushBannerNotification } from './components/notifications/InAppPushBanner';
 import { subscribeToRealtimeNotifications } from './lib/notificationHelper';
+
+// 🛠️ ========================================================
+// 🛠️ MAINTENANCE MODE SWITCH (মেইনটেন্যান্স মোড সুইচ)
+// 🛠️ ========================================================
+// কোনো নতুন ফিচার কোড করার সময় বা কাজ চলার সময় এটি true করে দিন:
+// -> export const IS_UNDER_MAINTENANCE = true;
+// কাজ শেষ হলে পুনরায় false করে দিন:
+// -> export const IS_UNDER_MAINTENANCE = true;
+export const IS_UNDER_MAINTENANCE = false;
 
 function AppContent() {
   const { isOnline } = useNetwork();
@@ -33,6 +43,7 @@ function AppContent() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [loading, setLoading] = useState(true);
+  const [bypassMaintenance, setBypassMaintenance] = useState(false);
 
   // Version pop-up state
   const [whatsNewChangelog, setWhatsNewChangelog] = useState<ChangelogEntry | null>(null);
@@ -344,6 +355,17 @@ function AppContent() {
           </p>
         </div>
       </div>
+    );
+  }
+
+  // 🛠️ Check Maintenance Mode:
+  // If active and not bypassed by Super Admin, block normal access and display maintenance screen
+  if (IS_UNDER_MAINTENANCE && !bypassMaintenance) {
+    return (
+      <MaintenanceScreen
+        isAdmin={userProfile?.role === 'super_admin'}
+        onBypassAdmin={() => setBypassMaintenance(true)}
+      />
     );
   }
 
