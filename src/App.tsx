@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
@@ -237,6 +238,16 @@ function AppContent() {
       setFirebaseUser(currentUser);
       if (currentUser) {
         const profile = await fetchOrCreateUserProfile(currentUser);
+
+        // Mobile APK Security Check: Only resellers are permitted on mobile app
+        if (Capacitor.isNativePlatform() && profile && profile.role !== 'reseller') {
+          console.warn('Admins are restricted from Mobile APK. Signing out...');
+          await signOut(auth);
+          setUserProfile(null);
+          setLoading(false);
+          return;
+        }
+
         setUserProfile(profile);
 
         if (profile && profile.status === 'approved') {

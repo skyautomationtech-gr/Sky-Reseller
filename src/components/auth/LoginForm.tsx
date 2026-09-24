@@ -28,6 +28,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
       setError('You are offline. An active internet connection is required to sign in.');
       return;
     }
+    if (Capacitor.isNativePlatform() && role === 'super_admin') {
+      setError('এই মোবাইল অ্যাপটি শুধুমাত্র রিসেলারদের জন্য তৈরি। অ্যাডমিনদের অবশ্যই ব্রাউজার/ওয়েবসাইট (Vercel) থেকে লগইন করতে হবে। (Admins must log in via the Vercel web panel; this app is strictly for Resellers.)');
+      return;
+    }
     setLoading(true);
     setError('');
 
