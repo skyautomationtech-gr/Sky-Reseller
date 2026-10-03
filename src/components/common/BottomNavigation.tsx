@@ -1,5 +1,6 @@
 import React from 'react';
 import { Home, ShoppingBag, Package, Wallet, UserCircle } from 'lucide-react';
+import { triggerHaptic } from '../../lib/nativeFeedback';
 
 interface BottomNavigationProps {
   activeTab: string;
@@ -28,8 +29,16 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
     { id: 'more', label: 'Account', icon: UserCircle, badge: totalAccountBadges, isActiveOverride: isMoreActive },
   ];
 
+  const handleTabClick = (tabId: string) => {
+    triggerHaptic('light');
+    setActiveTab(tabId);
+  };
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-[64px] bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] z-40 pb-safe">
+    <nav 
+      aria-label="Mobile Bottom Navigation"
+      className="fixed bottom-0 left-0 right-0 h-[64px] bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] z-40 pb-safe transition-all"
+    >
       <div className="grid grid-cols-5 h-full max-w-lg mx-auto px-1">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -37,31 +46,31 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center gap-1 h-full w-full transition-all duration-150 active:scale-90 select-none cursor-pointer ${
-                isActive ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+              onClick={() => handleTabClick(item.id)}
+              className={`flex flex-col items-center justify-center gap-1 h-full w-full transition-all duration-150 active:scale-90 select-none cursor-pointer relative ${
+                isActive ? 'text-blue-600' : 'text-slate-400 hover:text-slate-700'
               }`}
-              style={{ minHeight: '48px' }}
+              style={{ minHeight: '48px', WebkitTapHighlightColor: 'transparent' }}
             >
               <div className="relative flex items-center justify-center">
-                <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 stroke-[2.4]' : 'scale-100 stroke-[1.8]'}`} />
+                {isActive && (
+                  <span className="absolute -inset-1.5 bg-blue-50/80 rounded-full scale-100 transition-transform duration-200 -z-10" />
+                )}
+                <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 stroke-[2.4] text-blue-600' : 'scale-100 stroke-[1.8]'}`} />
                 {item.badge > 0 && (
-                  <span className="absolute -top-1.5 -right-2.5 bg-rose-500 text-white font-extrabold text-[10px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-white animate-pulse shadow-xs">
+                  <span className="absolute -top-1.5 -right-2.5 bg-rose-500 text-white font-extrabold text-[10px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-white shadow-xs animate-pulse">
                     {item.badge > 9 ? '9+' : item.badge}
                   </span>
                 )}
-                {isActive && (
-                  <span className="absolute -bottom-1.5 w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                )}
               </div>
-              <span className={`text-[11px] tracking-tight leading-tight ${isActive ? 'font-bold text-blue-600' : 'font-medium text-slate-500'}`}>
+              <span className={`text-[11px] tracking-tight leading-tight transition-colors ${isActive ? 'font-bold text-blue-600' : 'font-medium text-slate-500'}`}>
                 {item.label}
               </span>
             </button>
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 };
 

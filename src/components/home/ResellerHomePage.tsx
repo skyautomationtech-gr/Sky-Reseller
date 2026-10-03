@@ -12,6 +12,7 @@ import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SkyLogo } from '../common/SkyLogo';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { formatResellerId } from '../../lib/resellerIdHelper';
+import { triggerHaptic } from '../../lib/nativeFeedback';
 import { 
   Store, Search, Wallet as WalletIcon, ShoppingBag, Clock, ArrowRight, 
   Sparkles, Layers, ChevronRight, AlertCircle, Headphones, Watch, Zap, 
@@ -366,7 +367,7 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-4 sm:space-y-5 pb-8">
       {/* 1. TOP BANNER / HERO SECTION (Modern Luxury Dark Theme, Mobile-Optimized) */}
       <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 border border-slate-800 text-white p-4 sm:p-5">
         {/* Subtle Ambient Glows */}
@@ -452,12 +453,15 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
         {/* Wallet Balance Card */}
         <div 
-          onClick={() => onNavigateTab('wallet')}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-emerald-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group"
+          onClick={() => {
+            triggerHaptic('light');
+            onNavigateTab('wallet');
+          }}
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-emerald-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group select-none"
         >
           <div className="space-y-0.5 min-w-0 flex-1 pr-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Wallet Balance</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">৳{walletBalance.toLocaleString()}</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">৳{walletBalance.toLocaleString()}</span>
             <span className="text-[11px] font-bold text-emerald-600 group-hover:underline flex items-center gap-0.5">
               Payouts →
             </span>
@@ -469,12 +473,15 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
 
         {/* Today's Orders */}
         <div 
-          onClick={() => onNavigateTab('orders')}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-blue-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group"
+          onClick={() => {
+            triggerHaptic('light');
+            onNavigateTab('orders');
+          }}
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-blue-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group select-none"
         >
           <div className="space-y-0.5 min-w-0 flex-1 pr-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Today's Orders</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">{todayOrdersCount} Orders</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">{todayOrdersCount} Orders</span>
             <span className="text-[11px] font-bold text-blue-600 group-hover:underline flex items-center gap-0.5">
               Orders →
             </span>
@@ -486,12 +493,15 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
 
         {/* Pending Orders */}
         <div 
-          onClick={() => onNavigateTab('orders')}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-amber-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group"
+          onClick={() => {
+            triggerHaptic('light');
+            onNavigateTab('orders');
+          }}
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-amber-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group select-none"
         >
           <div className="space-y-0.5 min-w-0 flex-1 pr-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Processing</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">{pendingOrdersCount} Pending</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">{pendingOrdersCount} Pending</span>
             <span className="text-[11px] font-bold text-amber-600 group-hover:underline flex items-center gap-0.5">
               Status →
             </span>
@@ -503,12 +513,15 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
 
         {/* Shopping Cart Card */}
         <div 
-          onClick={() => setIsCartOpen(true)}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-orange-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden"
+          onClick={() => {
+            triggerHaptic('light');
+            setIsCartOpen(true);
+          }}
+          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-orange-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden select-none"
         >
           <div className="space-y-0.5 min-w-0 flex-1 pr-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Cart</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate">
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">
               {cart.reduce((acc, item) => acc + item.quantity, 0)} Items
             </span>
             <span className="text-[11px] font-bold text-[#f57224] group-hover:underline flex items-center gap-0.5">
@@ -542,7 +555,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           />
           {searchTerm ? (
             <button
-              onClick={() => setSearchTerm('')}
+              onClick={() => {
+                triggerHaptic('light');
+                setSearchTerm('');
+              }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
             >
               Clear
@@ -561,7 +577,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           <h2 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Categories</h2>
           {selectedCategory !== 'All' && (
             <button 
-              onClick={() => setSelectedCategory('All')}
+              onClick={() => {
+                triggerHaptic('light');
+                setSelectedCategory('All');
+              }}
               className="text-[11px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-0.5"
             >
               <ChevronLeft className="w-3 h-3" /> Show All
@@ -572,7 +591,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-200 -mx-1 px-1">
           {/* All Button */}
           <button
-            onClick={() => setSelectedCategory('All')}
+            onClick={() => {
+              triggerHaptic('light');
+              setSelectedCategory('All');
+            }}
             className={`flex flex-col items-center justify-center gap-1 py-2 px-2.5 rounded-xl min-w-[56px] sm:min-w-[62px] shrink-0 transition-all active:scale-95 cursor-pointer ${
               selectedCategory === 'All'
                 ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1.5 ring-blue-600'
@@ -593,7 +615,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             return (
               <button
                 key={catName}
-                onClick={() => setSelectedCategory(catName)}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSelectedCategory(catName);
+                }}
                 className={`flex flex-col items-center justify-center gap-1 py-2 px-2.5 rounded-xl min-w-[62px] sm:min-w-[68px] shrink-0 transition-all active:scale-95 cursor-pointer ${
                   isSelected
                     ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1.5 ring-blue-600'
@@ -1302,7 +1327,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
       {/* Card Actions Footer */}
       <div className="p-2 sm:p-2.5 pt-0 grid grid-cols-2 gap-1.5">
         <button
-          onClick={() => onAddToCart(product)}
+          onClick={() => {
+            triggerHaptic('medium');
+            onAddToCart(product);
+          }}
           disabled={isOutOfStock}
           className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer select-none ${
             isOutOfStock
@@ -1314,7 +1342,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
           <span className="whitespace-nowrap">Add Cart</span>
         </button>
         <button
-          onClick={() => onBuyNow(product)}
+          onClick={() => {
+            triggerHaptic('medium');
+            onBuyNow(product);
+          }}
           disabled={isOutOfStock}
           className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none ${
             isOutOfStock

@@ -17,6 +17,7 @@ import { NotificationBellDropdown } from '../notifications/NotificationBellDropd
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
 import { RotateCw, MessagesSquare } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
+import { triggerHaptic } from '../../lib/nativeFeedback';
 
 interface ResellerDashboardProps {
   user: UserProfile;
@@ -249,10 +250,13 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
       {/* Mobile-First App Container (Full width on phone/tablet, sleek centered app shell on wide desktop) */}
       <div className="w-full max-w-2xl min-h-screen bg-slate-50 flex flex-col relative shadow-xl md:border-x border-slate-200">
         
-        {/* Native Mobile App Header (Sticky) */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-3.5 py-2.5 flex items-center justify-between shadow-xs">
+        {/* Native Mobile App Header (Sticky with Safe Area Inset) */}
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-slate-200/90 px-3.5 py-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] flex items-center justify-between shadow-xs">
           <div 
-            onClick={() => setActiveTab('home')}
+            onClick={() => {
+              triggerHaptic('light');
+              setActiveTab('home');
+            }}
             className="flex items-center gap-2 cursor-pointer select-none active:scale-95 transition-transform"
           >
             <SkyLogo size="sm" showText={false} lightMode={true} />
@@ -269,17 +273,23 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
           <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Live Wallet Balance Pill */}
             <button
-              onClick={() => setActiveTab('wallet')}
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveTab('wallet');
+              }}
               className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 text-emerald-800 px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
               title="Wallet Balance - Click to View"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-extrabold tracking-tight">৳{walletBalance.toLocaleString()}</span>
+              <span className="text-xs font-extrabold tracking-tight tabular-nums">৳{walletBalance.toLocaleString()}</span>
             </button>
 
             {/* Live Chat Direct Button */}
             <button
-              onClick={() => setActiveTab('chat')}
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveTab('chat');
+              }}
               className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer active:scale-90"
               title="Live Chat Support"
             >
@@ -294,12 +304,18 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
             {/* Realtime Notification Bell */}
             <NotificationBellDropdown
               user={user}
-              onNavigateNotifications={() => setActiveTab('notifications')}
+              onNavigateNotifications={() => {
+                triggerHaptic('light');
+                setActiveTab('notifications');
+              }}
             />
 
             {/* Quick Refresh Icon */}
             <button
-              onClick={() => refreshCurrentPage()}
+              onClick={() => {
+                triggerHaptic('medium');
+                refreshCurrentPage();
+              }}
               disabled={isRefreshing}
               className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer active:scale-90"
               title="Refresh"
@@ -310,7 +326,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 pb-24 overflow-x-hidden">
+        <main className="flex-1 pb-24 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
           {renderContent()}
         </main>
 

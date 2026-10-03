@@ -27,6 +27,7 @@ import { MaintenanceScreen } from './components/common/MaintenanceScreen';
 import { registerPushNotificationListeners, requestAndRegisterPushNotifications } from './lib/pushNotifications';
 import { InAppPushBanner, PushBannerNotification } from './components/notifications/InAppPushBanner';
 import { subscribeToRealtimeNotifications } from './lib/notificationHelper';
+import { initNativeStatusBar } from './lib/nativeFeedback';
 
 // 🛠️ ========================================================
 // 🛠️ MAINTENANCE MODE SWITCH (মেইনটেন্যান্স মোড সুইচ)
@@ -49,6 +50,7 @@ function AppContent() {
 
   // Real-time listener for maintenance mode from Firestore (zero deploy delay)
   useEffect(() => {
+    initNativeStatusBar();
     const unsub = onSnapshot(doc(db, 'systemSettings', 'maintenance'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();

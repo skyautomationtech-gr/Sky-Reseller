@@ -18,6 +18,7 @@ import { FeedbackForm } from '../feedback/FeedbackForm';
 import { ResellerSettings } from '../settings/ResellerSettings';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
+import { triggerHaptic } from '../../lib/nativeFeedback';
 
 interface ResellerAccountHubProps {
   user: UserProfile;
@@ -87,13 +88,14 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         {/* Mobile Sub-Screen Top Bar */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 h-14 px-3 flex items-center gap-3 shadow-xs">
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-slate-200 h-14 pt-[calc(env(safe-area-inset-top,0px))] px-3 flex items-center gap-3 shadow-xs">
           <button
             onClick={() => {
+              triggerHaptic('light');
               setCurrentView('menu');
               onNavigateTab('more');
             }}
-            className="p-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer active:scale-90"
             title="Back to Account Menu"
           >
             <ArrowLeft className="w-5 h-5 text-slate-800" />
@@ -134,10 +136,8 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
   // Primary Native Mobile Account Menu Screen
   return (
-    <div className="min-h-screen bg-slate-50 pb-28 pt-2">
-      <div className="max-w-xl mx-auto px-3.5 sm:px-4 space-y-3.5">
-        
-        {/* Profile Card */}
+    <div className="max-w-xl mx-auto space-y-3.5 pb-6">
+      {/* Profile Card */}
         <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950 text-white rounded-3xl p-5 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 right-0 w-36 h-36 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="relative z-10 flex items-center gap-4">
@@ -254,8 +254,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
         {/* Quick Hub Grid */}
         <div className="grid grid-cols-2 gap-2.5">
           <button
-            onClick={() => onNavigateTab('wallet')}
-            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer"
+            onClick={() => {
+              triggerHaptic('light');
+              onNavigateTab('wallet');
+            }}
+            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer select-none"
           >
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
               <span className="font-bold text-base">৳</span>
@@ -267,8 +270,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
           </button>
 
           <button
-            onClick={() => onNavigateTab('orders')}
-            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer"
+            onClick={() => {
+              triggerHaptic('light');
+              onNavigateTab('orders');
+            }}
+            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer select-none"
           >
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
               <span className="font-bold text-base">📦</span>
@@ -289,8 +295,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
           <div className="divide-y divide-slate-100">
             {/* Live Chat with Admin */}
             <button
-              onClick={() => setCurrentView('chat')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('chat');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -313,8 +322,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
             {/* Commission Summary */}
             <button
-              onClick={() => setCurrentView('commission')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('commission');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -330,8 +342,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
             {/* Notices & Announcements */}
             <button
-              onClick={() => setCurrentView('notifications')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('notifications');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -354,8 +369,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
             {/* Support Tickets */}
             <button
-              onClick={() => setCurrentView('support')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('support');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -380,8 +398,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
           <div className="divide-y divide-slate-100">
             {/* Rate & Review Products */}
             <button
-              onClick={() => setCurrentView('reviews')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('reviews');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-yellow-50 text-yellow-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -397,8 +418,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
             {/* Send App Feedback */}
             <button
-              onClick={() => setCurrentView('feedback')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('feedback');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -414,8 +438,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
             {/* Security & PIN Lock */}
             <button
-              onClick={() => setCurrentView('security')}
-              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer"
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('security');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -467,8 +494,6 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
           <p className="text-[11px] font-semibold text-slate-400">Sky Reseller App • Mobile Edition v1.0.0</p>
           <p className="text-[10px] text-slate-400">Sky Automation Tech (Bangladesh)</p>
         </div>
-
-      </div>
 
       {/* AI Marketing & Smart Assist Modal */}
       <AIMarketingModal
