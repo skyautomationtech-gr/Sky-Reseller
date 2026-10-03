@@ -268,10 +268,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
 
           {/* Promotional Banner Images for Reseller Storefront */}
           <div className="pt-2">
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold text-slate-700">Reseller Home Banner Carousel Images</label>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-700">Reseller Home Banner Carousel Images</label>
+                <p className="text-[11px] text-slate-400">Recommended Size: <span className="font-semibold text-blue-600">1200 x 400 px</span> (Ratio 3:1), Max 3MB</p>
+              </div>
               {isSuperAdmin && (
-                <label className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl cursor-pointer border border-blue-200 inline-flex items-center gap-1">
+                <label className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl cursor-pointer border border-blue-200 inline-flex items-center gap-1 self-start sm:self-auto">
                   <ImageIcon className="w-3.5 h-3.5" />
                   <span>Add Banner Image</span>
                   <input type="file" accept="image/*" onChange={handleBannerUpload} className="hidden" />
