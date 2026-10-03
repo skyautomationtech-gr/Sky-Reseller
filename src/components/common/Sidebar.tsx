@@ -4,6 +4,7 @@ import { getCurrentAppVersion } from '../../lib/versionService';
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
 import { ChangelogModal } from '../version/ChangelogModal';
 import { SkyLogo } from './SkyLogo';
+import { PWAInstallButton } from './PWAInstallButton';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -196,6 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="p-4 border-t border-slate-800 space-y-2">
+        <PWAInstallButton variant="sidebar" />
         <button
           onClick={() => setIsChangelogOpen(true)}
           className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition-colors group min-h-[36px] cursor-pointer"

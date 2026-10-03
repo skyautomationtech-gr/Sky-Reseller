@@ -10,6 +10,7 @@ import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SkyLogo } from '../common/SkyLogo';
+import { PWAInstallButton } from '../common/PWAInstallButton';
 import { formatResellerId } from '../../lib/resellerIdHelper';
 import { 
   Store, Search, Wallet as WalletIcon, ShoppingBag, Clock, ArrowRight, 
@@ -443,6 +444,9 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           </div>
         )}
       </div>
+
+      {/* PWA In-App Install Banner (Auto-suppresses if already installed) */}
+      <PWAInstallButton variant="banner" />
 
       {/* 2. QUICK STATS STRIP (2x2 Compact Grid) */}
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
