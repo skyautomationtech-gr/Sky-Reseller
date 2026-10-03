@@ -23,6 +23,7 @@ html, body {
   overscroll-behavior-y: none !important;
   -webkit-user-select: none !important;
   user-select: none !important;
+  -webkit-touch-callout: none !important;
   -webkit-tap-highlight-color: transparent !important;
   font-size: 15px;
   color: #1e293b;
@@ -36,6 +37,20 @@ html, body {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
   overscroll-behavior-y: none !important;
+}
+
+/* Native Safe Area Insets for notches and Android navigation bars */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px) !important;
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px) !important;
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px) !important;
 }
 
 /* Permit standard cursor and selection for text input fields */

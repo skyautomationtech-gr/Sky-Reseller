@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, Wallet } from '../../types';
@@ -64,6 +66,45 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
       window.removeEventListener('sky_navigate_tab', handlePushNav);
     };
   }, [user.uid]);
+
+  // Native Android Hardware Back Button Handling
+  useEffect(() => {
+    let backHandle: any = null;
+    let isSubscribed = true;
+
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        if (isCreateModalOpen) {
+          setIsCreateModalOpen(false);
+          return;
+        }
+
+        if (activeTab !== 'home') {
+          setActiveTab('home');
+          return;
+        }
+
+        if (Capacitor.isNativePlatform()) {
+          CapacitorApp.exitApp();
+        }
+      }).then((handle) => {
+        if (isSubscribed) {
+          backHandle = handle;
+        } else if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      }).catch(() => {});
+    } catch (_) {}
+
+    return () => {
+      isSubscribed = false;
+      if (backHandle && typeof backHandle.remove === 'function') {
+        try {
+          backHandle.remove();
+        } catch (_) {}
+      }
+    };
+  }, [activeTab, isCreateModalOpen]);
 
   const fetchResellerStats = async () => {
     setLoadingMetrics(true);
