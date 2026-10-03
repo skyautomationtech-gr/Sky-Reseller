@@ -661,12 +661,13 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                       </button>
                     </div>
 
-                    {/* Horizontal Scroll Row - Compact Standard E-commerce */}
-                    <div className="flex gap-2.5 sm:gap-3 overflow-x-auto pb-3 pt-1 scrollbar-thin scrollbar-thumb-slate-200 -mx-1 px-1">
+                    {/* 2-Column Grid on Mobile, Multi-column on PC (No side overflowing) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-3">
                       {group.items.map((product) => (
                         <ProductCard
                           key={product.id}
                           product={product}
+                          isGridMode={true}
                           onDetailClick={() => {
                             setDetailProduct(product);
                             setIsDetailOpen(true);
@@ -1176,7 +1177,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
   onBuyNow,
   onShareClick,
   onAICopyClick,
-  isGridMode = false
+  isGridMode = true
 }) => {
   const coverImage = product.images?.[0]?.url;
   const isOutOfStock = (product.stock || 0) <= 0;
@@ -1190,9 +1191,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <div 
-      className={`bg-white rounded-xl border border-slate-200/90 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group ${
-        isGridMode ? 'w-full' : 'w-[155px] sm:w-[178px] shrink-0'
-      }`}
+      className="bg-white rounded-xl border border-slate-200/90 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group w-full"
     >
       <div>
         {/* Card Image Area */}
@@ -1308,7 +1307,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
           }`}
         >
           <ShoppingCart className="w-3 h-3 shrink-0" />
-          <span className="truncate">Add Cart</span>
+          <span className="whitespace-nowrap">Add Cart</span>
         </button>
         <button
           onClick={() => onBuyNow(product)}
@@ -1320,7 +1319,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
           }`}
         >
           <ShoppingBag className="w-3 h-3 shrink-0" />
-          <span className="truncate">Buy Now</span>
+          <span className="whitespace-nowrap">Buy Now</span>
         </button>
       </div>
     </div>
