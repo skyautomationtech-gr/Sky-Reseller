@@ -78,7 +78,7 @@ async function startServer() {
         tone = "engaging",
         // 'engaging' | 'urgent' | 'trust_premium' | 'storytelling' | 'punchy_short'
         targetAudience = "general",
-        shopName = "Sky Reseller Shop",
+        shopName = "ReSellBD Shop",
         contactNumber = "",
         customPrompt = ""
       } = req.body;
@@ -269,7 +269,7 @@ Provide ONLY the final ready-to-copy marketing copy text with hashtags at the en
         features = "",
         platform = "facebook_post",
         tone = "engaging",
-        shopName = "Sky Reseller Shop",
+        shopName = "ReSellBD Shop",
         contactNumber = ""
       } = req.body || {};
       const fallback = generateFallbackCopy({

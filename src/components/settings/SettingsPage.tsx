@@ -3,7 +3,7 @@ import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/fires
 import { db } from '../../lib/firebase';
 import { UserProfile, CompanySettings } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
-import { SkyLogo } from '../common/SkyLogo';
+import { SkyLogo, isObsoleteLogo } from '../common/SkyLogo';
 import { VersionManagerForm } from '../version/VersionManagerForm';
 import { 
   Settings, Building2, Phone, Mail, MapPin, DollarSign, 
@@ -18,8 +18,8 @@ interface SettingsPageProps {
 }
 
 const DEFAULT_SETTINGS: CompanySettings = {
-  companyName: 'Sky Automation Tech',
-  logoUrl: '',
+  companyName: 'ReSellBD',
+  logoUrl: '/resellbd-logo.png',
   address: 'House-12, Road-04, Block-B, Mirpur, Dhaka, Bangladesh',
   phoneNumbers: '01722063777',
   email: 'skyautomationtech@gmail.com',
@@ -105,7 +105,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
       const docRef = doc(db, 'settings', 'general');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        setSettings({ ...DEFAULT_SETTINGS, ...docSnap.data() });
+        const dData = docSnap.data();
+        const cleanName = dData.companyName === 'Sky Automation Tech' ? 'ReSellBD' : (dData.companyName || 'ReSellBD');
+        const cleanLogo = isObsoleteLogo(dData.logoUrl) ? '/resellbd-logo.png' : (dData.logoUrl || '/resellbd-logo.png');
+        setSettings({ ...DEFAULT_SETTINGS, ...dData, companyName: cleanName, logoUrl: cleanLogo });
       }
     } catch (err) {
       console.error('Error fetching settings:', err);

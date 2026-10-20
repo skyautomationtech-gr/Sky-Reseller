@@ -149,6 +149,11 @@ service cloud.firestore {
         allow write: if request.auth != null;
       }
     }
+
+    // Email OTPs collection - strictly server-side / Cloud Functions only
+    match /emailOtps/{docId} {
+      allow read, write: if false;
+    }
   }
 }
 

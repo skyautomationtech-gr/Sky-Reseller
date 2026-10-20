@@ -12,7 +12,7 @@
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="Sky Reseller"
+        android:label="ReSellBD"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true"
@@ -21,7 +21,7 @@
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:name=".MainActivity"
-            android:label="Sky Reseller"
+            android:label="ReSellBD"
             android:theme="@style/AppTheme.NoActionBar"
             android:launchMode="singleTask"
             android:exported="true">

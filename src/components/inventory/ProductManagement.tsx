@@ -1402,7 +1402,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
 
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                      Retail Price (Suggested BDT) <span className="text-rose-500">*</span>
+                      Retail Price (BDT) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"

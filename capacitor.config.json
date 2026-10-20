@@ -1,6 +1,6 @@
 {
   "appId": "com.skyautomationtech.reseller",
-  "appName": "Sky Reseller",
+  "appName": "ReSellBD",
   "webDir": "dist",
   "plugins": {
     "PushNotifications": {

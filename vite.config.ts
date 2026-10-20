@@ -14,8 +14,8 @@ export default defineConfig(() => {
         includeAssets: ['logo.jpeg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: '/',
-          name: 'Sky Reseller',
-          short_name: 'SkyReseller',
+          name: 'ReSellBD',
+          short_name: 'ReSellBD',
           description: 'Reseller Management System for Sky Automation Tech (Bangladesh)',
           theme_color: '#0f172a',
           background_color: '#0f172a',

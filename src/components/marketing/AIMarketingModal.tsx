@@ -48,7 +48,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
   const [features, setFeatures] = useState<string>('');
   const [platform, setPlatform] = useState<AICopyPlatform>('facebook_post');
   const [tone, setTone] = useState<AICopyTone>('engaging');
-  const [shopName, setShopName] = useState<string>(user.shopName || 'Sky Reseller Hub');
+  const [shopName, setShopName] = useState<string>(user.shopName || 'ReSellBD Hub');
   const [contactNumber, setContactNumber] = useState<string>(user.mobile || '');
   const [customPrompt, setCustomPrompt] = useState<string>('');
 
@@ -114,7 +114,7 @@ export const AIMarketingModal: React.FC<AIMarketingModalProps> = ({
         features,
         platform: currentPlatform,
         tone: currentTone,
-        shopName: shopName || user.shopName || 'Sky Reseller',
+        shopName: shopName || user.shopName || 'ReSellBD',
         contactNumber,
         customPrompt,
       });

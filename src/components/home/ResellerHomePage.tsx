@@ -10,7 +10,9 @@ import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SkyLogo } from '../common/SkyLogo';
+import resellbdLogo from '../../assets/images/logo.png';
 import { PWAInstallButton } from '../common/PWAInstallButton';
+import { FluidGlassSearchEngine } from './FluidGlassSearchEngine';
 import { formatResellerId } from '../../lib/resellerIdHelper';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { 
@@ -368,15 +370,29 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
 
   return (
     <div className="space-y-4 sm:space-y-5 pb-8">
-      {/* 1. TOP BANNER / HERO SECTION (Modern Luxury Dark Theme, Mobile-Optimized) */}
-      <div className="relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 border border-slate-800 text-white p-4 sm:p-5">
-        {/* Subtle Ambient Glows */}
-        <div className="absolute -top-10 -right-10 w-44 h-44 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-10 -left-10 w-44 h-44 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+      {/* 1. FLUID & GLASS SEARCH ENGINE WITH LIVE INSTANT RESULTS */}
+      <FluidGlassSearchEngine
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        products={products}
+        onSelectProduct={(p) => {
+          setDetailProduct(p);
+          setIsDetailOpen(true);
+        }}
+        onAddToCart={handleAddToCartClick}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+      />
+
+      {/* 2. TOP BANNER / HERO SECTION (Glassmorphic Luxury Dark Theme, Mobile-Optimized) */}
+      <div className="relative rounded-3xl overflow-hidden shadow-xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 border border-slate-800/80 text-white p-4.5 sm:p-5.5 backdrop-blur-xl">
+        {/* Subtle Ambient Glowing Mesh */}
+        <div className="absolute -top-10 -right-10 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
 
         {bannerImages.length > 0 ? (
           /* Recommended Banner Aspect Ratio: 3:1 (e.g., 1200x400px on PC, 800x266px on Mobile) */
-          <div className="relative aspect-[3/1] sm:aspect-[24/8] max-h-48 rounded-xl overflow-hidden shadow-inner border border-white/10">
+          <div className="relative aspect-[3/1] sm:aspect-[24/8] max-h-48 rounded-2xl overflow-hidden shadow-inner border border-white/10">
             <img 
               src={bannerImages[currentBannerIndex]} 
               alt="Promo Banner" 
@@ -388,8 +404,8 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                   <button 
                     key={idx}
                     onClick={() => setCurrentBannerIndex(idx)}
-                    className={`h-1.5 rounded-full transition-all ${
-                      currentBannerIndex === idx ? 'w-5 bg-white' : 'w-1.5 bg-white/50'
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      currentBannerIndex === idx ? 'w-5 bg-white shadow-sm' : 'w-1.5 bg-white/50'
                     }`}
                   />
                 ))}
@@ -397,12 +413,12 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             )}
           </div>
         ) : (
-          <div className="relative z-10 space-y-3">
+          <div className="relative z-10 space-y-3.5">
             {/* Top Row: Shop Name & Reseller ID */}
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-blue-500/20 border border-blue-400/30 backdrop-blur-md flex items-center justify-center text-amber-300 shrink-0">
-                  <Store className="w-4 h-4" />
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-white/20 backdrop-blur-md flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
+                  <img src={resellbdLogo || '/resellbd-logo.png'} alt="ReSellBD" className="w-full h-full object-contain" />
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-xs sm:text-sm font-bold text-white truncate flex items-center gap-1">
@@ -412,7 +428,7 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                 </div>
               </div>
 
-              <div className="shrink-0 flex items-center gap-1 bg-slate-800/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-700 shadow-sm">
+              <div className="shrink-0 flex items-center gap-1.5 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-xs">
                 <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">Reseller ID:</span>
                 <span className="font-mono text-[11px] font-extrabold text-amber-300 tracking-wider">
                   {formatResellerId(user)}
@@ -423,22 +439,22 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             {/* Middle: Clean Punchy Tagline */}
             <div>
               <p className="text-xs sm:text-sm font-bold text-slate-100 leading-tight">
-                Sky Wholesale Gadgets & Reselling Portal
+                ReSellBD Wholesale Gadgets & Reselling Portal
               </p>
-              <p className="text-[11px] sm:text-xs text-slate-400 leading-relaxed mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-300/80 leading-relaxed mt-0.5">
                 Wholesale prices, verified warranty & automated wallet payouts.
               </p>
             </div>
 
             {/* Bottom Row: Feature Pills */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80 text-[10px] text-slate-300 font-medium">
-              <span className="bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/70 flex items-center gap-1">
+            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-white/10 text-[10px] text-slate-200 font-medium">
+              <span className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs">
                 <Sparkles className="w-2.5 h-2.5 text-amber-300" /> 100% Genuine
               </span>
-              <span className="bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/70 flex items-center gap-1">
+              <span className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs">
                 <TrendingUp className="w-2.5 h-2.5 text-emerald-400" /> High Margins
               </span>
-              <span className="bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/70 flex items-center gap-1">
+              <span className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs">
                 <ShieldCheck className="w-2.5 h-2.5 text-blue-300" /> Fast Delivery
               </span>
             </div>
@@ -449,25 +465,25 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
       {/* PWA In-App Install Banner (Auto-suppresses if already installed) */}
       <PWAInstallButton variant="banner" />
 
-      {/* 2. QUICK STATS STRIP (2x2 Compact Grid) */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+      {/* 2. QUICK STATS STRIP (Standard Compact 2x2 Grid) */}
+      <div className="grid grid-cols-2 gap-2">
         {/* Wallet Balance Card */}
         <div 
           onClick={() => {
             triggerHaptic('light');
             onNavigateTab('wallet');
           }}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-emerald-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group select-none"
+          className="bg-white border border-slate-200/90 hover:border-emerald-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group select-none relative overflow-hidden"
         >
-          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+          <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Wallet Balance</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">৳{walletBalance.toLocaleString()}</span>
-            <span className="text-[11px] font-bold text-emerald-600 group-hover:underline flex items-center gap-0.5">
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">৳{walletBalance.toLocaleString()}</span>
+            <span className="text-[10px] font-bold text-emerald-600 block truncate">
               Payouts →
             </span>
           </div>
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-            <WalletIcon className="w-4 h-4" />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0">
+            <WalletIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
 
@@ -477,17 +493,17 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             triggerHaptic('light');
             onNavigateTab('orders');
           }}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-blue-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group select-none"
+          className="bg-white border border-slate-200/90 hover:border-blue-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group select-none relative overflow-hidden"
         >
-          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+          <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Today's Orders</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">{todayOrdersCount} Orders</span>
-            <span className="text-[11px] font-bold text-blue-600 group-hover:underline flex items-center gap-0.5">
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">{todayOrdersCount} Orders</span>
+            <span className="text-[10px] font-bold text-blue-600 block truncate">
               Orders →
             </span>
           </div>
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-            <ShoppingBag className="w-4 h-4" />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center shrink-0">
+            <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
 
@@ -497,17 +513,17 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             triggerHaptic('light');
             onNavigateTab('orders');
           }}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-amber-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group select-none"
+          className="bg-white border border-slate-200/90 hover:border-amber-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group select-none relative overflow-hidden"
         >
-          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+          <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Processing</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">{pendingOrdersCount} Pending</span>
-            <span className="text-[11px] font-bold text-amber-600 group-hover:underline flex items-center gap-0.5">
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">{pendingOrdersCount} Pending</span>
+            <span className="text-[10px] font-bold text-amber-600 block truncate">
               Status →
             </span>
           </div>
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-            <Clock className="w-4 h-4" />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
 
@@ -517,61 +533,30 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
             triggerHaptic('light');
             setIsCartOpen(true);
           }}
-          className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-orange-500 active:scale-98 transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden select-none"
+          className="bg-white border border-slate-200/90 hover:border-orange-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group relative overflow-hidden select-none"
         >
-          <div className="space-y-0.5 min-w-0 flex-1 pr-1">
+          <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Cart</span>
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 block truncate tabular-nums">
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">
               {cart.reduce((acc, item) => acc + item.quantity, 0)} Items
             </span>
-            <span className="text-[11px] font-bold text-[#f57224] group-hover:underline flex items-center gap-0.5">
+            <span className="text-[10px] font-bold text-[#f57224] block truncate">
               Order Now →
             </span>
           </div>
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-orange-50 text-[#f57224] flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-            <ShoppingCart className="w-4 h-4" />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 text-[#f57224] flex items-center justify-center shrink-0">
+            <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           {cart.length > 0 && (
-            <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
+            <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#f57224]"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#f57224]"></span>
             </span>
           )}
         </div>
       </div>
 
-      {/* 3. SEARCH BAR (Moved above Categories, sleek modern design) */}
-      <div className="space-y-1.5">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-            <Search className="w-4 h-4 text-blue-500" />
-          </div>
-          <input
-            type="text"
-            placeholder="Search products by title, model, SKU, or category..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-20 py-2.5 sm:py-3 text-xs sm:text-sm bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:border-blue-300 focus:border-blue-500 focus:ring-3 focus:ring-blue-500/15 outline-none transition-all placeholder:text-slate-400 font-medium"
-          />
-          {searchTerm ? (
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setSearchTerm('');
-              }}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
-            >
-              Clear
-            </button>
-          ) : (
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-slate-400 bg-slate-50 border border-slate-200/70 px-2 py-0.5 rounded-md hidden sm:inline-block pointer-events-none">
-              Live Search
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* 4. CATEGORY ROW (horizontal scrollable, compact & sleek) */}
+      {/* 4. CATEGORY ROW (horizontal scrollable, compact & glassmorphic) */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <h2 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Categories</h2>
@@ -581,32 +566,28 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                 triggerHaptic('light');
                 setSelectedCategory('All');
               }}
-              className="text-[11px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-0.5"
+              className="text-[11px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-0.5 fluid-spring"
             >
               <ChevronLeft className="w-3 h-3" /> Show All
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-200 -mx-1 px-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {/* All Button */}
           <button
             onClick={() => {
               triggerHaptic('light');
               setSelectedCategory('All');
             }}
-            className={`flex flex-col items-center justify-center gap-1 py-2 px-2.5 rounded-xl min-w-[56px] sm:min-w-[62px] shrink-0 transition-all active:scale-95 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-all fluid-spring cursor-pointer select-none ${
               selectedCategory === 'All'
-                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1.5 ring-blue-600'
-                : 'bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-600/50'
+                : 'bg-white text-slate-700 border border-slate-200/90 hover:bg-slate-50 hover:border-slate-300 shadow-2xs'
             }`}
           >
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-              selectedCategory === 'All' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-            }`}>
-              <Layers className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-[10px] font-bold whitespace-nowrap leading-none">All</span>
+            <Layers className={`w-3.5 h-3.5 ${selectedCategory === 'All' ? 'text-white' : 'text-blue-600'}`} />
+            <span className="whitespace-nowrap">All</span>
           </button>
 
           {allCategoryNames.map((catName) => {
@@ -619,20 +600,14 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                   triggerHaptic('light');
                   setSelectedCategory(catName);
                 }}
-                className={`flex flex-col items-center justify-center gap-1 py-2 px-2.5 rounded-xl min-w-[62px] sm:min-w-[68px] shrink-0 transition-all active:scale-95 cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-all fluid-spring cursor-pointer select-none ${
                   isSelected
-                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 ring-1.5 ring-blue-600'
-                    : 'bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                    ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-600/50'
+                    : 'bg-white text-slate-700 border border-slate-200/90 hover:bg-slate-50 hover:border-slate-300 shadow-2xs'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                  isSelected ? 'bg-white/20 text-white' : 'bg-blue-50/80 text-blue-600'
-                }`}>
-                  <Icon className="w-3.5 h-3.5" />
-                </div>
-                <span className="text-[10px] font-bold whitespace-nowrap truncate max-w-[70px] leading-none">
-                  {catName}
-                </span>
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-blue-600'}`} />
+                <span className="whitespace-nowrap">{catName}</span>
               </button>
             );
           })}
@@ -1220,7 +1195,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <div 
-      className="bg-white rounded-xl border border-slate-200/90 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group w-full"
+      className="glass-card rounded-2xl overflow-hidden shadow-2xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between group w-full border border-slate-200/80 hover:border-blue-400/50"
     >
       <div>
         {/* Card Image Area */}
@@ -1250,18 +1225,18 @@ const ProductCard: React.FC<ProductCardProps> = ({
           {/* Badges Overlays */}
           <div className="absolute top-1.5 left-1.5 flex flex-col gap-0.5 items-start pointer-events-none">
             {isOutOfStock ? (
-              <span className="bg-rose-600 text-white text-[8px] sm:text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-xs uppercase">
+              <span className="bg-rose-600/90 backdrop-blur-md text-white text-[8px] sm:text-[9px] font-extrabold px-2 py-0.5 rounded-lg shadow-xs uppercase">
                 Out of Stock
               </span>
             ) : isLowStock ? (
-              <span className="bg-amber-500 text-white text-[8px] sm:text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-xs">
+              <span className="bg-amber-500/90 backdrop-blur-md text-white text-[8px] sm:text-[9px] font-extrabold px-2 py-0.5 rounded-lg shadow-xs">
                 Low ({product.stock})
               </span>
             ) : null}
           </div>
 
           {/* Product SKU Badge */}
-          <span className="absolute bottom-1.5 right-1.5 bg-slate-900/80 backdrop-blur-xs text-white text-[8px] font-bold px-1.5 py-0.5 rounded pointer-events-none">
+          <span className="absolute bottom-1.5 right-1.5 bg-slate-900/80 backdrop-blur-md text-white text-[8px] font-bold px-2 py-0.5 rounded-lg pointer-events-none shadow-xs">
             SKU: {product.sku}
           </span>
         </div>
@@ -1292,7 +1267,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
                   <span
                     key={v.id}
                     title={v.colorName}
-                    className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                    className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0 shadow-2xs"
                     style={{ backgroundColor: v.colorName.toLowerCase() }}
                   />
                 ))}
@@ -1303,43 +1278,38 @@ const ProductCard: React.FC<ProductCardProps> = ({
             </div>
           )}
 
-          {/* Pricing Row - Compact Standard E-commerce */}
-          <div className="bg-slate-50/90 p-1.5 sm:p-2 rounded-lg border border-slate-100 space-y-0.5">
+          {/* Pricing Row - Compact Glassmorphism E-commerce */}
+          <div className="bg-slate-50/80 backdrop-blur-xs p-1.5 sm:p-2 rounded-xl border border-slate-100/90 space-y-0.5">
             <div className="flex items-baseline justify-between gap-1">
               <span className="text-[9px] text-slate-400 font-semibold truncate">Reseller:</span>
               <span className="text-xs sm:text-sm font-extrabold text-blue-700">৳{product.resellerPrice}</span>
             </div>
-            <div className="flex items-baseline justify-between text-[9px] text-slate-400">
-              <span className="truncate">Suggested:</span>
-              <span className="line-through">৳{product.retailPrice}</span>
+            <div className="flex items-baseline justify-between text-[9px]">
+              <span className="text-slate-400 font-medium">৳{product.retailPrice}</span>
+              {resellerProfit > 0 && (
+                <span className="text-emerald-700 font-bold">Profit: ৳{resellerProfit}</span>
+              )}
             </div>
-
-            {resellerProfit > 0 && (
-              <div className="pt-0.5 border-t border-slate-200/60 flex items-center justify-between text-[9px]">
-                <span className="text-emerald-700 font-bold">Profit:</span>
-                <span className="text-emerald-700 font-black">৳{resellerProfit}</span>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
       {/* Card Actions Footer */}
-      <div className="p-2 sm:p-2.5 pt-0 grid grid-cols-2 gap-1.5">
+      <div className="p-2 sm:p-2.5 pt-0 grid grid-cols-2 gap-1 sm:gap-1.5">
         <button
           onClick={() => {
             triggerHaptic('medium');
             onAddToCart(product);
           }}
           disabled={isOutOfStock}
-          className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer select-none ${
+          className={`h-7.5 sm:h-8 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer select-none overflow-hidden fluid-spring ${
             isOutOfStock
               ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200'
-              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300 active:scale-95'
+              : 'bg-amber-50/90 hover:bg-amber-100 text-amber-800 border-amber-200/90 hover:border-amber-300 shadow-2xs'
           }`}
         >
           <ShoppingCart className="w-3 h-3 shrink-0" />
-          <span className="whitespace-nowrap">Add Cart</span>
+          <span className="truncate whitespace-nowrap">Add Cart</span>
         </button>
         <button
           onClick={() => {
@@ -1347,14 +1317,14 @@ const ProductCard: React.FC<ProductCardProps> = ({
             onBuyNow(product);
           }}
           disabled={isOutOfStock}
-          className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none ${
+          className={`h-7.5 sm:h-8 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none overflow-hidden fluid-spring ${
             isOutOfStock
               ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              : 'bg-[#f57224] hover:bg-[#e0651d] text-white active:scale-95 shadow-xs'
+              : 'bg-[#f57224] hover:bg-[#e0651d] text-white shadow-xs'
           }`}
         >
           <ShoppingBag className="w-3 h-3 shrink-0" />
-          <span className="whitespace-nowrap">Buy Now</span>
+          <span className="truncate whitespace-nowrap">Buy Now</span>
         </button>
       </div>
     </div>

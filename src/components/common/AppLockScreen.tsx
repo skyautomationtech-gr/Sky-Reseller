@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import bcrypt from 'bcryptjs';
 import { UserProfile } from '../../types';
 import { Shield, Lock, Eye, EyeOff, Delete, AlertCircle, LogOut, KeyRound, CheckCircle2 } from 'lucide-react';
+import resellbdLogo from '../../assets/images/logo.png';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AppLockScreenProps {
@@ -157,16 +158,26 @@ export const AppLockScreen: React.FC<AppLockScreenProps> = ({
       {/* Top Branding Header */}
       <div className="w-full max-w-xs pt-6 text-center flex flex-col items-center space-y-3">
         <div className="relative">
-          <div className="w-16 h-16 bg-indigo-600/30 rounded-3xl border border-indigo-500/40 flex items-center justify-center shadow-2xl shadow-indigo-500/20">
-            <Lock className="w-8 h-8 text-indigo-400 animate-pulse" />
+          <div className="w-16 h-16 rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl p-2 shadow-lg shadow-indigo-900/20 flex items-center justify-center overflow-hidden">
+            <img
+              src={resellbdLogo || '/resellbd-logo.png'}
+              alt="ReSellBD Logo"
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== window.location.origin + '/resellbd-logo.png') {
+                  target.src = '/resellbd-logo.png';
+                }
+              }}
+            />
           </div>
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-slate-900">
-            <Shield className="w-3.5 h-3.5 text-slate-950" />
+          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center border-2 border-slate-950 shadow-md">
+            <Lock className="w-3.5 h-3.5 text-white" />
           </div>
         </div>
 
         <div>
-          <h2 className="text-xl font-extrabold tracking-tight text-white">Sky Reseller Lock</h2>
+          <h2 className="text-xl font-extrabold tracking-tight text-white">ReSellBD Lock</h2>
           <p className="text-xs text-slate-400 mt-0.5 font-medium">
             Protected Session for <span className="text-indigo-300 font-bold">{user.fullName || user.shopName}</span>
           </p>

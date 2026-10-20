@@ -70,10 +70,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
         <div className="flex items-center gap-2">
-          <div className="md:hidden">
-            <SkyLogo size="sm" showText={false} lightMode={true} />
-          </div>
-          <h1 className="text-xs sm:text-sm md:text-lg font-bold text-slate-900 truncate max-w-[120px] sm:max-w-none">{title}</h1>
+          <SkyLogo size="sm" showText={false} lightMode={true} />
+          <h1 className="text-xs sm:text-sm md:text-lg font-bold text-slate-900 truncate max-w-[140px] sm:max-w-none">{title}</h1>
         </div>
       </div>
 

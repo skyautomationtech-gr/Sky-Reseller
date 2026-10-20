@@ -655,7 +655,7 @@ export const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
                         </label>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-[10px] text-slate-400">
-                            Suggested Retail Price: <span className="font-semibold text-slate-200">৳{suggestedRetailPrice}</span>
+                            Retail Price: <span className="font-semibold text-slate-200">৳{suggestedRetailPrice}</span>
                           </span>
                           <span className="text-[10px] text-slate-500">•</span>
                           <span className="text-[10px] text-slate-400">

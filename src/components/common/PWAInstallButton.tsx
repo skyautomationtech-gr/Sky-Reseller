@@ -55,7 +55,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           onClick={isIOS ? () => setShowIOSGuide(true) : handleInstall}
           disabled={installing}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-all cursor-pointer ${className}`}
-          title="Install Sky Reseller App on your device"
+          title="Install ReSellBD App on your device"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Install App</span>
@@ -73,7 +73,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             <Download className="w-3.5 h-3.5" />
           </div>
           <div className="text-left flex-1 min-w-0">
-            <div className="leading-tight truncate">Install Sky App</div>
+            <div className="leading-tight truncate">Install ReSellBD App</div>
             <div className="text-[10px] font-normal text-blue-100 opacity-90 truncate">Quick home screen access</div>
           </div>
         </button>
@@ -87,7 +87,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
               <Smartphone className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h4 className="text-xs sm:text-sm font-bold truncate">Install Sky Reseller App</h4>
+              <h4 className="text-xs sm:text-sm font-bold truncate">Install ReSellBD App</h4>
               <p className="text-[11px] text-slate-300 truncate">Install on your phone or desktop for lightning-fast 1-tap access.</p>
             </div>
           </div>
@@ -144,7 +144,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                   <CheckCircle2 className="w-3.5 h-3.5" />
                 </div>
                 <p className="leading-snug pt-0.5">
-                  Tap <strong className="text-slate-900 font-semibold">"Add"</strong> in the top right corner. The Sky Reseller app icon will now appear on your home screen!
+                  Tap <strong className="text-slate-900 font-semibold">"Add"</strong> in the top right corner. The ReSellBD app icon will now appear on your home screen!
                 </p>
               </div>
             </div>

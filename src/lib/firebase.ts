@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { initializeFirestore, getFirestore, CACHE_SIZE_UNLIMITED, Firestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 import firebaseConfigData from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
@@ -31,6 +32,7 @@ try {
 
 export const db = firestoreInstance;
 export const storage = getStorage(app);
+export const functions = getFunctions(app);
 
 // Secondary app for creating admin accounts without logging out super_admin
 export function createSecondaryAppForAdmin() {

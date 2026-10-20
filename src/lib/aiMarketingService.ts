@@ -125,7 +125,7 @@ function generateClientFallback(p: GenerateCopyParams): string {
   const sellPrice = p.sellingPrice || p.retailPrice || 990;
   const regPrice = p.originalPrice || Math.round(sellPrice * 1.25);
   const discount = regPrice > sellPrice ? regPrice - sellPrice : 0;
-  const shop = p.shopName || 'Sky Reseller Shop';
+  const shop = p.shopName || 'ReSellBD Shop';
   const phone = p.contactNumber || 'ইনবক্স করুন';
   const warranty = p.warranty ? `🛡️ অফিশিয়াল ওয়ারেন্টি: ${p.warranty}` : '✅ ১০০% অরিজিনাল ও অথেনটিক প্রোডাক্ট গ্যারান্টি';
   const featuresList = p.features || p.description || 'প্রিমিয়াম বিল্ড কোয়ালিটি ও দীর্ঘস্থায়ী কার্যক্ষমতা';

@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { auth, db } from '../../lib/firebase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { SkyLogo } from '../common/SkyLogo';
+import resellbdLogo from '../../assets/images/logo.png';
 import { Eye, EyeOff, Mail, Lock, Phone, AlertCircle, ArrowRight, WifiOff, ShieldCheck, Sparkles } from 'lucide-react';
 import { useNetwork } from '../../context/NetworkContext';
 
@@ -65,7 +66,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             const userDocRef = doc(db, 'users', uid);
             await setDoc(userDocRef, {
               uid,
-              fullName: role === 'super_admin' ? 'Sky Super Admin' : 'Sky Reseller',
+              fullName: role === 'super_admin' ? 'Sky Super Admin' : 'ReSellBD Reseller',
               shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
               mobile: role === 'super_admin' ? '01711111111' : '01722222222',
               email,
@@ -219,7 +220,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             const userDocRef = doc(db, 'users', uid);
             await setDoc(userDocRef, {
               uid,
-              fullName: role === 'super_admin' ? 'Sky Super Admin' : cleanEmail === 'admin@skyshebang.com' ? 'Sky Admin Staff' : 'Sky Reseller',
+              fullName: role === 'super_admin' ? 'Sky Super Admin' : cleanEmail === 'admin@skyshebang.com' ? 'Sky Admin Staff' : 'ReSellBD Reseller',
               shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
               mobile: role === 'super_admin' ? '01711111111' : '01722222222',
               email: cleanEmail,
@@ -318,30 +319,76 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 py-8 px-8 text-white text-center flex flex-col items-center justify-center border-b border-slate-800">
-          <div className="mb-2">
-            <SkyLogo size="lg" showText={true} />
+    <div className="relative min-h-[100dvh] w-full bg-gradient-to-b from-[#050B1A] via-[#071026] to-[#0B1630] flex flex-col justify-between items-center px-6 py-10 sm:py-14 overflow-x-hidden selection:bg-cyan-500/30 selection:text-white">
+      {/* Fluid Background Blobs matching Splash Screen */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-16 -left-16 w-[360px] h-[360px] sm:w-[500px] sm:h-[500px] bg-[#04203F]/60 rounded-full blur-[70px] sm:blur-[90px] will-change-transform animate-blob-morph-1 mix-blend-screen" />
+        <div className="absolute top-1/3 -right-24 w-[340px] h-[340px] sm:w-[460px] sm:h-[460px] bg-[#0E9AA7]/35 rounded-full blur-[65px] sm:blur-[85px] will-change-transform animate-blob-morph-2 mix-blend-screen" />
+        <div className="absolute -bottom-20 left-1/5 w-[320px] h-[320px] sm:w-[440px] sm:h-[440px] bg-[#3DD055]/25 rounded-full blur-[70px] sm:blur-[90px] will-change-transform animate-blob-morph-3 mix-blend-screen" />
+        <div className="absolute top-1/4 left-1/3 w-[260px] h-[260px] sm:w-[360px] sm:h-[360px] bg-[#0E9AA7]/20 rounded-full blur-[60px] will-change-transform animate-blob-morph-4 mix-blend-screen" />
+        <div className="absolute inset-0 opacity-[0.035] pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1.5px)] [background-size:16px_16px]" />
+      </div>
+
+      {/* Main Container - Centered and mobile-optimized */}
+      <div className="relative z-10 w-full max-w-sm sm:max-w-md my-auto flex flex-col">
+        {/* 2. Branding Section (top) */}
+        <div className="flex flex-col items-center text-center mb-8">
+          {/* App Logo Displayed Prominently in Glass Card */}
+          <div className="relative mb-6 group">
+            {/* Soft Brand Outer Glow (Teal & Green) */}
+            <div className="absolute -inset-2 bg-gradient-to-r from-[#0E9AA7]/35 via-[#3DD055]/25 to-[#04203F]/45 rounded-[36px] blur-xl opacity-80 pointer-events-none" />
+            <div 
+              className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-[28px] overflow-hidden border border-white/22 bg-white/[0.09] backdrop-blur-[24px] saturate-[150%] p-5 shadow-[0_20px_50px_-10px_rgba(14,154,167,0.3),0_0_25px_rgba(61,208,85,0.15)] flex items-center justify-center glass-card-fallback"
+              style={{
+                WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+              }}
+            >
+              {/* Diagonal Light-Reflection Highlight */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                <div className="absolute -inset-[100%] bg-gradient-to-tr from-transparent via-white/[0.18] to-transparent animate-shimmer-sweep pointer-events-none" />
+              </div>
+
+              <img
+                src={resellbdLogo || '/resellbd-logo.png'}
+                alt="ReSellBD Logo"
+                className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.35)]"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (target.src !== window.location.origin + '/resellbd-logo.png') {
+                    target.src = '/resellbd-logo.png';
+                  }
+                }}
+              />
+            </div>
           </div>
-          <p className="text-blue-200/80 text-xs font-medium">B2B Reseller Portal • Official Storefront</p>
+
+          {/* Headline & Subtext */}
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Log In to ReSellBD
+          </h1>
+          <p className="text-sm text-slate-400 mt-2 font-normal">
+            Manage your reseller business
+          </p>
         </div>
 
-        <form onSubmit={handleLogin} className="p-8 space-y-5">
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          {/* Error Message Notification */}
           {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-xl text-xs flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
-              <span>{error}</span>
+            <div className="bg-rose-500/15 border border-rose-500/30 text-rose-200 p-3.5 rounded-2xl text-xs sm:text-sm backdrop-blur-md flex items-start gap-3 animate-in fade-in duration-200">
+              <AlertCircle className="w-5 h-5 shrink-0 text-rose-400 mt-0.5" />
+              <span className="leading-relaxed flex-1">{error}</span>
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Email Address or Mobile Number
+          {/* 3. Email Form Field (Frosted / Glass Input Field) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-slate-300 ml-3">
+              Email
             </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Mail className="w-4 h-4" />
+            <div className="relative flex items-center h-[52px] rounded-full bg-white/[0.06] hover:bg-white/[0.09] focus-within:bg-white/[0.09] border border-white/10 hover:border-white/20 focus-within:border-cyan-400/60 focus-within:ring-2 focus-within:ring-cyan-400/20 backdrop-blur-md transition-all duration-200">
+              <div className="pl-4 pr-1 text-slate-400 pointer-events-none flex items-center">
+                <Mail className="w-5 h-5" />
               </div>
               <input
                 type="text"
@@ -351,28 +398,20 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
                 spellCheck={false}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="name@example.com or 01712345678"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+                placeholder="Enter your email"
+                className="w-full h-full bg-transparent text-white placeholder-slate-400 text-sm sm:text-base pl-2.5 pr-5 outline-none font-normal"
               />
             </div>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                Password
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsForgotPasswordOpen(true)}
-                className="text-xs font-medium text-blue-600 hover:underline"
-              >
-                Forgot password?
-              </button>
-            </div>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Lock className="w-4 h-4" />
+          {/* 3. Password Form Field (Frosted / Glass Input Field) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-slate-300 ml-3">
+              Password
+            </label>
+            <div className="relative flex items-center h-[52px] rounded-full bg-white/[0.06] hover:bg-white/[0.09] focus-within:bg-white/[0.09] border border-white/10 hover:border-white/20 focus-within:border-cyan-400/60 focus-within:ring-2 focus-within:ring-cyan-400/20 backdrop-blur-md transition-all duration-200">
+              <div className="pl-4 pr-1 text-slate-400 pointer-events-none flex items-center">
+                <Lock className="w-5 h-5" />
               </div>
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -382,53 +421,81 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
                 spellCheck={false}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm"
+                placeholder="Enter your password"
+                className="w-full h-full bg-transparent text-white placeholder-slate-400 text-sm sm:text-base pl-2.5 pr-2 outline-none font-normal"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="pr-4 pl-2 text-slate-400 hover:text-white transition-colors focus:outline-none flex items-center cursor-pointer"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
           </div>
 
-          <div className="flex items-center">
-            <label className="flex items-center gap-2 cursor-pointer">
+          {/* 4. Row below password field: Remember me + Forgot Password? */}
+          <div className="flex items-center justify-between px-2 pt-1 pb-1">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none group">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                className="w-4 h-4 rounded border-white/20 bg-white/10 text-cyan-500 focus:ring-cyan-500/40 focus:ring-offset-0 transition cursor-pointer"
               />
-              <span className="text-xs text-slate-600 font-medium">Remember Me on this device</span>
+              <span className="text-xs sm:text-sm text-slate-300 group-hover:text-white transition-colors">
+                Remember me
+              </span>
             </label>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading || !isOnline}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-          >
-            <span>{loading ? 'Signing In...' : !isOnline ? 'Offline - Connection Required' : 'Sign In to Portal'}</span>
-            {!loading && isOnline && <ArrowRight className="w-4 h-4" />}
-          </button>
-
-          <div className="text-center pt-3 border-t border-slate-100">
-            <span className="text-xs text-slate-500">Don't have a reseller account? </span>
             <button
               type="button"
-              onClick={onSwitchToRegister}
-              className="text-xs font-semibold text-blue-600 hover:underline"
+              onClick={() => setIsForgotPasswordOpen(true)}
+              className="text-xs sm:text-sm text-slate-300 hover:text-cyan-400 transition-colors font-medium cursor-pointer"
             >
-              Register Now
+              Forgot Password?
+            </button>
+          </div>
+
+          {/* 5. Login Button: Full-width, rounded pill button with subtle shadow/glow effect */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading || !isOnline}
+              className="w-full h-[52px] rounded-full bg-gradient-to-b from-white/25 via-white/15 to-white/10 hover:from-white/30 hover:to-white/20 active:scale-[0.99] border border-white/25 text-white font-semibold text-base shadow-[0_8px_30px_rgba(0,0,0,0.5)] backdrop-blur-md transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                  </svg>
+                  <span>Logging In...</span>
+                </div>
+              ) : !isOnline ? (
+                <span>Offline - Connection Required</span>
+              ) : (
+                <span>Login</span>
+              )}
             </button>
           </div>
         </form>
       </div>
 
+      {/* 7. Bottom Section: Don't have an account? Create an account */}
+      <div className="relative z-10 text-center pt-8 text-xs sm:text-sm text-slate-400">
+        <span>Don't have an account? </span>
+        <button
+          type="button"
+          onClick={onSwitchToRegister}
+          className="text-cyan-400 hover:text-cyan-300 font-semibold transition-colors hover:underline ml-1 cursor-pointer"
+        >
+          Create an account
+        </button>
+      </div>
+
+      {/* Forgot Password Modal */}
       <ForgotPasswordModal
         isOpen={isForgotPasswordOpen}
         onClose={() => setIsForgotPasswordOpen(false)}

@@ -19,7 +19,6 @@ import { SupportSystem } from '../support/SupportSystem';
 import { AdminLiveChatHub } from '../chat/AdminLiveChatHub';
 import { SettingsPage } from '../settings/SettingsPage';
 import { SecurityPage } from '../security/SecurityPage';
-import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { LayoutDashboard, Users, CheckCircle2, Sparkles, Package, ShoppingBag, Wallet, Percent, Clock, AlertTriangle, HelpCircle, RotateCw } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
@@ -406,7 +405,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           {renderContent()}
         </main>
       </div>
-      <FloatingHelpButtons />
     </div>
   );
 };

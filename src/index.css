@@ -59,18 +59,52 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text !important;
 }
 
-/* Ensure minimum comfortable text size across compact mobile classes */
-.text-\[9px\], .text-\[10px\] {
-  font-size: 11px !important;
+/* Glassmorphism & Fluid Touch Styles */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
 }
 
-.text-\[11px\] {
-  font-size: 12px !important;
+.glass-panel-dark {
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
-.text-xs {
-  font-size: 13px !important;
-  line-height: 1.25rem !important;
+.glass-card {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(226, 232, 240, 0.85) !important;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Fluid spring press micro-interaction */
+.fluid-spring {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease-out !important;
+}
+.fluid-spring:active {
+  transform: scale(0.96) !important;
+}
+
+/* Floating animation */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
 }
 
 /* Android CameraX / Scanner FIT_CENTER Preview Styles */
@@ -104,3 +138,127 @@ input, textarea, select, [contenteditable="true"] {
   font-size: 11px !important;
   color: #94a3b8 !important;
 }
+
+/* ========================================================
+   FLUID LIQUID BLOB MORPHING & GLASSMORPHISM KEYFRAMES
+   ======================================================== */
+@keyframes blobMorph1 {
+  0% {
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+    transform: translate(35px, 45px) scale(1.12);
+  }
+  100% {
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+    transform: translate(-25px, 25px) scale(0.96);
+  }
+}
+
+@keyframes blobMorph2 {
+  0% {
+    border-radius: 40% 60% 60% 40% / 40% 50% 50% 60%;
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+    transform: translate(-45px, -35px) scale(1.1);
+  }
+  100% {
+    border-radius: 40% 60% 60% 40% / 40% 50% 50% 60%;
+    transform: translate(25px, -20px) scale(1.02);
+  }
+}
+
+@keyframes blobMorph3 {
+  0% {
+    border-radius: 50% 50% 40% 60% / 60% 40% 60% 40%;
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    border-radius: 40% 60% 50% 50% / 40% 60% 40% 60%;
+    transform: translate(40px, -30px) scale(1.18);
+  }
+  100% {
+    border-radius: 50% 50% 40% 60% / 60% 40% 60% 40%;
+    transform: translate(-30px, 35px) scale(0.92);
+  }
+}
+
+@keyframes blobMorph4 {
+  0% {
+    border-radius: 35% 65% 55% 45% / 55% 45% 55% 45%;
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    border-radius: 65% 35% 45% 55% / 45% 55% 45% 55%;
+    transform: translate(-25px, 30px) scale(1.14);
+  }
+  100% {
+    border-radius: 35% 65% 55% 45% / 55% 45% 55% 45%;
+    transform: translate(20px, -25px) scale(0.95);
+  }
+}
+
+@keyframes shimmerSweep {
+  0% {
+    transform: translateX(-150%) translateY(-150%) rotate(35deg);
+  }
+  100% {
+    transform: translateX(150%) translateY(150%) rotate(35deg);
+  }
+}
+
+@keyframes liquidFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-blob-morph-1 {
+  animation: blobMorph1 16s ease-in-out infinite alternate;
+}
+.animate-blob-morph-2 {
+  animation: blobMorph2 19s ease-in-out infinite alternate;
+}
+.animate-blob-morph-3 {
+  animation: blobMorph3 14s ease-in-out infinite alternate;
+}
+.animate-blob-morph-4 {
+  animation: blobMorph4 18s ease-in-out infinite alternate;
+}
+.animate-shimmer-sweep {
+  animation: shimmerSweep 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.animate-liquid-flow {
+  animation: liquidFlow 2.8s ease-in-out infinite;
+}
+
+/* Fallback for browsers that do not support backdrop-filter */
+@supports not ((-webkit-backdrop-filter: blur(24px)) or (backdrop-filter: blur(24px))) {
+  .glass-card-fallback {
+    background: rgba(255, 255, 255, 0.14) !important;
+  }
+}
+
+/* Respect prefers-reduced-motion for accessibility & low-power modes */
+@media (prefers-reduced-motion: reduce) {
+  .animate-blob-morph-1,
+  .animate-blob-morph-2,
+  .animate-blob-morph-3,
+  .animate-blob-morph-4,
+  .animate-shimmer-sweep,
+  .animate-liquid-flow {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+

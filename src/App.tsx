@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -17,9 +17,12 @@ import { AppLockScreen } from './components/common/AppLockScreen';
 import { logUserSession } from './lib/auditLogger';
 import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from './lib/versionService';
 import { WhatsNewModal } from './components/version/WhatsNewModal';
+import { SplashLoadingScreen } from './components/common/SplashLoadingScreen';
 import { ChangelogEntry } from './types';
 import { RefreshProvider } from './context/RefreshContext';
 import { NetworkProvider, useNetwork } from './context/NetworkContext';
+import resellbdLogo from './assets/images/logo.png';
+import { isObsoleteLogo } from './components/common/SkyLogo';
 import { Store, Loader2, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { NoInternetOverlay, TopBannerIndicator } from './components/common/OfflineIndicators';
@@ -38,12 +41,45 @@ import { initNativeStatusBar } from './lib/nativeFeedback';
 // -> export const IS_UNDER_MAINTENANCE = false;
 export const IS_UNDER_MAINTENANCE = false;
 
+// ⏳ ========================================================
+// ⏳ SPLASH SCREEN TIMING CONSTANTS (সহজে পরিবর্তনযোগ্য সময়সীমা)
+// ⏳ ========================================================
+export const SPLASH_DURATION_MS = 60000; // 60 seconds (1 minute) minimum duration on launch
+export const SKIP_AFTER_MS = 10000; // 10 seconds before Skip button unlocks
+
 function AppContent() {
   const { isOnline } = useNetwork();
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [splashActive, setSplashActive] = useState(true);
+  const splashTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Splash Screen Minimum 60-Second Timer with Cleanup
+  useEffect(() => {
+    splashTimerRef.current = setTimeout(() => {
+      setSplashActive(false);
+      splashTimerRef.current = null;
+    }, SPLASH_DURATION_MS);
+
+    return () => {
+      if (splashTimerRef.current) {
+        clearTimeout(splashTimerRef.current);
+        splashTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleSkipSplash = useCallback(() => {
+    if (splashTimerRef.current) {
+      clearTimeout(splashTimerRef.current);
+      splashTimerRef.current = null;
+    }
+    setSplashActive(false);
+  }, []);
+
+  const isSplashVisible = splashActive || authLoading;
   const [bypassMaintenance, setBypassMaintenance] = useState(false);
   const [showAdminLoginInMaintenance, setShowAdminLoginInMaintenance] = useState(false);
   const [remoteMaintenance, setRemoteMaintenance] = useState<boolean>(false);
@@ -213,7 +249,7 @@ function AppContent() {
         const fallbackProfile: UserProfile = {
           uid: currentUser.uid,
           fullName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Reseller User',
-          shopName: 'Sky Reseller Shop',
+          shopName: 'ReSellBD Shop',
           mobile: '01700000000',
           email: currentUser.email || '',
           division: 'Dhaka',
@@ -265,6 +301,20 @@ function AppContent() {
         }
       }
 
+      // Auto-migrate Firestore settings/general to ReSellBD branding & logo if obsolete
+      getDoc(doc(db, 'settings', 'general')).then((sSnap) => {
+        if (sSnap.exists()) {
+          const sData = sSnap.data();
+          const needsFix = isObsoleteLogo(sData.logoUrl) || sData.companyName === 'Sky Automation Tech';
+          if (needsFix) {
+            updateDoc(doc(db, 'settings', 'general'), {
+              companyName: 'ReSellBD',
+              logoUrl: '/resellbd-logo.png',
+            }).catch((e) => console.warn('Could not auto-migrate settings in Firestore:', e));
+          }
+        }
+      }).catch((e) => console.warn('Could not check settings doc:', e));
+
       // Update local storage cache
       localStorage.setItem(cacheKey, JSON.stringify(profile));
 
@@ -300,7 +350,7 @@ function AppContent() {
           console.warn('Admins are restricted from Mobile APK. Signing out...');
           await signOut(auth);
           setUserProfile(null);
-          setLoading(false);
+          setAuthLoading(false);
           return;
         }
 
@@ -338,7 +388,7 @@ function AppContent() {
       } else {
         setUserProfile(null);
       }
-      setLoading(false);
+      setAuthLoading(false);
     });
 
     return () => unsubscribe();
@@ -386,22 +436,8 @@ function AppContent() {
     setAuthView('login');
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col text-white relative">
-        <div className="flex-1 flex flex-col items-center justify-center p-4">
-          <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-600/30 animate-pulse">
-            <Store className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-xl font-bold mb-2">Sky Reseller</h1>
-          <p className="text-xs text-slate-400 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-            <span>Loading Sky Automation Tech Portal...</span>
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const renderMainContent = () => {
+    if (isSplashVisible) return null;
 
   // 🛠️ Check Maintenance Mode:
   // Whitelisted accounts that are PERMANENTLY EXEMPT from Maintenance Mode:
@@ -462,7 +498,7 @@ function AppContent() {
       );
     }
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 relative">
+      <div className="min-h-screen flex flex-col bg-[#0f0f1a] relative">
         <NoInternetOverlay />
         <div className="flex-1">
           <LoginForm
@@ -551,6 +587,31 @@ function AppContent() {
         />
       )}
     </RefreshProvider>
+    );
+  };
+
+  return (
+    <>
+      <AnimatePresence>
+        {isSplashVisible && (
+          <motion.div
+            key="splash-screen"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.05 }}
+            transition={{ duration: 0.45, ease: 'easeInOut' }}
+            className="fixed inset-0 z-[999999]"
+          >
+            <SplashLoadingScreen
+              onSkip={handleSkipSplash}
+              splashDurationMs={SPLASH_DURATION_MS}
+              skipAfterMs={SKIP_AFTER_MS}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {renderMainContent()}
+    </>
   );
 }
 

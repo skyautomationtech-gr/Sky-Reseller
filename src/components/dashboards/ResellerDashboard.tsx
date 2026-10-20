@@ -10,12 +10,10 @@ import { WalletView } from '../wallet/WalletView';
 import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { ResellerHomePage } from '../home/ResellerHomePage';
 import { ResellerAccountHub } from '../profile/ResellerAccountHub';
-import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { BottomNavigation } from '../common/BottomNavigation';
-import { SkyLogo } from '../common/SkyLogo';
 import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
-import { RotateCw, MessagesSquare } from 'lucide-react';
+import { RotateCw, MessagesSquare, Store } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 
@@ -39,6 +37,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [loadingMetrics, setLoadingMetrics] = useState<boolean>(true);
+  const [shopImgError, setShopImgError] = useState<boolean>(false);
 
   const { isRefreshing, formattedLastUpdated, showToast, refreshCurrentPage } = useRefresh();
 
@@ -248,36 +247,58 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center selection:bg-blue-500 selection:text-white">
       {/* Mobile-First App Container (Full width on phone/tablet, sleek centered app shell on wide desktop) */}
-      <div className="w-full max-w-2xl min-h-screen bg-slate-50 flex flex-col relative shadow-xl md:border-x border-slate-200">
+      <div className="w-full max-w-2xl min-h-screen bg-slate-50 flex flex-col relative shadow-2xl md:border-x border-slate-200/80 overflow-hidden">
         
-        {/* Native Mobile App Header (Sticky with Safe Area Inset) */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-slate-200/90 px-3.5 py-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] flex items-center justify-between shadow-xs">
+        {/* Subtle Ambient Background Gradients for Glassmorphism Depth */}
+        <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-bl from-blue-400/10 via-indigo-400/5 to-transparent rounded-full blur-3xl pointer-events-none -z-0" />
+        <div className="absolute top-80 -left-20 w-80 h-80 bg-gradient-to-tr from-amber-400/10 via-orange-400/5 to-transparent rounded-full blur-3xl pointer-events-none -z-0" />
+
+        {/* Native Mobile App Header (Transparent Sticky Top Bar) */}
+        <header className="sticky top-0 z-30 bg-transparent backdrop-blur-md border-b border-slate-200/40 px-3.5 py-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] flex items-center justify-between transition-colors">
           <div 
             onClick={() => {
               triggerHaptic('light');
               setActiveTab('home');
             }}
-            className="flex items-center gap-2 cursor-pointer select-none active:scale-95 transition-transform"
+            className="flex items-center gap-2 cursor-pointer select-none fluid-spring max-w-[55%]"
           >
-            <SkyLogo size="sm" showText={false} lightMode={true} />
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-black text-slate-900 tracking-tight leading-none">SKY RESELLER</span>
+            {/* Account Holder's Shop Logo / Photo */}
+            {(user.shopPhotoUrl || user.profilePhotoUrl) && !shopImgError ? (
+              <div className="w-8.5 h-8.5 rounded-xl overflow-hidden border border-slate-200/80 bg-white/70 shadow-2xs flex items-center justify-center shrink-0">
+                <img
+                  src={user.shopPhotoUrl || user.profilePhotoUrl}
+                  alt={user.shopName || user.fullName}
+                  className="w-full h-full object-cover"
+                  onError={() => setShopImgError(true)}
+                />
               </div>
-              <p className="text-[11px] font-medium text-slate-500 truncate max-w-[130px] leading-tight mt-0.5">
-                {user.shopName || user.fullName}
+            ) : (
+              <div className="w-8.5 h-8.5 rounded-xl border border-blue-500/20 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-2xs shrink-0">
+                <Store className="w-4 h-4 text-white" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-black text-slate-900 tracking-tight leading-none truncate">
+                  {user.shopName || user.fullName}
+                </span>
+              </div>
+              <p className="text-[11px] font-medium text-slate-500 truncate leading-tight mt-0.5">
+                {user.shopName && user.fullName && user.shopName !== user.fullName
+                  ? user.fullName
+                  : (user.resellerCode ? `ID: ${user.resellerCode}` : 'Verified Reseller')}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Live Wallet Balance Pill */}
+            {/* Live Wallet Balance Glass Pill */}
             <button
               onClick={() => {
                 triggerHaptic('light');
                 setActiveTab('wallet');
               }}
-              className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 text-emerald-800 px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+              className="bg-emerald-500/10 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/25 text-emerald-800 px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all fluid-spring cursor-pointer shadow-2xs"
               title="Wallet Balance - Click to View"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -290,12 +311,12 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
                 triggerHaptic('light');
                 setActiveTab('chat');
               }}
-              className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer active:scale-90"
+              className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-slate-900/5 backdrop-blur-md rounded-xl transition-all min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer fluid-spring border border-slate-200/60 bg-transparent"
               title="Live Chat Support"
             >
               <MessagesSquare className="w-5 h-5 text-slate-700 hover:text-blue-600" />
               {unreadChatCount > 0 && (
-                <span className="absolute top-1 right-1 bg-rose-500 text-white font-black text-[10px] w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-white animate-bounce">
+                <span className="absolute top-1 right-1 bg-rose-500 text-white font-black text-[10px] w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-white animate-bounce shadow-xs">
                   {unreadChatCount > 9 ? '9+' : unreadChatCount}
                 </span>
               )}
@@ -317,7 +338,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
                 refreshCurrentPage();
               }}
               disabled={isRefreshing}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer active:scale-90"
+              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-900/5 backdrop-blur-md rounded-xl transition-all min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer fluid-spring border border-slate-200/60 bg-transparent"
               title="Refresh"
             >
               <RotateCw className={`w-4 h-4 text-slate-600 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
@@ -329,9 +350,6 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
         <main className="flex-1 pb-24 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
           {renderContent()}
         </main>
-
-        {/* Floating Quick Action / Help Buttons */}
-        <FloatingHelpButtons isResellerMobile={true} />
 
         {/* Fixed Mobile Bottom Navigation Bar */}
         <BottomNavigation 

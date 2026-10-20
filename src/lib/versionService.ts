@@ -21,7 +21,7 @@ export async function getCurrentAppVersion(): Promise<AppVersionConfig> {
       const initialConfig: AppVersionConfig = {
         version: DEFAULT_VERSION,
         releasedAt: new Date(),
-        releaseNotes: 'Initial release of Sky Reseller platform.',
+        releaseNotes: 'Initial release of ReSellBD platform.',
       };
       await setDoc(vRef, initialConfig);
 

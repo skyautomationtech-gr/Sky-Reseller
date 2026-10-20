@@ -1,7 +1,7 @@
 {
   "name": "sky-reseller-functions",
   "version": "1.0.0",
-  "description": "Firebase Cloud Functions for Sky Reseller FCM Push Notifications",
+  "description": "Firebase Cloud Functions for ReSellBD FCM Push Notifications",
   "scripts": {
     "serve": "firebase serve --only functions",
     "shell": "firebase functions:shell",

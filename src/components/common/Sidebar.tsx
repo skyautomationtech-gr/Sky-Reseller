@@ -3,7 +3,7 @@ import { UserProfile, UserRole } from '../../types';
 import { getCurrentAppVersion } from '../../lib/versionService';
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
 import { ChangelogModal } from '../version/ChangelogModal';
-import { SkyLogo } from './SkyLogo';
+import { SkyLogo, isObsoleteLogo } from './SkyLogo';
 import { PWAInstallButton } from './PWAInstallButton';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [currentVersion, setCurrentVersion] = useState('1.0.0');
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
-  const [companyName, setCompanyName] = useState<string>('Sky Reseller');
+  const [companyName, setCompanyName] = useState<string>('ReSellBD');
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
 
   useEffect(() => {
@@ -50,8 +50,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         const sSnap = await getDoc(doc(db, 'settings', 'general'));
         if (sSnap.exists()) {
           const sData = sSnap.data();
-          if (sData.logoUrl) setCompanyLogo(sData.logoUrl);
-          if (sData.companyName) setCompanyName(sData.companyName);
+          if (sData.logoUrl && !isObsoleteLogo(sData.logoUrl)) setCompanyLogo(sData.logoUrl);
+          if (sData.companyName && sData.companyName !== 'Sky Automation Tech') setCompanyName(sData.companyName);
         }
       } catch (err) {
         console.error('Error fetching logo in sidebar:', err);

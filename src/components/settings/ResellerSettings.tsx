@@ -2360,7 +2360,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
                     )}
                   </div>
                   <p className="text-xs text-sky-200">
-                    Sky Reseller Enterprise Portal • Production Mobile Release
+                    ReSellBD Enterprise Portal • Production Mobile Release
                   </p>
                 </div>
 
@@ -2411,7 +2411,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
                     </button>
                   </div>
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-slate-600 text-xs leading-relaxed">
-                    {latestChangelog?.description || appVersionInfo?.releaseNotes || 'Initial release of Sky Reseller portal.'}
+                    {latestChangelog?.description || appVersionInfo?.releaseNotes || 'Initial release of ReSellBD portal.'}
                   </div>
                 </div>
 
@@ -3014,7 +3014,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               <LogOut className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900">Sign Out of Sky Reseller</h3>
+              <h3 className="font-bold text-base text-slate-900">Sign Out of ReSellBD</h3>
               <p className="text-xs text-slate-500 mt-1">
                 Are you sure you want to logout? You will need to enter your email and password again to log back in.
               </p>

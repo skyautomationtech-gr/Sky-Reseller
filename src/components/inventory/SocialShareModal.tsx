@@ -39,7 +39,7 @@ export const SocialShareModal: React.FC<SocialShareModalProps> = ({
   const [badgePosition, setBadgePosition] = useState<'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'bottom-strip'>('top-right');
   
   // Branding & Watermark
-  const [shopName, setShopName] = useState<string>(user.shopName || user.fullName || 'Sky Reseller');
+  const [shopName, setShopName] = useState<string>(user.shopName || user.fullName || 'ReSellBD');
   const [contactNumber, setContactNumber] = useState<string>(user.mobile || '');
   const [showWatermark, setShowWatermark] = useState<boolean>(true);
   const [showContactPill, setShowContactPill] = useState<boolean>(true);
@@ -77,7 +77,7 @@ export const SocialShareModal: React.FC<SocialShareModalProps> = ({
         description: product.description || '',
         platform: overridePlatform || aiPlatform,
         tone: overrideTone || aiTone,
-        shopName: shopName || 'Sky Reseller',
+        shopName: shopName || 'ReSellBD',
         contactNumber,
       });
 

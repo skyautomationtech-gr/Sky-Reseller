@@ -495,7 +495,7 @@ export function downloadSampleProductTemplate(format: 'csv' | 'xlsx' = 'xlsx') {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
 
-  const filename = `Sky_Reseller_Products_Import_Template.${format}`;
+  const filename = `ReSellBD_Products_Import_Template.${format}`;
   XLSX.writeFile(workbook, filename, { bookType: format });
 }
 
@@ -542,6 +542,6 @@ export function downloadSampleBrandTemplate(format: 'csv' | 'xlsx' = 'xlsx') {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Brands');
 
-  const filename = `Sky_Reseller_Brands_Import_Template.${format}`;
+  const filename = `ReSellBD_Brands_Import_Template.${format}`;
   XLSX.writeFile(workbook, filename, { bookType: format });
 }

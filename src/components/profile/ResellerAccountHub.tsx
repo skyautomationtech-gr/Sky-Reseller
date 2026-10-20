@@ -491,7 +491,7 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 
         {/* App Version Info */}
         <div className="text-center py-2">
-          <p className="text-[11px] font-semibold text-slate-400">Sky Reseller App • Mobile Edition v1.0.0</p>
+          <p className="text-[11px] font-semibold text-slate-400">ReSellBD App • Mobile Edition v1.0.0</p>
           <p className="text-[10px] text-slate-400">Sky Automation Tech (Bangladesh)</p>
         </div>
 

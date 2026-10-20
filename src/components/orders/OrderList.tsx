@@ -904,7 +904,7 @@ export const OrderList: React.FC<OrderListProps> = ({ user }) => {
                     Quantity: <span className="font-bold text-slate-800">{selectedOrderForDetails.quantity}</span> • Unit Selling Price: <span className="font-bold text-slate-800">৳{selectedOrderForDetails.sellingPrice !== undefined ? selectedOrderForDetails.sellingPrice : selectedOrderForDetails.unitRetailPrice}</span>
                     {selectedOrderForDetails.suggestedRetailPrice !== undefined && (
                       <span className="text-[10px] text-slate-400 block mt-0.5">
-                        Suggested Retail: ৳{selectedOrderForDetails.suggestedRetailPrice}
+                        Retail: ৳{selectedOrderForDetails.suggestedRetailPrice}
                       </span>
                     )}
                   </p>

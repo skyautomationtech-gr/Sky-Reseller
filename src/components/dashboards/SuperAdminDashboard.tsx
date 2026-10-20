@@ -20,7 +20,6 @@ import { SupportSystem } from '../support/SupportSystem';
 import { AdminLiveChatHub } from '../chat/AdminLiveChatHub';
 import { SettingsPage } from '../settings/SettingsPage';
 import { SecurityPage } from '../security/SecurityPage';
-import { FloatingHelpButtons } from '../common/FloatingHelpButtons';
 import { 
   LayoutDashboard, Users, CheckCircle2, Shield, ShoppingBag, Wallet, Percent, 
   Sparkles, DollarSign, TrendingUp, Clock, PackageCheck, AlertTriangle, 
@@ -267,7 +266,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
                 </span>
                 <h2 className="text-2xl font-bold mb-2">Welcome back, {user.fullName}!</h2>
                 <p className="text-blue-100 text-xs leading-relaxed">
-                  Sky Reseller Enterprise Hub (Phases 1, 2, & 3 Active). Manage reseller approvals, product catalog & color variants, order fulfillment, wallet payouts, and global commission settings.
+                  ReSellBD Enterprise Hub (Phases 1, 2, & 3 Active). Manage reseller approvals, product catalog & color variants, order fulfillment, wallet payouts, and global commission settings.
                 </p>
               </div>
             </div>
@@ -584,8 +583,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
           {renderContent()}
         </main>
       </div>
-
-      <FloatingHelpButtons />
 
       <AddAdminModal
         isOpen={isAddAdminOpen}

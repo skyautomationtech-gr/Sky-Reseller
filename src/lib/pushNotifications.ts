@@ -133,7 +133,7 @@ export function registerPushNotificationListeners(
     // Handle incoming notification while app is open
     PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
       console.log('Push notification received in foreground:', notification);
-      const title = notification.title || notification.data?.title || 'Sky Reseller Alert';
+      const title = notification.title || notification.data?.title || 'ReSellBD Alert';
       const body = notification.body || notification.data?.body || '';
 
       if (onNotificationReceived) {

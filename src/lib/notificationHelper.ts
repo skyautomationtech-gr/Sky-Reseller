@@ -155,7 +155,7 @@ export function subscribeToRealtimeNotifications(
           // Play sound
           playNotificationChime();
 
-          const title = data.title || 'Sky Reseller Alert';
+          const title = data.title || 'ReSellBD Alert';
           const body = data.message || data.content || '';
 
           // Show in-app banner

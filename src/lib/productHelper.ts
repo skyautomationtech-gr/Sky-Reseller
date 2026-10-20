@@ -2,7 +2,7 @@ import { Product, ProductMedia, ProductVideoMedia } from '../types';
 
 /**
  * Safely normalizes product data coming from Firebase Firestore.
- * Supports products created in Sky Reseller as well as synced products
+ * Supports products created in ReSellBD as well as synced products
  * uploaded from Sky Inventory App.
  */
 export function normalizeProduct(id: string, data: any): Product {

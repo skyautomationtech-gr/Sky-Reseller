@@ -114,7 +114,7 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({
         {/* Sticky Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 sticky bottom-0 z-10">
           <span className="text-[11px] text-slate-500 font-medium text-center sm:text-left">
-            Sky Reseller • v{currentVersion}
+            ReSellBD • v{currentVersion}
           </span>
           <button
             onClick={onClose}
