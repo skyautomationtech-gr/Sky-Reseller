@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
+import resellbdLogo from '../../assets/images/logo.png';
 import { SkyLogo } from '../common/SkyLogo';
 import { useNetwork } from '../../context/NetworkContext';
 import { generateRandomResellerSuffix } from '../../lib/resellerIdHelper';
@@ -11,14 +12,18 @@ import {
   User, Store, Calendar, Users, Mail, Phone, MessageSquare, 
   MapPin, Landmark, Briefcase, Camera, Lock, CheckCircle2, 
   ChevronRight, ChevronLeft, AlertCircle, Sparkles, ShieldCheck, 
-  Eye, EyeOff, Upload, FileText, Check 
+  Eye, EyeOff, Upload, FileText, Check, ExternalLink, Globe, 
+  Trash2, Crop, AlertTriangle, FileCheck, ArrowRight
 } from 'lucide-react';
 import { OtpVerificationInput } from './register/OtpVerificationInput';
 import { SearchableSelect, SelectOption } from './register/SearchableSelect';
+import { SquareCropModal } from './register/SquareCropModal';
 import { 
   getDivisions, getDistricts, getUpazilas, getUnions,
   BdDivision, BdDistrict, BdUpazila, BdUnion 
 } from '../../data/bd/geocodeService';
+import { BANGLADESH_BANKS } from '../../data/bangladeshBanks';
+import { PayoutMethod } from '../../types';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
@@ -39,17 +44,17 @@ const WIZARD_STEPS: WizardStep[] = [
   { id: 1, key: 'basic', title: 'Basic Details', shortTitle: 'Basic', encouragement: 'Great start! Let\'s get to know you.', icon: User },
   { id: 2, key: 'contact', title: 'Contact Information', shortTitle: 'Contact', encouragement: 'Securing your communication channels.', icon: Mail },
   { id: 3, key: 'address', title: 'Shop Address', shortTitle: 'Address', encouragement: 'Connecting you to all 64 districts in Bangladesh.', icon: MapPin },
-  { id: 4, key: 'payout', title: 'Payout Information', shortTitle: 'Payout', encouragement: 'Where you receive your weekly commissions.', icon: Landmark },
-  { id: 5, key: 'business', title: 'Business Information', shortTitle: 'Business', encouragement: 'Tell us a bit about your store presence.', icon: Briefcase },
-  { id: 6, key: 'photos', title: 'Photography & Documents', shortTitle: 'Photos', encouragement: 'Help us verify your shop credibility.', icon: Camera },
+  { id: 4, key: 'payout', title: 'Payout Information', shortTitle: 'Payout', encouragement: 'Where you receive your weekly profit payouts.', icon: Landmark },
+  { id: 5, key: 'business', title: 'Business Information', shortTitle: 'Business', encouragement: 'Your social storefront and sales channels.', icon: Briefcase },
+  { id: 6, key: 'photos', title: 'Photography & Documents', shortTitle: 'Photos', encouragement: 'Verify your store credibility and identity.', icon: Camera },
   { id: 7, key: 'security', title: 'Account Security & Terms', shortTitle: 'Security', encouragement: 'Almost done! Set your secure password.', icon: Lock },
   { id: 8, key: 'review', title: 'Review & Submit', shortTitle: 'Review', encouragement: 'Double-check everything and launch your account.', icon: CheckCircle2 },
 ];
 
-const DRAFT_STORAGE_KEY = 'resellbd_reseller_registration_draft_v2';
+const DRAFT_STORAGE_KEY = 'resellbd_reseller_registration_draft_v3';
 
-// Utility to compress images to canvas data URL (~30-60KB) to prevent Firestore 1MB doc size error
-const compressImage = (file: File, maxWidth = 600, maxHeight = 600, quality = 0.65): Promise<string> => {
+// Utility to compress images to canvas data URL (< 80KB)
+const compressImage = (file: File | Blob, maxWidth = 1024, maxHeight = 1024, quality = 0.72): Promise<string> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -125,25 +130,37 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     customUpazila: '',
     customUnion: '',
 
-    // Step 4: Payout
-    payoutMethod: 'bkash' as 'bkash' | 'nagad' | 'rocket' | 'bank',
-    bkashNumber: '',
-    nagadNumber: '',
-    rocketNumber: '',
-    bankName: '',
-    accountNumber: '',
+    // Step 4: Payout Information
+    payoutMethod: 'bkash' as 'bkash' | 'nagad' | 'rocket' | 'upay' | 'bank',
     accountHolderName: '',
+    accountNumber: '',
+    bankName: '',
+    customBankName: '',
     branchName: '',
+    routingNumber: '',
 
-    // Step 5: Business Info
-    businessType: 'online_shop',
-    nidNumber: '',
-    tradeLicenseNo: '',
+    // Step 5: Business Information
+    facebookPage: '',
+    tiktokUrl: '',
+    instagramUrl: '',
+    youtubeUrl: '',
 
-    // Step 6: Photos & Docs (data URLs stored on client)
+    // Step 6: Photography & Documents
+    shopLogoUrl: '',
+    documentType: 'nid' as 'nid' | 'birth_certificate',
+    nidFrontUrl: '',
+    nidBackUrl: '',
+    birthCertificateUrl: '',
+
+    // Legacy fields for backward compatibility
     profilePhotoUrl: '',
     shopPhotoUrl: '',
     nidUrl: '',
+    nidNumber: '',
+    bkashNumber: '',
+    nagadNumber: '',
+    rocketNumber: '',
+    upayNumber: '',
 
     // Step 7: Security & Terms
     password: '',
@@ -156,6 +173,13 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const [loading, setLoading] = useState(false);
   const [stepError, setStepError] = useState('');
   const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+
+  // Crop Modal state
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [rawImageForCrop, setRawImageForCrop] = useState('');
+
+  // Upload progress tracking simulation per file
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
 
   // Bangladesh Administrative Geocode Lists
   const [divisionsList, setDivisionsList] = useState<BdDivision[]>([]);
@@ -174,7 +198,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Exclude passwords and binary previews
         delete parsed.password;
         delete parsed.confirmPassword;
         setFormData((prev) => ({ ...prev, ...parsed }));
@@ -184,7 +207,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     }
   }, []);
 
-  // Auto-save draft on form change (excluding passwords & file blobs)
+  // Auto-save draft on form change (excluding passwords)
   useEffect(() => {
     try {
       const safeDraft = { ...formData };
@@ -195,6 +218,19 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       // Ignore
     }
   }, [formData]);
+
+  // Warning when leaving with in-memory uploaded files
+  useEffect(() => {
+    const hasUnsavedFiles = !!(formData.shopLogoUrl || formData.nidFrontUrl || formData.nidBackUrl || formData.birthCertificateUrl);
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedFiles && currentStep < 8) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [formData, currentStep]);
 
   // Load Divisions on mount
   useEffect(() => {
@@ -228,7 +264,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     }
   }, [formData.upazilaId]);
 
-  // Handle phone format normalization: 01[3-9]XXXXXXXX
+  // Format Helpers
   const normalizeBdPhone = (input: string): string => {
     let clean = input.replace(/\D/g, '');
     if (clean.startsWith('880')) {
@@ -242,7 +278,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     return /^01[3-9]\d{8}$/.test(normalized);
   };
 
-  // Calculate Age (must be 18+)
   const calculateAge = (dobString: string): number => {
     if (!dobString) return 0;
     const dob = new Date(dobString);
@@ -255,30 +290,80 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     return age;
   };
 
-  // Profile Completeness Percentage
+  // URL Validation Helpers
+  const isValidFacebookUrl = (url: string) => {
+    if (!url.trim()) return false;
+    return /^(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/[A-Za-z0-9_.-]+\/?/i.test(url.trim());
+  };
+
+  const isValidTikTokUrl = (url: string) => {
+    if (!url.trim()) return true;
+    return /^(?:https?:\/\/)?(?:www\.)?tiktok\.com\/@[A-Za-z0-9_.-]+\/?/i.test(url.trim());
+  };
+
+  const isValidInstagramUrl = (url: string) => {
+    if (!url.trim()) return true;
+    return /^(?:https?:\/\/)?(?:www\.)?instagram\.com\/[A-Za-z0-9_.-]+\/?/i.test(url.trim());
+  };
+
+  const isValidYouTubeUrl = (url: string) => {
+    if (!url.trim()) return true;
+    return /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:c\/|channel\/|user\/|@)?|youtu\.be\/)[A-Za-z0-9_.-]+\/?/i.test(url.trim());
+  };
+
+  const handleOpenLink = (rawUrl: string) => {
+    if (!rawUrl.trim()) return;
+    let url = rawUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Profile Completeness Percentage Calculation
   const completeness = useMemo(() => {
     let score = 0;
-    const maxScore = 15;
+    const maxScore = 20;
 
+    // Step 1
     if (formData.fullName.trim().length >= 3) score += 1;
     if (formData.shopName.trim().length >= 2) score += 1;
     if (formData.dob && calculateAge(formData.dob) >= 18) score += 1;
     if (formData.gender) score += 1;
+
+    // Step 2
     if (formData.email && formData.emailVerified) score += 2;
     if (validateBdPhone(formData.mobile)) score += 1;
     if (validateBdPhone(formData.sameAsMobile ? formData.mobile : formData.whatsappNumber)) score += 1;
-    if (formData.division) score += 1;
-    if (formData.district) score += 1;
-    if (formData.upazila) score += 1;
+
+    // Step 3
+    if (formData.division || formData.customDivision) score += 1;
+    if (formData.district || formData.customDistrict) score += 1;
+    if (formData.upazila || formData.customUpazila) score += 1;
     if (formData.postalCode.length === 4) score += 1;
     if (formData.address.trim().length >= 5) score += 1;
-    if (formData.profilePhotoUrl && formData.shopPhotoUrl) score += 1;
+
+    // Step 4
+    if (formData.payoutMethod === 'bank') {
+      if ((formData.bankName || formData.customBankName) && formData.accountNumber.length >= 8 && /^\d{9}$/.test(formData.routingNumber) && formData.branchName) score += 2;
+    } else {
+      if (validateBdPhone(formData.accountNumber) && formData.accountHolderName.trim()) score += 2;
+    }
+
+    // Step 5
+    if (isValidFacebookUrl(formData.facebookPage)) score += 1;
+    if (formData.tiktokUrl || formData.instagramUrl || formData.youtubeUrl) score += 1;
+
+    // Step 6
+    if (formData.shopLogoUrl) score += 2;
+    if (formData.documentType === 'nid' ? (formData.nidFrontUrl || formData.nidBackUrl) : formData.birthCertificateUrl) score += 1;
+
+    // Step 7
     if (formData.password.length >= 6 && formData.password === formData.confirmPassword) score += 1;
 
     return Math.min(100, Math.round((score / maxScore) * 100));
   }, [formData]);
 
-  // Shake animation trigger for validation failure
   const triggerShake = (fieldKeys: string[]) => {
     setShakeFields(new Set(fieldKeys));
     triggerHaptic('medium');
@@ -287,137 +372,192 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     }, 600);
   };
 
-  // Validate Step Before Advancing
+  // Validation Logic per step
   const validateCurrentStep = (): boolean => {
     setStepError('');
 
+    // Step 1: Basic Details
     if (currentStep === 1) {
-      const invalidFields: string[] = [];
-      if (formData.fullName.trim().length < 3) invalidFields.push('fullName');
-      if (formData.shopName.trim().length < 2) invalidFields.push('shopName');
-      if (!formData.dob || calculateAge(formData.dob) < 18) invalidFields.push('dob');
-      if (!formData.gender) invalidFields.push('gender');
+      const invalid: string[] = [];
+      if (formData.fullName.trim().length < 3) invalid.push('fullName');
+      if (formData.shopName.trim().length < 2) invalid.push('shopName');
+      if (!formData.dob || calculateAge(formData.dob) < 18) invalid.push('dob');
+      if (!formData.gender) invalid.push('gender');
 
-      if (invalidFields.length > 0) {
-        triggerShake(invalidFields);
-        if (invalidFields.includes('dob') && formData.dob) {
+      if (invalid.length > 0) {
+        triggerShake(invalid);
+        if (invalid.includes('dob') && formData.dob) {
           setStepError('You must be at least 18 years old to register as a reseller.');
         } else {
-          setStepError('Please complete all required fields correctly (Full Name, Shop Name, DOB 18+, Gender).');
+          setStepError('Please complete all required fields (Full Name, Shop Name, DOB 18+, Gender).');
         }
         return false;
       }
       return true;
     }
 
+    // Step 2: Contact Information
     if (currentStep === 2) {
-      const invalidFields: string[] = [];
+      const invalid: string[] = [];
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-      if (!formData.email || !emailRegex.test(formData.email)) {
-        invalidFields.push('email');
-      }
-      if (!formData.emailVerified) {
-        invalidFields.push('emailOtp');
-      }
-      if (!validateBdPhone(formData.mobile)) {
-        invalidFields.push('mobile');
-      }
+      if (!formData.email || !emailRegex.test(formData.email)) invalid.push('email');
+      if (!formData.emailVerified) invalid.push('emailOtp');
+      if (!validateBdPhone(formData.mobile)) invalid.push('mobile');
       const actualWa = formData.sameAsMobile ? formData.mobile : formData.whatsappNumber;
-      if (!validateBdPhone(actualWa)) {
-        invalidFields.push('whatsappNumber');
-      }
+      if (!validateBdPhone(actualWa)) invalid.push('whatsappNumber');
 
-      if (invalidFields.length > 0) {
-        triggerShake(invalidFields);
-        if (invalidFields.includes('emailOtp')) {
+      if (invalid.length > 0) {
+        triggerShake(invalid);
+        if (invalid.includes('emailOtp')) {
           setStepError('Please verify your email address with the 6-digit OTP code before proceeding.');
-        } else if (invalidFields.includes('mobile') || invalidFields.includes('whatsappNumber')) {
-          setStepError('Please enter valid 11-digit Bangladesh phone numbers (e.g. 017XXXXXXXX).');
+        } else if (invalid.includes('mobile') || invalid.includes('whatsappNumber')) {
+          setStepError('Please enter valid 11-digit Bangladesh phone numbers (01[3-9]XXXXXXXX).');
         } else {
-          setStepError('Please check your contact details.');
+          setStepError('Please complete all contact details.');
         }
         return false;
       }
       return true;
     }
 
+    // Step 3: Shop Address
     if (currentStep === 3) {
-      const invalidFields: string[] = [];
+      const invalid: string[] = [];
       const effectiveDiv = formData.division || formData.customDivision;
       const effectiveDist = formData.district || formData.customDistrict;
       const effectiveUpa = formData.upazila || formData.customUpazila;
 
-      if (!effectiveDiv) invalidFields.push('division');
-      if (!effectiveDist) invalidFields.push('district');
-      if (!effectiveUpa) invalidFields.push('upazila');
-      if (!/^\d{4}$/.test(formData.postalCode.trim())) invalidFields.push('postalCode');
-      if (formData.address.trim().length < 5) invalidFields.push('address');
+      if (!effectiveDiv) invalid.push('division');
+      if (!effectiveDist) invalid.push('district');
+      if (!effectiveUpa) invalid.push('upazila');
+      if (!/^\d{4}$/.test(formData.postalCode.trim())) invalid.push('postalCode');
+      if (formData.address.trim().length < 5) invalid.push('address');
 
-      if (invalidFields.length > 0) {
-        triggerShake(invalidFields);
-        if (invalidFields.includes('postalCode')) {
+      if (invalid.length > 0) {
+        triggerShake(invalid);
+        if (invalid.includes('postalCode')) {
           setStepError('Please enter a valid 4-digit postal code (e.g. 1205).');
-        } else if (invalidFields.includes('address')) {
-          setStepError('Please provide a detailed shop address (min 5 characters).');
+        } else if (invalid.includes('address')) {
+          setStepError('Please provide your full shop/holding address (min 5 characters).');
         } else {
-          setStepError('Please select your complete Division, District, and Upazila.');
+          setStepError('Please select Division, District, and Upazila.');
         }
         return false;
       }
       return true;
     }
 
+    // Step 4: Payout Information
     if (currentStep === 4) {
-      // Payout validation (bKash/Nagad/Rocket/Bank)
-      if (formData.payoutMethod === 'bkash' && !validateBdPhone(formData.bkashNumber || formData.mobile)) {
-        triggerShake(['bkashNumber']);
-        setStepError('Please provide a valid bKash number.');
-        return false;
+      const invalid: string[] = [];
+      if (formData.payoutMethod === 'bank') {
+        const effectiveBank = formData.bankName || formData.customBankName;
+        if (!effectiveBank) invalid.push('bankName');
+        if (!formData.accountHolderName.trim()) invalid.push('accountHolderName');
+        if (!formData.branchName.trim()) invalid.push('branchName');
+        if (!/^\d{9}$/.test(formData.routingNumber.trim())) invalid.push('routingNumber');
+        if (!/^\d{8,20}$/.test(formData.accountNumber.trim())) invalid.push('accountNumber');
+
+        if (invalid.length > 0) {
+          triggerShake(invalid);
+          if (invalid.includes('routingNumber')) {
+            setStepError('Bank Routing Number must be exactly 9 digits.');
+          } else if (invalid.includes('accountNumber')) {
+            setStepError('Bank Account Number must be between 8 and 20 digits.');
+          } else {
+            setStepError('Please fill in all required bank payout fields.');
+          }
+          return false;
+        }
+      } else {
+        // Mobile Wallets (bKash, Nagad, Rocket, Upay)
+        if (!formData.accountHolderName.trim()) invalid.push('accountHolderName');
+        if (!validateBdPhone(formData.accountNumber)) invalid.push('accountNumber');
+
+        if (invalid.length > 0) {
+          triggerShake(invalid);
+          if (invalid.includes('accountNumber')) {
+            setStepError(`Please enter a valid Bangladesh mobile wallet number for ${formData.payoutMethod.toUpperCase()} (01XXXXXXXXX).`);
+          } else {
+            setStepError('Please enter the Account Holder Name.');
+          }
+          return false;
+        }
       }
-      if (formData.payoutMethod === 'nagad' && !validateBdPhone(formData.nagadNumber || formData.mobile)) {
-        triggerShake(['nagadNumber']);
-        setStepError('Please provide a valid Nagad number.');
-        return false;
+      return true;
+    }
+
+    // Step 5: Business Information
+    if (currentStep === 5) {
+      const invalid: string[] = [];
+      if (!isValidFacebookUrl(formData.facebookPage)) {
+        invalid.push('facebookPage');
       }
-      if (formData.payoutMethod === 'rocket' && !formData.rocketNumber) {
-        triggerShake(['rocketNumber']);
-        setStepError('Please provide a valid Rocket number.');
-        return false;
+      if (formData.tiktokUrl && !isValidTikTokUrl(formData.tiktokUrl)) {
+        invalid.push('tiktokUrl');
       }
-      if (formData.payoutMethod === 'bank' && (!formData.bankName || !formData.accountNumber)) {
-        triggerShake(['bankName', 'accountNumber']);
-        setStepError('Please enter Bank Name and Account Number.');
+      if (formData.instagramUrl && !isValidInstagramUrl(formData.instagramUrl)) {
+        invalid.push('instagramUrl');
+      }
+      if (formData.youtubeUrl && !isValidYouTubeUrl(formData.youtubeUrl)) {
+        invalid.push('youtubeUrl');
+      }
+
+      if (invalid.length > 0) {
+        triggerShake(invalid);
+        if (invalid.includes('facebookPage')) {
+          setStepError('A valid Facebook page or profile link is required (e.g. https://facebook.com/yourshop).');
+        } else if (invalid.includes('tiktokUrl')) {
+          setStepError('Invalid TikTok link format (e.g. https://tiktok.com/@yourshop).');
+        } else if (invalid.includes('instagramUrl')) {
+          setStepError('Invalid Instagram link format (e.g. https://instagram.com/yourshop).');
+        } else {
+          setStepError('Invalid YouTube channel link.');
+        }
         return false;
       }
       return true;
     }
 
+    // Step 6: Photography & Documents
     if (currentStep === 6) {
-      // Photo validation
-      if (!formData.profilePhotoUrl || !formData.shopPhotoUrl) {
-        triggerShake(['photos']);
-        setStepError('Please upload both your Profile Photo and Shop Photo.');
+      const invalid: string[] = [];
+      if (!formData.shopLogoUrl) {
+        invalid.push('shopLogoUrl');
+      }
+      if (formData.documentType === 'birth_certificate' && !formData.birthCertificateUrl) {
+        invalid.push('birthCertificateUrl');
+      }
+
+      if (invalid.length > 0) {
+        triggerShake(invalid);
+        if (invalid.includes('shopLogoUrl')) {
+          setStepError('Shop Logo (1:1 square image) is required.');
+        } else if (invalid.includes('birthCertificateUrl')) {
+          setStepError('Birth Certificate Photo is required when Birth Certificate is chosen as document type.');
+        }
         return false;
       }
       return true;
     }
 
+    // Step 7: Account Security & Terms
     if (currentStep === 7) {
-      // Password validation
-      if (formData.password.length < 6) {
-        triggerShake(['password']);
-        setStepError('Password must be at least 6 characters long.');
-        return false;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        triggerShake(['confirmPassword']);
-        setStepError('Passwords do not match.');
-        return false;
-      }
-      if (!formData.agreeToTerms) {
-        triggerShake(['agreeToTerms']);
-        setStepError('Please accept the Reseller Terms of Service & Policies.');
+      const invalid: string[] = [];
+      if (formData.password.length < 6) invalid.push('password');
+      if (formData.password !== formData.confirmPassword) invalid.push('confirmPassword');
+      if (!formData.agreeToTerms) invalid.push('agreeToTerms');
+
+      if (invalid.length > 0) {
+        triggerShake(invalid);
+        if (invalid.includes('password')) {
+          setStepError('Password must be at least 6 characters long.');
+        } else if (invalid.includes('confirmPassword')) {
+          setStepError('Passwords do not match.');
+        } else {
+          setStepError('Please accept the Reseller Terms of Service & Wholesale Policies.');
+        }
         return false;
       }
       return true;
@@ -444,17 +584,83 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     }
   };
 
-  // Handle Photo Upload
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'profilePhotoUrl' | 'shopPhotoUrl' | 'nidUrl') => {
+  // Image Upload Handler for Shop Logo with 1:1 Square & Resolution Check
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Check size limit: 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      setStepError('Logo file size exceeds 5MB limit. Please choose a smaller image.');
+      return;
+    }
+
+    setUploadProgress((prev) => ({ ...prev, shopLogo: 25 }));
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const img = new Image();
+      img.onload = async () => {
+        setUploadProgress((prev) => ({ ...prev, shopLogo: 60 }));
+
+        // Check minimum resolution (500x500)
+        if (img.width < 500 || img.height < 500) {
+          setUploadProgress((prev) => ({ ...prev, shopLogo: 0 }));
+          setStepError(`Image resolution is ${img.width}x${img.height}px. Minimum required size is 500x500 px.`);
+          return;
+        }
+
+        // Check if image is square (allow ±5px tolerance)
+        const isSquare = Math.abs(img.width - img.height) <= 5;
+
+        if (!isSquare) {
+          // Open built-in Square Crop Tool
+          setRawImageForCrop(dataUrl);
+          setCropModalOpen(true);
+        } else {
+          // Already square: compress and save
+          const compressed = await compressImage(file, 1024, 1024, 0.75);
+          setFormData((prev) => ({ 
+            ...prev, 
+            shopLogoUrl: compressed,
+            profilePhotoUrl: compressed,
+            shopPhotoUrl: compressed 
+          }));
+          setUploadProgress((prev) => ({ ...prev, shopLogo: 100 }));
+          setTimeout(() => setUploadProgress((prev) => ({ ...prev, shopLogo: 0 })), 600);
+          triggerHaptic('light');
+        }
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // Document Upload Handler (NID Front, NID Back, Birth Certificate)
+  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldKey: 'nidFrontUrl' | 'nidBackUrl' | 'birthCertificateUrl') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setStepError('Document file size exceeds 5MB limit.');
+      return;
+    }
+
+    setUploadProgress((prev) => ({ ...prev, [fieldKey]: 35 }));
     try {
-      const compressedDataUrl = await compressImage(file, 600, 600, 0.65);
-      setFormData((prev) => ({ ...prev, [field]: compressedDataUrl }));
+      const compressed = await compressImage(file, 1200, 1200, 0.70);
+      setUploadProgress((prev) => ({ ...prev, [fieldKey]: 75 }));
+      await new Promise((r) => setTimeout(r, 120));
+      setFormData((prev) => ({ ...prev, [fieldKey]: compressed }));
+      setUploadProgress((prev) => ({ ...prev, [fieldKey]: 100 }));
+      setTimeout(() => setUploadProgress((prev) => ({ ...prev, [fieldKey]: 0 })), 600);
       triggerHaptic('light');
     } catch (err) {
-      console.error('Image compression error:', err);
+      console.error('Document compression error:', err);
+      setStepError('Failed to process image. Please try again.');
     }
+    e.target.value = '';
   };
 
   // Final Registration Submission
@@ -497,7 +703,21 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       const randomSuffix = generateRandomResellerSuffix();
       const resellerCode = `SGR-${randomSuffix}`;
 
-      // Write to Firestore users collection keeping all existing fields + new fields
+      // Build PayoutMethod object adhering to payoutMethods[] standard
+      const defaultPayoutMethod: PayoutMethod = {
+        id: 'payout_' + Date.now(),
+        type: formData.payoutMethod === 'bank' ? 'Bank' : formData.payoutMethod === 'bkash' ? 'bKash' : formData.payoutMethod === 'nagad' ? 'Nagad' : formData.payoutMethod === 'rocket' ? 'Rocket' : 'Upay',
+        accountNumber: (formData.payoutMethod === 'bank' ? formData.accountNumber : formData.accountNumber || cleanMobile).trim(),
+        accountHolderName: (formData.accountHolderName || formData.fullName).trim(),
+        bankName: formData.payoutMethod === 'bank' ? (formData.bankName || formData.customBankName).trim() : null,
+        branchName: formData.payoutMethod === 'bank' ? formData.branchName.trim() : null,
+        routingNumber: formData.payoutMethod === 'bank' ? formData.routingNumber.trim() : null,
+        isDefault: true,
+        verified: false,
+        addedAt: new Date().toISOString(),
+      };
+
+      // Write to Firestore users collection
       await setDoc(doc(db, 'users', uid), {
         uid,
         resellerCode,
@@ -521,18 +741,38 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         ward: formData.ward || '',
         postalCode: formData.postalCode.trim(),
         address: formData.address.trim(),
+
+        // Step 4: Payout Information (both array and legacy flat fields)
         payoutMethod: formData.payoutMethod,
-        bkashNumber: (formData.bkashNumber || cleanMobile).trim(),
-        nagadNumber: (formData.nagadNumber || cleanMobile).trim(),
-        rocketNumber: formData.rocketNumber.trim(),
-        bankName: formData.bankName.trim(),
-        accountNumber: formData.accountNumber.trim(),
-        accountHolderName: formData.accountHolderName.trim(),
-        branchName: formData.branchName.trim(),
-        profilePhotoUrl: formData.profilePhotoUrl,
-        shopPhotoUrl: formData.shopPhotoUrl,
-        nidUrl: formData.nidUrl || '',
-        nidNumber: formData.nidNumber || '',
+        payoutMethods: [defaultPayoutMethod],
+        accountHolderName: (formData.accountHolderName || formData.fullName).trim(),
+        accountNumber: (formData.payoutMethod === 'bank' ? formData.accountNumber : formData.accountNumber || cleanMobile).trim(),
+        bkashNumber: formData.payoutMethod === 'bkash' ? (formData.accountNumber || cleanMobile).trim() : '',
+        nagadNumber: formData.payoutMethod === 'nagad' ? (formData.accountNumber || cleanMobile).trim() : '',
+        rocketNumber: formData.payoutMethod === 'rocket' ? (formData.accountNumber || cleanMobile).trim() : '',
+        upayNumber: formData.payoutMethod === 'upay' ? (formData.accountNumber || cleanMobile).trim() : '',
+        bankName: formData.payoutMethod === 'bank' ? (formData.bankName || formData.customBankName).trim() : '',
+        branchName: formData.payoutMethod === 'bank' ? formData.branchName.trim() : '',
+        routingNumber: formData.payoutMethod === 'bank' ? formData.routingNumber.trim() : '',
+
+        // Step 5: Business Information
+        facebookPage: formData.facebookPage.trim(),
+        tiktokUrl: formData.tiktokUrl.trim(),
+        instagramUrl: formData.instagramUrl.trim(),
+        youtubeUrl: formData.youtubeUrl.trim(),
+
+        // Step 6: Photography & Documents
+        shopLogoUrl: formData.shopLogoUrl,
+        documentType: formData.documentType,
+        nidFrontUrl: formData.nidFrontUrl,
+        nidBackUrl: formData.nidBackUrl,
+        birthCertificateUrl: formData.birthCertificateUrl,
+
+        // Backward compatibility image fields
+        profilePhotoUrl: formData.shopLogoUrl || formData.profilePhotoUrl,
+        shopPhotoUrl: formData.shopLogoUrl || formData.shopPhotoUrl,
+        nidUrl: formData.nidFrontUrl || formData.birthCertificateUrl || '',
+
         role: 'reseller',
         status: 'pending',
         rejectReason: null,
@@ -570,9 +810,12 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const currentStepObj = WIZARD_STEPS.find((s) => s.id === currentStep) || WIZARD_STEPS[0];
   const StepIcon = currentStepObj.icon;
 
+  // Last 4 digits of payout account for confirmation line
+  const payoutLastFour = formData.accountNumber.trim().slice(-4) || '••••';
+
   return (
     <div className="relative min-h-[100dvh] w-full bg-gradient-to-b from-[#050B1A] via-[#071026] to-[#0B1630] flex flex-col justify-between items-center px-4 sm:px-6 py-6 sm:py-10 overflow-x-hidden selection:bg-cyan-500/30 selection:text-white">
-      {/* 1. Fluid Ambient Blobs matching Login Screen (teal #0E9AA7, green #3DD055, blue #04203F) */}
+      {/* 1. Fluid Ambient Blobs matching Login Screen */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-16 -left-16 w-[360px] h-[360px] sm:w-[520px] sm:h-[520px] bg-[#04203F]/60 rounded-full blur-[70px] sm:blur-[90px] will-change-transform animate-blob-morph-1 mix-blend-screen" />
         <div className="absolute top-1/3 -right-24 w-[340px] h-[340px] sm:w-[480px] sm:h-[480px] bg-[#0E9AA7]/35 rounded-full blur-[65px] sm:blur-[85px] will-change-transform animate-blob-morph-2 mix-blend-screen" />
@@ -606,13 +849,13 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         {/* Brand Logo & Title */}
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-1 flex items-center justify-center shadow-lg shadow-[#0E9AA7]/20">
-            <img src="/resellbd-logo.png" alt="ReSellBD" className="w-full h-full object-contain" />
+            <img src={resellbdLogo || '/resellbd-logo.png'} alt="ReSellBD" className="w-full h-full object-contain" />
           </div>
           <div className="text-left">
             <h1 className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-1.5 leading-none">
               <span>ReSellBD</span>
               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-gradient-to-r from-[#0E9AA7]/40 to-[#3DD055]/30 border border-[#3DD055]/40 text-[#3DD055] tracking-wider">
-                Registration Wizard
+                Reseller Wizard
               </span>
             </h1>
             <p className="text-[11px] text-slate-300 font-medium mt-0.5">
@@ -728,7 +971,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  {/* Full Name */}
                   <div className={`space-y-1.5 ${shakeFields.has('fullName') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -740,20 +982,17 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                         </span>
                       )}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Mohammad Sahadat Hossain"
-                        value={formData.fullName}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Mohammad Sahadat Hossain"
+                      value={formData.fullName}
+                      onFocus={handleInputFocus}
+                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
+                    />
                   </div>
 
-                  {/* Shop Name */}
                   <div className={`space-y-1.5 ${shakeFields.has('shopName') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -765,20 +1004,17 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                         </span>
                       )}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. GadgetZu or Sky Tech Store"
-                        value={formData.shopName}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. GadgetZu or Sky Tech Store"
+                      value={formData.shopName}
+                      onFocus={handleInputFocus}
+                      onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
+                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
+                    />
                   </div>
 
-                  {/* Date of Birth (18+ Requirement) */}
                   <div className={`space-y-1.5 ${shakeFields.has('dob') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -790,17 +1026,15 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                         </span>
                       )}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="date"
-                        required
-                        value={formData.dob}
-                        onFocus={handleInputFocus}
-                        max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
-                        onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all [color-scheme:dark]"
-                      />
-                    </div>
+                    <input
+                      type="date"
+                      required
+                      value={formData.dob}
+                      onFocus={handleInputFocus}
+                      max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
+                      onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all [color-scheme:dark]"
+                    />
                     {formData.dob && calculateAge(formData.dob) < 18 && (
                       <p className="text-[11px] text-rose-400 font-semibold">
                         ⚠ You must be at least 18 years old to register as a reseller.
@@ -808,7 +1042,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     )}
                   </div>
 
-                  {/* Gender Selector */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-[#0E9AA7]" /> Gender <span className="text-[#3DD055]">*</span>
@@ -854,7 +1087,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  {/* Email Address */}
                   <div className={`space-y-1.5 ${shakeFields.has('email') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -866,28 +1098,24 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                         </span>
                       )}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="email"
-                        required
-                        placeholder="e.g. reseller@gmail.com"
-                        value={formData.email}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => {
-                          const newEmail = e.target.value;
-                          setFormData({ 
-                            ...formData, 
-                            email: newEmail,
-                            // If user edits email after verification, reset verified state!
-                            emailVerified: false 
-                          });
-                        }}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
-                      />
-                    </div>
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. reseller@gmail.com"
+                      value={formData.email}
+                      onFocus={handleInputFocus}
+                      onChange={(e) => {
+                        const newEmail = e.target.value;
+                        setFormData({ 
+                          ...formData, 
+                          email: newEmail,
+                          emailVerified: false 
+                        });
+                      }}
+                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
+                    />
                   </div>
 
-                  {/* Email OTP Verification Section */}
                   <div className={`space-y-2 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 ${shakeFields.has('emailOtp') ? 'animate-shake' : ''}`}>
                     <OtpVerificationInput
                       email={formData.email}
@@ -898,7 +1126,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     />
                   </div>
 
-                  {/* Mobile Number */}
                   <div className={`space-y-1.5 ${shakeFields.has('mobile') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -910,21 +1137,18 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                         </span>
                       )}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        required
-                        placeholder="e.g. 01712345678"
-                        value={formData.mobile}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all tabular-nums"
-                      />
-                    </div>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      required
+                      placeholder="e.g. 01712345678"
+                      value={formData.mobile}
+                      onFocus={handleInputFocus}
+                      onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
+                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all tabular-nums"
+                    />
                   </div>
 
-                  {/* WhatsApp Number & "Same as Mobile" Toggle */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -976,10 +1200,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   className="space-y-4"
                 >
                   <p className="text-xs text-slate-300 bg-white/[0.04] p-2.5 rounded-xl border border-white/10">
-                    Select your shop address using Bangladesh's full administrative geocode data.
+                    Select your shop address from Bangladesh's complete administrative dataset.
                   </p>
 
-                  {/* 1. Division */}
                   <SearchableSelect
                     label="Division (বিভাগ)"
                     required
@@ -1008,7 +1231,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     }}
                   />
 
-                  {/* 2. District */}
                   <SearchableSelect
                     label="District (জেলা)"
                     required
@@ -1036,7 +1258,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     }}
                   />
 
-                  {/* 3. Upazila / Thana */}
                   <SearchableSelect
                     label="Upazila / Thana (উপজেলা / থানা)"
                     required
@@ -1062,7 +1283,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     }}
                   />
 
-                  {/* 4. Union / Ward (Optional but detailed) */}
                   <SearchableSelect
                     label="Union / Ward (ইউনিয়ন / ওয়ার্ড)"
                     disabled={!formData.upazila && !formData.customUpazila}
@@ -1085,7 +1305,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     }}
                   />
 
-                  {/* Ward Number Selector (1-9) */}
                   {formData.union && (
                     <div className="space-y-1.5 animate-in fade-in">
                       <label className="text-xs font-bold text-slate-200">
@@ -1116,7 +1335,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     </div>
                   )}
 
-                  {/* Postal Code (4 Digits) */}
                   <div className={`space-y-1.5 ${shakeFields.has('postalCode') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span>Postal Code (4 Digits) <span className="text-[#3DD055]">*</span></span>
@@ -1139,7 +1357,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     />
                   </div>
 
-                  {/* Full Detailed Address */}
                   <div className={`space-y-1.5 ${shakeFields.has('address') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200">
                       Full Address (House, Road, Village, Landmark) <span className="text-[#3DD055]">*</span>
@@ -1167,117 +1384,207 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  <label className="text-xs font-bold text-slate-200">
-                    Preferred Payout Method <span className="text-[#3DD055]">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {[
-                      { id: 'bkash', label: 'bKash' },
-                      { id: 'nagad', label: 'Nagad' },
-                      { id: 'rocket', label: 'Rocket' },
-                      { id: 'bank', label: 'Bank' },
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setFormData({ ...formData, payoutMethod: item.id as any });
-                        }}
-                        className={`min-h-[46px] rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all border cursor-pointer ${
-                          formData.payoutMethod === item.id
-                            ? 'bg-gradient-to-r from-[#0E9AA7] to-[#3DD055] text-white border-white/30 shadow-[0_0_15px_rgba(61,208,85,0.3)]'
-                            : 'bg-white/[0.06] text-slate-300 border-white/15 hover:bg-white/[0.1]'
-                        }`}
-                      >
-                        <span>{item.label}</span>
-                        {formData.payoutMethod === item.id && <Check className="w-3.5 h-3.5 text-white" />}
-                      </button>
-                    ))}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                      <span>Select Payout Method <span className="text-[#3DD055]">*</span></span>
+                      <span className="text-[10px] text-slate-400 font-medium">Weekly automatic profit payout</span>
+                    </label>
+                    <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                      {[
+                        { id: 'bkash', label: 'bKash', color: 'from-pink-500/30 to-rose-600/30' },
+                        { id: 'nagad', label: 'Nagad', color: 'from-orange-500/30 to-amber-600/30' },
+                        { id: 'rocket', label: 'Rocket', color: 'from-purple-500/30 to-indigo-600/30' },
+                        { id: 'upay', label: 'Upay', color: 'from-blue-500/30 to-cyan-600/30' },
+                        { id: 'bank', label: 'Bank', color: 'from-emerald-500/30 to-teal-600/30' },
+                      ].map((item) => {
+                        const isSelected = formData.payoutMethod === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setFormData({ ...formData, payoutMethod: item.id as any });
+                            }}
+                            className={`min-h-[48px] rounded-2xl font-black text-xs flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer border select-none ${
+                              isSelected
+                                ? 'bg-gradient-to-r from-[#0E9AA7] to-[#3DD055] text-white border-white/40 shadow-[0_0_18px_rgba(61,208,85,0.35)] scale-102 ring-1 ring-white/50'
+                                : 'bg-white/[0.06] text-slate-300 border-white/15 hover:bg-white/[0.11]'
+                            }`}
+                          >
+                            <span>{item.label}</span>
+                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  {formData.payoutMethod === 'bkash' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-200">bKash Personal Number</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        placeholder={formData.mobile || 'e.g. 01712345678'}
-                        value={formData.bkashNumber}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, bkashNumber: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
-                      />
-                    </div>
-                  )}
-
-                  {formData.payoutMethod === 'nagad' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-200">Nagad Personal Number</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        placeholder={formData.mobile || 'e.g. 01812345678'}
-                        value={formData.nagadNumber}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, nagadNumber: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
-                      />
-                    </div>
-                  )}
-
-                  {formData.payoutMethod === 'rocket' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-200">Rocket Account Number (12 Digits)</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        placeholder="e.g. 019123456789"
-                        value={formData.rocketNumber}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, rocketNumber: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
-                      />
-                    </div>
-                  )}
-
-                  {formData.payoutMethod === 'bank' && (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-bold text-slate-200">Bank Name</label>
+                  {/* Form fields based on selected method */}
+                  {formData.payoutMethod !== 'bank' ? (
+                    <div className="space-y-3.5 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10">
+                      {/* Account Holder Name */}
+                      <div className={`space-y-1.5 ${shakeFields.has('accountHolderName') ? 'animate-shake' : ''}`}>
+                        <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                          <span>Account Holder Name <span className="text-[#3DD055]">*</span></span>
+                          {formData.accountHolderName.trim() && (
+                            <span className="text-[10px] text-[#3DD055] font-bold">✓ Filled</span>
+                          )}
+                        </label>
                         <input
                           type="text"
-                          placeholder="e.g. Dutch-Bangla Bank Limited"
-                          value={formData.bankName}
-                          onFocus={handleInputFocus}
-                          onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
-                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055]"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-slate-200">Account Holder Name</label>
-                        <input
-                          type="text"
-                          placeholder={formData.fullName || "Account Name"}
+                          required
+                          placeholder={formData.fullName || "Enter Account Holder Name"}
                           value={formData.accountHolderName}
                           onFocus={handleInputFocus}
                           onChange={(e) => setFormData({ ...formData, accountHolderName: e.target.value })}
-                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055]"
+                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
                         />
                       </div>
-                      <div>
-                        <label className="text-xs font-bold text-slate-200">Account Number</label>
+
+                      {/* Account Number with Quick Fill button */}
+                      <div className={`space-y-1.5 ${shakeFields.has('accountNumber') ? 'animate-shake' : ''}`}>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-200">
+                            {formData.payoutMethod.toUpperCase()} Number (01XXXXXXXXX) <span className="text-[#3DD055]">*</span>
+                          </label>
+                          {formData.mobile && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                setFormData({
+                                  ...formData,
+                                  accountNumber: formData.mobile,
+                                  accountHolderName: formData.accountHolderName || formData.fullName,
+                                });
+                              }}
+                              className="text-[10px] font-bold text-[#3DD055] bg-[#3DD055]/15 px-2 py-0.5 rounded-lg border border-[#3DD055]/30 hover:bg-[#3DD055]/25 transition-colors cursor-pointer"
+                            >
+                              Same as my mobile
+                            </button>
+                          )}
+                        </div>
                         <input
-                          type="text"
-                          placeholder="Bank Account Number"
+                          type="tel"
+                          inputMode="numeric"
+                          required
+                          placeholder="e.g. 01712345678"
                           value={formData.accountNumber}
                           onFocus={handleInputFocus}
                           onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
-                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055]"
+                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 tabular-nums"
                         />
                       </div>
                     </div>
+                  ) : (
+                    /* Bank Payout Fields */
+                    <div className="space-y-3.5 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10">
+                      {/* Bank Name Searchable Select */}
+                      <SearchableSelect
+                        label="Bank Name"
+                        required
+                        placeholder="Search operating banks in Bangladesh..."
+                        options={BANGLADESH_BANKS.map((b) => ({ id: b.name, name: b.name }))}
+                        value={formData.bankName}
+                        customValue={formData.customBankName}
+                        onCustomChange={(val) => setFormData({ ...formData, customBankName: val, bankName: val })}
+                        onChange={(opt, customText) => {
+                          if (opt) {
+                            setFormData({ ...formData, bankName: opt.name, customBankName: '' });
+                          } else if (customText !== undefined) {
+                            setFormData({ ...formData, customBankName: customText, bankName: customText });
+                          }
+                        }}
+                      />
+
+                      {/* Account Holder Name */}
+                      <div className={`space-y-1.5 ${shakeFields.has('accountHolderName') ? 'animate-shake' : ''}`}>
+                        <label className="text-xs font-bold text-slate-200">
+                          Account Holder Name <span className="text-[#3DD055]">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={formData.fullName || "Exact name on bank account"}
+                          value={formData.accountHolderName}
+                          onFocus={handleInputFocus}
+                          onChange={(e) => setFormData({ ...formData, accountHolderName: e.target.value })}
+                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
+                        />
+                      </div>
+
+                      {/* Branch Name */}
+                      <div className={`space-y-1.5 ${shakeFields.has('branchName') ? 'animate-shake' : ''}`}>
+                        <label className="text-xs font-bold text-slate-200">
+                          Branch Name <span className="text-[#3DD055]">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Dhanmondi Branch, Dhaka"
+                          value={formData.branchName}
+                          onFocus={handleInputFocus}
+                          onChange={(e) => setFormData({ ...formData, branchName: e.target.value })}
+                          className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Routing Number (9 Digits) */}
+                        <div className={`space-y-1.5 ${shakeFields.has('routingNumber') ? 'animate-shake' : ''}`}>
+                          <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                            <span>Routing No. (9 Digits) <span className="text-[#3DD055]">*</span></span>
+                            {/^\d{9}$/.test(formData.routingNumber.trim()) && (
+                              <span className="text-[10px] text-[#3DD055] font-bold">✓ Valid</span>
+                            )}
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={9}
+                            required
+                            placeholder="e.g. 090271234"
+                            value={formData.routingNumber}
+                            onFocus={handleInputFocus}
+                            onChange={(e) => setFormData({ ...formData, routingNumber: e.target.value.replace(/\D/g, '').slice(0, 9) })}
+                            className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 tabular-nums"
+                          />
+                        </div>
+
+                        {/* Account Number (8-20 Digits) */}
+                        <div className={`space-y-1.5 ${shakeFields.has('accountNumber') ? 'animate-shake' : ''}`}>
+                          <label className="text-xs font-bold text-slate-200">
+                            Account Number (8-20 Digits) <span className="text-[#3DD055]">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={20}
+                            required
+                            placeholder="e.g. 15112034567890"
+                            value={formData.accountNumber}
+                            onFocus={handleInputFocus}
+                            onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 20) })}
+                            className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 tabular-nums"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   )}
+
+                  {/* Reassurance Confirm Line */}
+                  <div className="p-3 rounded-2xl bg-gradient-to-r from-[#0E9AA7]/15 to-[#3DD055]/15 border border-[#3DD055]/30 flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium">Money will be sent to:</span>
+                    <strong className="text-[#3DD055] font-black uppercase tracking-wider">
+                      {formData.payoutMethod.toUpperCase()} — •••• {payoutLastFour}
+                    </strong>
+                  </div>
+
+                  {/* Reseller Note */}
+                  <p className="text-[11px] text-slate-400 italic">
+                    ℹ Note: You can add and manage more payout accounts anytime from Settings → Payout Settings.
+                  </p>
                 </motion.div>
               )}
 
@@ -1291,42 +1598,145 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-200">Business Model / Type</label>
-                    <select
-                      value={formData.businessType}
-                      onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
-                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white text-sm font-semibold outline-none focus:border-[#3DD055] [color-scheme:dark]"
-                    >
-                      <option value="online_shop">Online Facebook Page / Website</option>
-                      <option value="physical_retail">Physical Retail Shop</option>
-                      <option value="hybrid">Both Physical & Online</option>
-                      <option value="individual">Individual Reseller</option>
-                    </select>
+                  <p className="text-xs text-slate-300 bg-white/[0.04] p-2.5 rounded-xl border border-white/10">
+                    Connect your active selling channels. Facebook Page is required for verification.
+                  </p>
+
+                  {/* 1. Facebook Page Link (Required) */}
+                  <div className={`space-y-1.5 ${shakeFields.has('facebookPage') ? 'animate-shake' : ''}`}>
+                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-blue-400" /> Facebook Page Link <span className="text-[#3DD055]">*</span>
+                      </span>
+                      {isValidFacebookUrl(formData.facebookPage) && (
+                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                          <Check className="w-3 h-3" /> Valid Link
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="url"
+                        required
+                        placeholder="https://facebook.com/yourshop"
+                        value={formData.facebookPage}
+                        onFocus={handleInputFocus}
+                        onChange={(e) => setFormData({ ...formData, facebookPage: e.target.value })}
+                        className="w-full min-h-[50px] px-4 pr-11 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
+                      />
+                      {formData.facebookPage && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenLink(formData.facebookPage)}
+                          title="Open and test link"
+                          className="absolute right-3 p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-200">NID / National ID Card Number (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 19901234567890"
-                      value={formData.nidNumber}
-                      onFocus={handleInputFocus}
-                      onChange={(e) => setFormData({ ...formData, nidNumber: e.target.value })}
-                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055]"
-                    />
+                  {/* 2. TikTok Profile Link (Optional) */}
+                  <div className={`space-y-1.5 ${shakeFields.has('tiktokUrl') ? 'animate-shake' : ''}`}>
+                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-rose-400" /> TikTok Profile Link (Optional)
+                      </span>
+                      {formData.tiktokUrl && isValidTikTokUrl(formData.tiktokUrl) && (
+                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                          <Check className="w-3 h-3" /> Valid
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="url"
+                        placeholder="https://tiktok.com/@yourshop"
+                        value={formData.tiktokUrl}
+                        onFocus={handleInputFocus}
+                        onChange={(e) => setFormData({ ...formData, tiktokUrl: e.target.value })}
+                        className="w-full min-h-[50px] px-4 pr-11 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
+                      />
+                      {formData.tiktokUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenLink(formData.tiktokUrl)}
+                          title="Open and test link"
+                          className="absolute right-3 p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-200">Trade License Number (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. TRAD/DNCC/12345/2026"
-                      value={formData.tradeLicenseNo}
-                      onFocus={handleInputFocus}
-                      onChange={(e) => setFormData({ ...formData, tradeLicenseNo: e.target.value })}
-                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055]"
-                    />
+                  {/* 3. Instagram Profile Link (Optional) */}
+                  <div className={`space-y-1.5 ${shakeFields.has('instagramUrl') ? 'animate-shake' : ''}`}>
+                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-pink-400" /> Instagram Profile Link (Optional)
+                      </span>
+                      {formData.instagramUrl && isValidInstagramUrl(formData.instagramUrl) && (
+                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                          <Check className="w-3 h-3" /> Valid
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="url"
+                        placeholder="https://instagram.com/yourshop"
+                        value={formData.instagramUrl}
+                        onFocus={handleInputFocus}
+                        onChange={(e) => setFormData({ ...formData, instagramUrl: e.target.value })}
+                        className="w-full min-h-[50px] px-4 pr-11 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
+                      />
+                      {formData.instagramUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenLink(formData.instagramUrl)}
+                          title="Open and test link"
+                          className="absolute right-3 p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 4. YouTube Channel Link (Optional) */}
+                  <div className={`space-y-1.5 ${shakeFields.has('youtubeUrl') ? 'animate-shake' : ''}`}>
+                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-red-500" /> YouTube Channel Link (Optional)
+                      </span>
+                      {formData.youtubeUrl && isValidYouTubeUrl(formData.youtubeUrl) && (
+                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                          <Check className="w-3 h-3" /> Valid
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="url"
+                        placeholder="https://youtube.com/@yourchannel"
+                        value={formData.youtubeUrl}
+                        onFocus={handleInputFocus}
+                        onChange={(e) => setFormData({ ...formData, youtubeUrl: e.target.value })}
+                        className="w-full min-h-[50px] px-4 pr-11 py-3 bg-white/[0.08] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60"
+                      />
+                      {formData.youtubeUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenLink(formData.youtubeUrl)}
+                          title="Open and test link"
+                          className="absolute right-3 p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -1341,96 +1751,195 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  <p className="text-xs text-slate-300">
-                    Upload photos of yourself and your store. Compressed automatically for instant upload.
-                  </p>
-
-                  {/* Profile Photo */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                      <span>Owner / Profile Photo <span className="text-[#3DD055]">*</span></span>
-                      {formData.profilePhotoUrl && <span className="text-[10px] text-[#3DD055] font-bold">✓ Uploaded</span>}
-                    </label>
-                    <div className="flex items-center gap-3">
-                      {formData.profilePhotoUrl ? (
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden border border-[#3DD055] shrink-0">
-                          <img src={formData.profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                          <User className="w-6 h-6 text-slate-400" />
-                        </div>
-                      )}
-                      <label className="flex-1 min-h-[46px] rounded-xl border border-white/20 bg-white/[0.08] hover:bg-white/[0.12] flex items-center justify-center gap-2 text-xs font-bold text-slate-200 cursor-pointer transition-colors">
-                        <Upload className="w-4 h-4 text-[#0E9AA7]" />
-                        <span>{formData.profilePhotoUrl ? 'Change Profile Photo' : 'Upload Profile Photo'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => handlePhotoUpload(e, 'profilePhotoUrl')}
-                        />
+                  {/* Shop Logo Section (Square 1:1 Required) */}
+                  <div className={`space-y-2 p-3.5 rounded-2xl bg-white/[0.04] border border-white/15 ${shakeFields.has('shopLogoUrl') ? 'animate-shake' : ''}`}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Store className="w-4 h-4 text-[#3DD055]" /> Shop Logo (1:1 Square) <span className="text-[#3DD055]">*</span>
                       </label>
+                      <span className="text-[10px] text-slate-400">Min 500x500 px (Max 5MB)</span>
+                    </div>
+
+                    {formData.shopLogoUrl ? (
+                      <div className="flex items-center gap-4 pt-1">
+                        {/* Dual Preview: Circular & Square */}
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="w-14 h-14 rounded-full border-2 border-[#3DD055] overflow-hidden bg-black/40 shadow-md">
+                              <img src={formData.shopLogoUrl} alt="Logo Circular" className="w-full h-full object-cover" />
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-semibold">Circle</span>
+                          </div>
+
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="w-14 h-14 rounded-2xl border-2 border-[#0E9AA7] overflow-hidden bg-black/40 shadow-md">
+                              <img src={formData.shopLogoUrl} alt="Logo Square" className="w-full h-full object-cover" />
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-semibold">Square</span>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-[#3DD055]">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 1:1 Square Verified
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 text-xs font-bold transition-colors cursor-pointer border border-white/20">
+                              <span>Change Logo</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, shopLogoUrl: '', profilePhotoUrl: '', shopPhotoUrl: '' })}
+                              className="p-1.5 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="w-full min-h-[90px] rounded-2xl border-2 border-dashed border-white/25 hover:border-[#3DD055] bg-white/[0.03] hover:bg-white/[0.06] flex flex-col items-center justify-center gap-1.5 text-xs text-slate-300 transition-all cursor-pointer p-4 group">
+                          <Upload className="w-6 h-6 text-[#0E9AA7] group-hover:scale-110 transition-transform" />
+                          <span className="font-bold">Upload Shop Logo (Square 1:1)</span>
+                          <span className="text-[10px] text-slate-400">Non-square images open built-in cropper</span>
+                          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoUpload} />
+                        </label>
+                        {uploadProgress.shopLogo ? (
+                          <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-[#3DD055] h-full transition-all duration-200" style={{ width: `${uploadProgress.shopLogo}%` }} />
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Document Type Selector */}
+                  <div className="space-y-2 pt-1">
+                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <FileCheck className="w-4 h-4 text-[#0E9AA7]" /> Document Type <span className="text-[#3DD055]">*</span>
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'nid', label: 'National ID (NID)' },
+                        { id: 'birth_certificate', label: 'Birth Certificate' },
+                      ].map((item) => {
+                        const isDocSelected = formData.documentType === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setFormData({ ...formData, documentType: item.id as any });
+                            }}
+                            className={`min-h-[46px] rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all border cursor-pointer select-none ${
+                              isDocSelected
+                                ? 'bg-gradient-to-r from-[#0E9AA7] to-[#3DD055] text-white border-white/30 shadow-[0_0_15px_rgba(61,208,85,0.3)]'
+                                : 'bg-white/[0.06] text-slate-300 border-white/15 hover:bg-white/[0.1]'
+                            }`}
+                          >
+                            <span>{item.label}</span>
+                            {isDocSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Shop Photo */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                      <span>Shop / Store Photo <span className="text-[#3DD055]">*</span></span>
-                      {formData.shopPhotoUrl && <span className="text-[10px] text-[#3DD055] font-bold">✓ Uploaded</span>}
-                    </label>
-                    <div className="flex items-center gap-3">
-                      {formData.shopPhotoUrl ? (
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden border border-[#3DD055] shrink-0">
-                          <img src={formData.shopPhotoUrl} alt="Shop" className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                          <Store className="w-6 h-6 text-slate-400" />
-                        </div>
-                      )}
-                      <label className="flex-1 min-h-[46px] rounded-xl border border-white/20 bg-white/[0.08] hover:bg-white/[0.12] flex items-center justify-center gap-2 text-xs font-bold text-slate-200 cursor-pointer transition-colors">
-                        <Upload className="w-4 h-4 text-[#3DD055]" />
-                        <span>{formData.shopPhotoUrl ? 'Change Shop Photo' : 'Upload Shop Photo'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => handlePhotoUpload(e, 'shopPhotoUrl')}
-                        />
-                      </label>
-                    </div>
-                  </div>
+                  {/* Document Upload Section based on chosen Document Type */}
+                  {formData.documentType === 'nid' ? (
+                    <div className="space-y-3 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10">
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        ℹ Providing both NID front & back photos speeds up admin verification & approval.
+                      </p>
 
-                  {/* NID Document Photo (Optional) */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                      <span>NID Card Document (Optional)</span>
-                      {formData.nidUrl && <span className="text-[10px] text-[#3DD055] font-bold">✓ Uploaded</span>}
-                    </label>
-                    <div className="flex items-center gap-3">
-                      {formData.nidUrl ? (
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden border border-[#3DD055] shrink-0">
-                          <img src={formData.nidUrl} alt="NID" className="w-full h-full object-cover" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* NID Front */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                            <span>NID Front Side</span>
+                            {formData.nidFrontUrl && <span className="text-[10px] text-[#3DD055] font-bold">✓ Uploaded</span>}
+                          </label>
+                          {formData.nidFrontUrl ? (
+                            <div className="relative rounded-xl overflow-hidden border border-[#3DD055] aspect-[16/10] bg-black/40">
+                              <img src={formData.nidFrontUrl} alt="NID Front" className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, nidFrontUrl: '' })}
+                                className="absolute top-2 right-2 p-1 rounded-lg bg-black/60 text-rose-300 hover:text-white"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="rounded-xl border border-dashed border-white/25 hover:border-[#0E9AA7] bg-white/[0.03] flex flex-col items-center justify-center p-3 text-xs text-slate-300 cursor-pointer aspect-[16/10] transition-colors">
+                              <Camera className="w-5 h-5 text-slate-400 mb-1" />
+                              <span className="font-semibold text-[11px]">Upload NID Front</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDocumentUpload(e, 'nidFrontUrl')} />
+                            </label>
+                          )}
+                        </div>
+
+                        {/* NID Back */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                            <span>NID Back Side</span>
+                            {formData.nidBackUrl && <span className="text-[10px] text-[#3DD055] font-bold">✓ Uploaded</span>}
+                          </label>
+                          {formData.nidBackUrl ? (
+                            <div className="relative rounded-xl overflow-hidden border border-[#3DD055] aspect-[16/10] bg-black/40">
+                              <img src={formData.nidBackUrl} alt="NID Back" className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, nidBackUrl: '' })}
+                                className="absolute top-2 right-2 p-1 rounded-lg bg-black/60 text-rose-300 hover:text-white"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="rounded-xl border border-dashed border-white/25 hover:border-[#0E9AA7] bg-white/[0.03] flex flex-col items-center justify-center p-3 text-xs text-slate-300 cursor-pointer aspect-[16/10] transition-colors">
+                              <Camera className="w-5 h-5 text-slate-400 mb-1" />
+                              <span className="font-semibold text-[11px]">Upload NID Back</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDocumentUpload(e, 'nidBackUrl')} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Birth Certificate */
+                    <div className={`space-y-2 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 ${shakeFields.has('birthCertificateUrl') ? 'animate-shake' : ''}`}>
+                      <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                        <span>Birth Certificate Photo <span className="text-[#3DD055]">*</span></span>
+                        {formData.birthCertificateUrl && <span className="text-[10px] text-[#3DD055] font-bold">✓ Uploaded</span>}
+                      </label>
+
+                      {formData.birthCertificateUrl ? (
+                        <div className="relative rounded-xl overflow-hidden border border-[#3DD055] aspect-[16/10] bg-black/40 max-h-48">
+                          <img src={formData.birthCertificateUrl} alt="Birth Certificate" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, birthCertificateUrl: '' })}
+                            className="absolute top-2 right-2 p-1 rounded-lg bg-black/60 text-rose-300 hover:text-white"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       ) : (
-                        <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                          <FileText className="w-6 h-6 text-slate-400" />
-                        </div>
+                        <label className="rounded-xl border-2 border-dashed border-white/25 hover:border-[#3DD055] bg-white/[0.03] flex flex-col items-center justify-center p-6 text-xs text-slate-300 cursor-pointer transition-colors">
+                          <FileText className="w-6 h-6 text-[#0E9AA7] mb-1.5" />
+                          <span className="font-bold">Upload Clear Photo of Birth Certificate</span>
+                          <span className="text-[10px] text-slate-400">JPG, PNG or WEBP (Max 5MB)</span>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDocumentUpload(e, 'birthCertificateUrl')} />
+                        </label>
                       )}
-                      <label className="flex-1 min-h-[46px] rounded-xl border border-white/20 bg-white/[0.08] hover:bg-white/[0.12] flex items-center justify-center gap-2 text-xs font-bold text-slate-200 cursor-pointer transition-colors">
-                        <Upload className="w-4 h-4 text-slate-400" />
-                        <span>{formData.nidUrl ? 'Change NID Photo' : 'Upload NID Card'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => handlePhotoUpload(e, 'nidUrl')}
-                        />
-                      </label>
                     </div>
-                  </div>
+                  )}
                 </motion.div>
               )}
 
@@ -1444,7 +1953,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  {/* Password */}
                   <div className={`space-y-1.5 ${shakeFields.has('password') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -1474,7 +1982,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     </div>
                   </div>
 
-                  {/* Confirm Password */}
                   <div className={`space-y-1.5 ${shakeFields.has('confirmPassword') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -1506,7 +2013,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                     </div>
                   </div>
 
-                  {/* Terms & Policies Checkbox */}
                   <div className={`pt-2 ${shakeFields.has('agreeToTerms') ? 'animate-shake' : ''}`}>
                     <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-300">
                       <input
@@ -1533,44 +2039,51 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4 text-xs"
                 >
+                  {/* Shop & Logo Preview */}
                   <div className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-3">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">Owner & Shop</span>
+                      <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">Store & Owner</span>
                       <button type="button" onClick={() => setCurrentStep(1)} className="text-[11px] text-[#0E9AA7] font-bold hover:underline">Edit</button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-slate-200">
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Full Name:</span>
-                        <strong className="text-white text-xs">{formData.fullName}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Shop Name:</span>
-                        <strong className="text-[#3DD055] text-xs">{formData.shopName}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">DOB / Gender:</span>
-                        <span>{formData.dob} ({formData.gender})</span>
+                    <div className="flex items-center gap-3">
+                      {formData.shopLogoUrl ? (
+                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#3DD055] shrink-0">
+                          <img src={formData.shopLogoUrl} alt="Logo" className="w-full h-full object-cover" />
+                        </div>
+                      ) : null}
+                      <div className="grid grid-cols-2 gap-2 text-slate-200 flex-1">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Shop Name:</span>
+                          <strong className="text-[#3DD055] text-xs">{formData.shopName}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Owner Name:</span>
+                          <strong className="text-white text-xs">{formData.fullName}</strong>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-3">
+                  {/* Payout & Contact */}
+                  <div className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-2.5">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">Contact & Address</span>
-                      <button type="button" onClick={() => setCurrentStep(2)} className="text-[11px] text-[#0E9AA7] font-bold hover:underline">Edit</button>
+                      <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">Payout & Location</span>
+                      <button type="button" onClick={() => setCurrentStep(4)} className="text-[11px] text-[#0E9AA7] font-bold hover:underline">Edit</button>
                     </div>
-                    <div className="space-y-1.5 text-slate-200">
+                    <div className="space-y-1 text-slate-200">
+                      <div><span className="text-slate-400">Payout:</span> <strong className="text-white uppercase">{formData.payoutMethod}</strong> ({formData.accountHolderName} — {formData.accountNumber})</div>
                       <div><span className="text-slate-400">Email:</span> <strong className="text-white">{formData.email}</strong> (Verified ✓)</div>
-                      <div><span className="text-slate-400">Mobile:</span> <strong className="text-white">{formData.mobile}</strong></div>
-                      <div><span className="text-slate-400">Location:</span> {formData.upazila}, {formData.district}, {formData.division}</div>
-                      <div><span className="text-slate-400">Address:</span> {formData.address}</div>
+                      <div><span className="text-slate-400">Address:</span> {formData.address}, {formData.upazila}, {formData.district}</div>
+                      {formData.facebookPage && (
+                        <div><span className="text-slate-400">Facebook:</span> <span className="text-[#0E9AA7]">{formData.facebookPage}</span></div>
+                      )}
                     </div>
                   </div>
 
                   <div className="p-3.5 rounded-2xl bg-[#3DD055]/10 border border-[#3DD055]/20 flex items-center gap-2.5">
                     <ShieldCheck className="w-5 h-5 text-[#3DD055] shrink-0" />
                     <p className="text-slate-300 text-[11px] leading-tight">
-                      Your account will be submitted for admin verification. Once reviewed, you can immediately begin ordering wholesale products!
+                      Your application will be submitted for admin review. Once approved, you can immediately start reselling wholesale products and earning high profit margins!
                     </p>
                   </div>
                 </motion.div>
@@ -1597,7 +2110,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   onClick={handleNext}
                   className="flex-1 min-h-[50px] px-6 rounded-2xl bg-gradient-to-r from-[#0E9AA7] via-[#3DD055] to-[#0E9AA7] hover:brightness-110 active:scale-98 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_10px_25px_-5px_rgba(61,208,85,0.4)] border border-white/30 transition-all cursor-pointer select-none relative overflow-hidden group"
                 >
-                  {/* Electric Shimmer Sweep Highlight */}
                   <div className="absolute inset-0 pointer-events-none overflow-hidden">
                     <div className="absolute -inset-[100%] bg-gradient-to-tr from-transparent via-white/30 to-transparent group-hover:animate-shimmer-sweep" />
                   </div>
@@ -1610,7 +2122,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   disabled={loading}
                   className="flex-1 min-h-[50px] px-6 rounded-2xl bg-gradient-to-r from-[#0E9AA7] via-[#3DD055] to-[#0E9AA7] hover:brightness-110 active:scale-98 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_12px_30px_-5px_rgba(61,208,85,0.5)] border border-white/30 transition-all cursor-pointer select-none relative overflow-hidden group"
                 >
-                  {/* Electric Shimmer Sweep */}
                   <div className="absolute inset-0 pointer-events-none overflow-hidden">
                     <div className="absolute -inset-[100%] bg-gradient-to-tr from-transparent via-white/30 to-transparent group-hover:animate-shimmer-sweep" />
                   </div>
@@ -1643,6 +2154,27 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
           </button>
         </div>
       </div>
+
+      {/* Built-in Square 1:1 Image Cropper Modal */}
+      <SquareCropModal
+        isOpen={cropModalOpen}
+        imageSrc={rawImageForCrop}
+        onCancel={() => {
+          setCropModalOpen(false);
+          setRawImageForCrop('');
+        }}
+        onCropComplete={(croppedDataUrl) => {
+          setFormData((prev) => ({
+            ...prev,
+            shopLogoUrl: croppedDataUrl,
+            profilePhotoUrl: croppedDataUrl,
+            shopPhotoUrl: croppedDataUrl,
+          }));
+          setCropModalOpen(false);
+          setRawImageForCrop('');
+          triggerHaptic('medium');
+        }}
+      />
     </div>
   );
 };

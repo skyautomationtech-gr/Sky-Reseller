@@ -318,60 +318,46 @@ exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
 
   console.log(`[ReSellBD OTP Engine] Generated OTP for: ${email}`);
 
-  // Send transactional email
-  // Recommendation: Resend (free 3,000 emails/month at resend.com)
-  // Configured via: firebase functions:config:set email.api_key="re_your_api_key" email.sender="ReSellBD <onboarding@resend.dev>"
-  const emailConfig = functions.config().email || {};
-  const resendApiKey = emailConfig.api_key || process.env.RESEND_API_KEY;
-  const senderEmail = emailConfig.sender || 'ReSellBD <onboarding@resend.dev>';
+  // Send transactional email via Gmail SMTP with Google App Password
+  const nodemailer = require('nodemailer');
+  const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
 
-  let emailSent = false;
+  const gmailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: gmailUser,
+      pass: gmailPass,
+    },
+  });
 
-  if (resendApiKey) {
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: senderEmail,
-          to: [email],
-          subject: `${code} is your ReSellBD Reseller Verification Code`,
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050B1A; color: #ffffff; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <h1 style="color: #3DD055; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">ReSellBD</h1>
-                <p style="color: #0E9AA7; font-size: 13px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Reseller Portal Verification</p>
-              </div>
-              <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
-                <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit email verification code is:</p>
-                <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #3DD055; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px; display: inline-block;">
-                  ${code}
-                </div>
-                <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 12px;">This code will expire in <strong>10 minutes</strong>. Do not share this code with anyone.</p>
-              </div>
-              <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
-                If you did not request this verification code, please ignore this email.
-              </p>
+  try {
+    await gmailTransporter.sendMail({
+      from: `"ReSellBD Verification" <${gmailUser}>`,
+      to: email,
+      subject: `${code} is your ReSellBD Reseller Verification Code`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050B1A; color: #ffffff; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #3DD055; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">ReSellBD</h1>
+            <p style="color: #0E9AA7; font-size: 13px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Reseller Portal Verification</p>
+          </div>
+          <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
+            <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit email verification code is:</p>
+            <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #3DD055; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px; display: inline-block;">
+              ${code}
             </div>
-          `,
-        }),
-      });
-
-      if (response.ok) {
-        emailSent = true;
-        console.log(`[ReSellBD OTP Engine] Successfully dispatched email via Resend to ${email}`);
-      } else {
-        const errorData = await response.text();
-        console.warn(`[ReSellBD OTP Engine] Resend API error:`, errorData);
-      }
-    } catch (emailErr) {
-      console.error(`[ReSellBD OTP Engine] Error calling email API:`, emailErr);
-    }
-  } else {
-    console.warn(`[ReSellBD OTP Engine] No RESEND_API_KEY or email.api_key configured. OTP code is: ${code}`);
+            <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 12px;">This code will expire in <strong>10 minutes</strong>. Do not share this code with anyone.</p>
+          </div>
+          <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
+            Sent automatically by ReSellBD via Gmail SMTP (skyautomationtech@gmail.com).
+          </p>
+        </div>
+      `,
+    });
+    console.log(`[ReSellBD OTP Engine] Successfully dispatched email via Gmail SMTP to: ${email}`);
+  } catch (emailErr) {
+    console.error(`[ReSellBD OTP Engine] Error sending email via Gmail SMTP:`, emailErr);
   }
 
   return {

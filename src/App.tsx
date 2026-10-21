@@ -481,7 +481,7 @@ function AppContent() {
   if (!firebaseUser || !userProfile) {
     if (authView === 'register') {
       return (
-        <div className="min-h-screen flex flex-col bg-slate-50 relative">
+        <div className="min-h-screen flex flex-col bg-[#050B1A] relative">
           <NoInternetOverlay />
           <div className="flex-1">
             <RegisterForm
