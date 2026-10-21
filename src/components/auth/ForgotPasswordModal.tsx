@@ -3,6 +3,8 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { X, Mail, CheckCircle2, AlertCircle } from 'lucide-react';
 
+import { resolveLoginIdentifier } from '../../lib/resellerRegistrationService';
+
 interface ForgotPasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -18,14 +20,24 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
-      setError('Please enter your email address');
+    if (!email.trim()) {
+      setError('Please enter your email or Reseller ID');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await sendPasswordResetEmail(auth, email);
+      let targetEmail = email.trim();
+      if (!targetEmail.includes('@')) {
+        try {
+          targetEmail = await resolveLoginIdentifier(targetEmail);
+        } catch {
+          setError('No account found matching this Reseller ID.');
+          setLoading(false);
+          return;
+        }
+      }
+      await sendPasswordResetEmail(auth, targetEmail);
       setSuccess(true);
     } catch (err: any) {
       setError(err.message || 'Failed to send password reset email');
@@ -77,18 +89,18 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
             )}
             <div className="space-y-1.5">
               <label className="block text-xs font-medium text-slate-300 ml-3">
-                Email Address
+                Email Address or Reseller ID
               </label>
               <div className="relative flex items-center h-[50px] rounded-full bg-white/[0.06] hover:bg-white/[0.09] focus-within:bg-white/[0.09] border border-white/10 hover:border-white/20 focus-within:border-cyan-400/60 focus-within:ring-2 focus-within:ring-cyan-400/20 backdrop-blur-md transition-all duration-200">
                 <div className="pl-4 pr-1 text-slate-400 pointer-events-none flex items-center">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
-                  type="email"
+                  type="text"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
+                  placeholder="e.g. RSB-000001 or email@example.com"
                   className="w-full h-full bg-transparent text-white placeholder-slate-400 text-sm pl-2.5 pr-4 outline-none font-normal"
                 />
               </div>

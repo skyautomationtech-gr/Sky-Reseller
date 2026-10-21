@@ -320,16 +320,12 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
     setPinEnabled(isEnabled);
   };
 
-  // Fetch Login History
+  // Fetch Login History (last 20 logins)
   const fetchLoginHistory = async () => {
     setLoadingHistory(true);
     try {
-      const q = query(
-        collection(db, 'userSessions'),
-        where('userId', '==', user.uid),
-        orderBy('timestamp', 'desc'),
-        limit(5)
-      );
+      const historyCol = collection(db, 'users', user.uid, 'loginHistory');
+      const q = query(historyCol, orderBy('timestamp', 'desc'), limit(20));
       const snap = await getDocs(q);
       const logs: any[] = [];
       snap.forEach((d) => logs.push({ id: d.id, ...d.data() }));
@@ -1793,21 +1789,24 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
                   onClick={() => setShowLogoutModal(true)}
                   className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors min-h-[44px] cursor-pointer"
                 >
-                  Logout from All Devices
+                  Logout Current Device
                 </button>
+                <p className="text-[11px] text-slate-500 italic mt-2 text-center">
+                  ℹ Note: Remote "Log out all other devices" is planned for an upcoming security update.
+                </p>
               </div>
             </div>
 
-            {/* Login History */}
+            {/* Login Activity (Last 20 Logins) */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Recent Login History</span>
+                  <span>Login Activity (Last 20 Logins)</span>
                 </h3>
                 <button
                   onClick={fetchLoginHistory}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
                   title="Refresh"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
@@ -1817,23 +1816,38 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               {loadingHistory ? (
                 <div className="p-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                  <span>Loading login sessions...</span>
+                  <span>Loading login activity...</span>
                 </div>
               ) : loginHistory.length === 0 ? (
                 <p className="p-6 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
                   No login history recorded yet.
                 </p>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
                   {loginHistory.map((lh) => {
                     const timeObj = lh.timestamp?.toDate ? lh.timestamp.toDate() : new Date(lh.timestamp || 0);
                     return (
                       <div key={lh.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-xs space-y-1">
                         <div className="flex items-center justify-between font-mono text-[10px] text-slate-500">
-                          <span>{timeObj.toLocaleString('en-GB')}</span>
-                          <span className="text-emerald-700 font-bold">Successful Login</span>
+                          <span className="font-bold text-slate-700">{timeObj.toLocaleString('en-GB')}</span>
+                          <div className="flex items-center gap-1.5">
+                            {lh.isNewDevice && (
+                              <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-amber-300">
+                                NEW DEVICE
+                              </span>
+                            )}
+                            <span className="text-emerald-700 font-bold">Authorized</span>
+                          </div>
                         </div>
-                        <p className="font-mono text-[11px] text-slate-700 truncate">{lh.deviceInfo}</p>
+                        <div className="flex items-center justify-between pt-0.5">
+                          <p className="font-semibold text-slate-800 text-[11px] truncate flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span>{lh.deviceModel || 'Unknown Device'}</span>
+                          </p>
+                          <span className="text-[10px] font-mono text-slate-500 uppercase px-1.5 py-0.5 bg-white border border-slate-200 rounded">
+                            {lh.platform || 'web'}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}

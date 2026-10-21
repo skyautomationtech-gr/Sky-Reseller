@@ -7,10 +7,54 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    function isAdmin() {
+      return request.auth != null && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+      );
+    }
+
     // Users collection rules
     match /users/{userId} {
       allow read, list: if true;
-      allow create, update, delete: if request.auth != null;
+
+      // Resellers can create their own document if role is reseller and status is pending
+      allow create: if request.auth != null && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          request.resource.data.role in ['reseller', 'customer'] &&
+          request.resource.data.status in ['pending', 'active'] &&
+          !request.resource.data.keys().hasAny([
+            'rejectReason', 'suspensionType', 'approvedAt'
+          ])
+        )
+      );
+
+      // Resellers can only update their own document without altering restricted fields
+      allow update: if request.auth != null && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'role', 'status', 'resellerId', 'emailVerified', 'rejectReason', 'suspensionType', 'approvedAt'
+          ])
+        )
+      );
+
+      allow delete: if request.auth != null && isAdmin();
+
+      // Login History subcollection
+      match /loginHistory/{historyId} {
+        allow read, list: if request.auth != null && (request.auth.uid == userId || isAdmin());
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow update, delete: if false;
+      }
+    }
+
+    // Policy Pages collection rules (terms, privacy, rules, etc.)
+    match /policyPages/{policyId} {
+      allow read, list: if true;
+      allow write: if request.auth != null && isAdmin();
     }
 
     // Categories collection rules

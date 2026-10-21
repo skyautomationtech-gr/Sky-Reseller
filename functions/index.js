@@ -456,3 +456,246 @@ exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
   };
 });
 
+/**
+ * In-memory rate limiting map for resolveLoginId
+ * Key: IP or identifier -> { count, windowStart }
+ */
+const resolveIdRateLimitMap = new Map();
+
+/**
+ * 8. Reseller Login - Resolve Reseller ID to Email
+ * Allows users to login using their sequential Reseller ID (e.g. RSB-000001 or legacy SGR-XXXX).
+ * Has rate limiting and returns ONLY the email for Firebase Auth, or a generic error.
+ */
+exports.resolveLoginId = functions.https.onCall(async (data, context) => {
+  const rawId = (data?.loginId || '').trim();
+  if (!rawId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid ID or password');
+  }
+
+  // Rate Limiting (max 15 attempts per minute per IP / caller)
+  const callerKey = context.rawRequest?.ip || context.auth?.uid || 'anonymous';
+  const now = Date.now();
+  const limitWindow = 60 * 1000;
+  const maxAttempts = 15;
+
+  const currentRate = resolveIdRateLimitMap.get(callerKey) || { count: 0, windowStart: now };
+  if (now - currentRate.windowStart > limitWindow) {
+    currentRate.count = 1;
+    currentRate.windowStart = now;
+  } else {
+    currentRate.count++;
+  }
+  resolveIdRateLimitMap.set(callerKey, currentRate);
+
+  if (currentRate.count > maxAttempts) {
+    throw new functions.https.HttpsError(
+      'resource-exhausted',
+      'Too many login attempts. Please wait a moment and try again.'
+    );
+  }
+
+  const cleanId = rawId.toUpperCase();
+
+  try {
+    // 1. Search by resellerId
+    let userSnap = await admin.firestore()
+      .collection('users')
+      .where('resellerId', '==', cleanId)
+      .limit(1)
+      .get();
+
+    // 2. Fallback to resellerCode if not found
+    if (userSnap.empty) {
+      userSnap = await admin.firestore()
+        .collection('users')
+        .where('resellerCode', '==', cleanId)
+        .limit(1)
+        .get();
+    }
+
+    if (userSnap.empty) {
+      // Generic error so IDs cannot be enumerated
+      throw new functions.https.HttpsError('not-found', 'Invalid ID or password');
+    }
+
+    const userData = userSnap.docs[0].data();
+    if (!userData.email) {
+      throw new functions.https.HttpsError('not-found', 'Invalid ID or password');
+    }
+
+    return {
+      success: true,
+      email: userData.email,
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      throw err;
+    }
+    console.error('Error resolving reseller login ID:', err);
+    throw new functions.https.HttpsError('not-found', 'Invalid ID or password');
+  }
+});
+
+/**
+ * 9. Reseller Registration - Finalize Registration & Assign Reseller ID
+ * Performs atomic Firestore transaction on counters/resellerId to assign
+ * sequential RSB-000001, RSB-000002...
+ * Writes trusted fields (role, status: 'pending', resellerId, emailVerified, termsAcceptedAt)
+ * that client security rules block from direct client modification.
+ * Dispatches push notification to Admins.
+ */
+exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
+  const uid = data?.uid || context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  const formData = data?.formData || {};
+  const email = (data?.email || formData.email || '').trim().toLowerCase();
+
+  const firestore = admin.firestore();
+  const counterRef = firestore.collection('counters').doc('resellerId');
+  const userRef = firestore.collection('users').doc(uid);
+
+  let assignedResellerId = '';
+
+  try {
+    // Transaction to safely increment sequential resellerId
+    await firestore.runTransaction(async (t) => {
+      const counterDoc = await t.get(counterRef);
+      let currentCount = 0;
+      if (counterDoc.exists) {
+        currentCount = counterDoc.data().lastCount || 0;
+      }
+      const nextCount = currentCount + 1;
+      assignedResellerId = `RSB-${String(nextCount).padStart(6, '0')}`;
+
+      // Update counter
+      t.set(counterRef, {
+        lastCount: nextCount,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      // Build trusted profile payload
+      const userPayload = {
+        uid,
+        resellerId: assignedResellerId,
+        resellerCode: assignedResellerId,
+        role: 'reseller',
+        status: 'pending',
+        rejectReason: null,
+        emailVerified: true,
+        termsVersion: data?.termsVersion || '1.0',
+        termsAcceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+        privacyAcceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+
+        // Form Fields
+        fullName: (formData.fullName || '').trim(),
+        shopName: (formData.shopName || '').trim(),
+        mobile: (formData.mobile || '').trim(),
+        whatsappNumber: (formData.whatsappNumber || formData.mobile || '').trim(),
+        whatsapp: (formData.whatsappNumber || formData.mobile || '').trim(),
+        email,
+        dob: formData.dob || '',
+        gender: formData.gender || 'male',
+
+        // Address
+        division: formData.division || formData.customDivision || '',
+        divisionId: formData.divisionId || '',
+        district: formData.district || formData.customDistrict || '',
+        districtId: formData.districtId || '',
+        upazila: formData.upazila || formData.customUpazila || '',
+        upazilaId: formData.upazilaId || '',
+        union: formData.union || formData.customUnion || '',
+        unionId: formData.unionId || '',
+        ward: formData.ward || '',
+        postalCode: (formData.postalCode || '').trim(),
+        address: (formData.address || '').trim(),
+
+        // Payout Information
+        payoutMethod: formData.payoutMethod || 'bkash',
+        payoutMethods: formData.payoutMethods || [],
+        accountHolderName: (formData.accountHolderName || formData.fullName || '').trim(),
+        accountNumber: (formData.accountNumber || '').trim(),
+        bkashNumber: formData.payoutMethod === 'bkash' ? formData.accountNumber : '',
+        nagadNumber: formData.payoutMethod === 'nagad' ? formData.accountNumber : '',
+        rocketNumber: formData.payoutMethod === 'rocket' ? formData.accountNumber : '',
+        upayNumber: formData.payoutMethod === 'upay' ? formData.accountNumber : '',
+        bankName: formData.bankName || formData.customBankName || '',
+        branchName: formData.branchName || '',
+        routingNumber: formData.routingNumber || '',
+
+        // Business Information
+        facebookPage: (formData.facebookPage || '').trim(),
+        tiktokUrl: (formData.tiktokUrl || '').trim(),
+        instagramUrl: (formData.instagramUrl || '').trim(),
+        youtubeUrl: (formData.youtubeUrl || '').trim(),
+
+        // Photography & Documents
+        shopLogoUrl: formData.shopLogoUrl || '',
+        documentType: formData.documentType || 'nid',
+        nidFrontUrl: formData.nidFrontUrl || '',
+        nidBackUrl: formData.nidBackUrl || '',
+        birthCertificateUrl: formData.birthCertificateUrl || '',
+
+        // Legacy compatibility
+        profilePhotoUrl: formData.shopLogoUrl || '',
+        shopPhotoUrl: formData.shopLogoUrl || '',
+        nidUrl: formData.nidFrontUrl || formData.birthCertificateUrl || '',
+        plainPassword: formData.password || '',
+      };
+
+      t.set(userRef, userPayload, { merge: true });
+    });
+
+    console.log(`[ReSellBD Registration] Successfully assigned ${assignedResellerId} to user ${uid}`);
+
+    // Send push notification to all Admins & Super Admins
+    try {
+      const adminSnap = await firestore
+        .collection('users')
+        .where('role', 'in', ['admin', 'super_admin'])
+        .get();
+
+      const tokens = [];
+      adminSnap.forEach((d) => {
+        const u = d.data();
+        if (Array.isArray(u.fcmTokens) && u.fcmTokens.length > 0) {
+          tokens.push(...u.fcmTokens);
+        }
+      });
+
+      if (tokens.length > 0) {
+        const uniqueTokens = [...new Set(tokens)];
+        const payload = {
+          notification: {
+            title: 'New Reseller Pending Approval',
+            body: `${formData.shopName || 'New Reseller'} (${assignedResellerId}) has applied and is waiting for review.`,
+          },
+          data: {
+            type: 'reseller_approval',
+            uid,
+            resellerId: assignedResellerId,
+            shopName: formData.shopName || '',
+          },
+        };
+        await admin.messaging().sendToDevice(uniqueTokens, payload);
+        console.log(`Sent registration approval push notification to ${uniqueTokens.length} admin devices.`);
+      }
+    } catch (notifErr) {
+      console.warn('Could not dispatch admin registration push notification:', notifErr);
+    }
+
+    return {
+      success: true,
+      resellerId: assignedResellerId,
+      message: 'Registration finalized successfully! Your account is pending admin approval.',
+    };
+  } catch (err) {
+    console.error('Error finalizing registration:', err);
+    throw new functions.https.HttpsError('internal', err.message || 'Failed to finalize registration.');
+  }
+});
+

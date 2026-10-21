@@ -9,6 +9,8 @@ import {
   Building2, Landmark, Smartphone, Save, MessageCircle, Tag
 } from 'lucide-react';
 
+import { fetchUserLoginHistory, LoginHistoryItem } from '../../lib/deviceSecurity';
+
 interface EditUserModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -56,7 +58,18 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState<'profile' | 'location' | 'financial' | 'documents'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'location' | 'financial' | 'documents' | 'security'>('profile');
+  const [userLogins, setUserLogins] = useState<LoginHistoryItem[]>([]);
+  const [loadingLogins, setLoadingLogins] = useState(false);
+
+  useEffect(() => {
+    if (targetUser && activeTab === 'security') {
+      setLoadingLogins(true);
+      fetchUserLoginHistory(targetUser.uid)
+        .then(setUserLogins)
+        .finally(() => setLoadingLogins(false));
+    }
+  }, [targetUser, activeTab]);
 
   useEffect(() => {
     if (targetUser) {
@@ -256,6 +269,18 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
           >
             <FileText className="w-3.5 h-3.5" />
             NID & Media
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('security')}
+            className={`pb-3 px-3 transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'security'
+                ? 'border-blue-600 text-blue-600 font-bold'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Security & Logins
           </button>
         </div>
 
@@ -709,6 +734,61 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB 5: Security & Login Activity */}
+          {activeTab === 'security' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-emerald-600" />
+                  <span>Reseller Login Activity (Last 20 Logins)</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {userLogins.length} recorded session(s)
+                </span>
+              </div>
+
+              {loadingLogins ? (
+                <div className="p-8 text-center text-xs text-slate-400">
+                  Loading reseller login sessions...
+                </div>
+              ) : userLogins.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  No login history recorded yet for this reseller account.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                  {userLogins.map((lh) => {
+                    const timeObj = lh.timestamp?.toDate ? lh.timestamp.toDate() : new Date(lh.timestamp || 0);
+                    return (
+                      <div key={lh.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+                        <div className="flex items-center justify-between font-mono text-[10px] text-slate-500">
+                          <span className="font-bold text-slate-700">{timeObj.toLocaleString('en-GB')}</span>
+                          <div className="flex items-center gap-1.5">
+                            {lh.isNewDevice && (
+                              <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-amber-300">
+                                NEW DEVICE
+                              </span>
+                            )}
+                            <span className="text-emerald-700 font-bold">Authorized</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-0.5">
+                          <p className="font-medium text-slate-800 text-[11px] truncate flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span>{lh.deviceModel || 'Unknown Device'}</span>
+                          </p>
+                          <span className="text-[10px] font-mono text-slate-500 uppercase px-1.5 py-0.5 bg-white border border-slate-200 rounded">
+                            {lh.platform || 'web'} {lh.osVersion ? `(${lh.osVersion})` : ''}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, signOut } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { auth, db } from '../../lib/firebase';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { SkyLogo } from '../common/SkyLogo';
-import resellbdLogo from '../../assets/images/logo.png';
-import { Eye, EyeOff, Mail, Lock, Phone, AlertCircle, ArrowRight, WifiOff, ShieldCheck, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, AlertCircle, ShieldCheck } from 'lucide-react';
 import { useNetwork } from '../../context/NetworkContext';
+import { resolveLoginIdentifier } from '../../lib/resellerRegistrationService';
+import { recordLoginHistory } from '../../lib/deviceSecurity';
+import resellbdLogo from '../../assets/images/logo.png';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -16,102 +17,23 @@ interface LoginFormProps {
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLoginSuccess }) => {
   const { isOnline } = useNetwork();
-  const [identifier, setIdentifier] = useState(''); // Email or Mobile
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [securityNotice, setSecurityNotice] = useState('');
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
-  const handleQuickDemoLogin = async (role: 'super_admin' | 'reseller') => {
+  // Check network state
+  useEffect(() => {
     if (!isOnline) {
-      setError('You are offline. An active internet connection is required to sign in.');
-      return;
+      setError('You are offline. Please connect to the internet to sign in.');
+    } else {
+      setError('');
     }
-    if (Capacitor.isNativePlatform() && role === 'super_admin') {
-      setError('এই মোবাইল অ্যাপটি শুধুমাত্র রিসেলারদের জন্য তৈরি। অ্যাডমিনদের অবশ্যই ব্রাউজার/ওয়েবসাইট (Vercel) থেকে লগইন করতে হবে। (Admins must log in via the Vercel web panel; this app is strictly for Resellers.)');
-      return;
-    }
-    setLoading(true);
-    setError('');
-
-    const email = role === 'super_admin' ? 'skyautomationtech@gmail.com' : 'reseller@skyshebang.com';
-    const pass = 'shebang123';
-
-    setIdentifier(email);
-    setPassword(pass);
-
-    try {
-      try {
-        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
-      } catch (pErr) {
-        console.warn('Firebase Auth persistence warning (continuing login):', pErr);
-      }
-
-      let userCredential;
-      try {
-        userCredential = await signInWithEmailAndPassword(auth, email, pass);
-      } catch (signInErr: any) {
-        if (
-          signInErr.code === 'auth/invalid-credential' ||
-          signInErr.code === 'auth/user-not-found' ||
-          signInErr.code === 'auth/wrong-password'
-        ) {
-          console.log(`Demo account ${email} not found in Auth or credentials mismatch. Provisioning...`);
-          try {
-            const createCredential = await createUserWithEmailAndPassword(auth, email, pass);
-            const uid = createCredential.user.uid;
-            
-            const userDocRef = doc(db, 'users', uid);
-            await setDoc(userDocRef, {
-              uid,
-              fullName: role === 'super_admin' ? 'Sky Super Admin' : 'ReSellBD Reseller',
-              shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
-              mobile: role === 'super_admin' ? '01711111111' : '01722222222',
-              email,
-              role,
-              status: 'approved',
-              division: 'Dhaka',
-              district: 'Dhaka',
-              upazila: 'Tejgaon',
-              address: 'Sky Shebang Tower, Dhaka',
-              plainPassword: pass,
-              createdAt: serverTimestamp()
-            });
-            userCredential = createCredential;
-          } catch (createErr: any) {
-            if (createErr.code !== 'auth/email-already-in-use') {
-              throw createErr;
-            }
-          }
-        } else {
-          throw signInErr;
-        }
-      }
-
-      if (userCredential && userCredential.user) {
-        try {
-          const userDocRef = doc(db, 'users', userCredential.user.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            if (userDocSnap.data().plainPassword !== pass) {
-              await updateDoc(userDocRef, { plainPassword: pass });
-            }
-          }
-        } catch (syncErr) {
-          console.warn('Could not sync password to Firestore:', syncErr);
-        }
-      }
-
-      onLoginSuccess();
-    } catch (err: any) {
-      console.error('Demo login failed:', err);
-      setError('Failed to log in with demo account: ' + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isOnline]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,15 +43,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     }
 
     if (!identifier.trim() || !password) {
-      setError('Please enter your email/mobile and password.');
+      setError('Please enter your email/Reseller ID and password.');
       return;
     }
 
     setLoading(true);
     setError('');
+    setSecurityNotice('');
 
     try {
-      // Set Auth persistence safely (Android WebView / APK fix: wrap in try-catch in case IndexedDB or local storage persistence is restricted)
+      // Set Auth persistence safely
       try {
         await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       } catch (pErr) {
@@ -138,61 +61,75 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
 
       const rawInput = identifier.trim();
       let targetEmail = rawInput.toLowerCase();
-      let isMobileLogin = false;
 
-      // Check if identifier is a mobile number (does not contain @)
+      // Check if identifier is not an email
       if (!rawInput.includes('@')) {
-        isMobileLogin = true;
-        const cleanMobile = rawInput.replace(/[^0-9+]/g, ''); // Strip spaces, hyphens, parentheses
+        const isResellerId = /^RSB-|^SGR-/i.test(rawInput) || /[a-z]/i.test(rawInput);
 
-        // Prepare candidate mobile formats to check in Firestore
-        let mobileCandidates = [rawInput, cleanMobile];
-
-        if (cleanMobile.startsWith('+88')) {
-          const noPrefix = cleanMobile.replace('+88', '');
-          mobileCandidates.push(noPrefix);
-          mobileCandidates.push('0' + noPrefix);
-          mobileCandidates.push('88' + noPrefix);
-        } else if (cleanMobile.startsWith('880')) {
-          const noPrefix = cleanMobile.slice(2); // '017...'
-          mobileCandidates.push(noPrefix);
-          mobileCandidates.push('+' + cleanMobile);
-        } else if (cleanMobile.startsWith('0')) {
-          mobileCandidates.push('+88' + cleanMobile);
-          mobileCandidates.push('88' + cleanMobile);
-          mobileCandidates.push(cleanMobile.slice(1)); // 17... (10 digits)
-        } else if (cleanMobile.length === 10 && cleanMobile.startsWith('1')) {
-          mobileCandidates.push('0' + cleanMobile);
-          mobileCandidates.push('+880' + cleanMobile);
-          mobileCandidates.push('880' + cleanMobile);
-        }
-
-        // Deduplicate non-empty candidates
-        mobileCandidates = Array.from(new Set(mobileCandidates.filter(Boolean)));
-
-        let foundEmail = '';
-        let foundUserDoc: any = null;
-
-        for (const mNum of mobileCandidates) {
+        if (isResellerId) {
+          // Resolve Reseller ID (e.g. RSB-000001 or SGR-XXXX) to account email
           try {
-            const q = query(collection(db, 'users'), where('mobile', '==', mNum), limit(1));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-              foundUserDoc = querySnapshot.docs[0].data();
-              foundEmail = foundUserDoc.email;
-              break;
-            }
-          } catch (qErr) {
-            console.warn('Error querying mobile number candidate:', mNum, qErr);
+            const resolvedEmail = await resolveLoginIdentifier(rawInput);
+            targetEmail = resolvedEmail.toLowerCase().trim();
+          } catch (resErr: any) {
+            // Generic error message so IDs cannot be enumerated
+            setError('Invalid ID or password. Please verify your credentials.');
+            setLoading(false);
+            return;
           }
-        }
+        } else {
+          // Mobile number resolution
+          const cleanMobile = rawInput.replace(/[^0-9+]/g, '');
 
-        if (!foundEmail) {
-          setError('এই মোবাইল নম্বরে কোনো অ্যাকাউন্ট পাওয়া যায়নি। অনুগ্রহ করে সঠিক মোবাইল বা ইমেইল দিয়ে চেষ্টা করুন। (No account found with this mobile number)');
-          setLoading(false);
-          return;
+          // Prepare candidate mobile formats to check in Firestore
+          let mobileCandidates = [rawInput, cleanMobile];
+
+          if (cleanMobile.startsWith('+88')) {
+            const noPrefix = cleanMobile.replace('+88', '');
+            mobileCandidates.push(noPrefix);
+            mobileCandidates.push('0' + noPrefix);
+            mobileCandidates.push('88' + noPrefix);
+          } else if (cleanMobile.startsWith('880')) {
+            const noPrefix = cleanMobile.slice(2); // '017...'
+            mobileCandidates.push(noPrefix);
+            mobileCandidates.push('+' + cleanMobile);
+          } else if (cleanMobile.startsWith('0')) {
+            mobileCandidates.push('+88' + cleanMobile);
+            mobileCandidates.push('88' + cleanMobile);
+            mobileCandidates.push(cleanMobile.slice(1)); // 17... (10 digits)
+          } else if (cleanMobile.length === 10 && cleanMobile.startsWith('1')) {
+            mobileCandidates.push('0' + cleanMobile);
+            mobileCandidates.push('+880' + cleanMobile);
+            mobileCandidates.push('880' + cleanMobile);
+          }
+
+          // Deduplicate non-empty candidates
+          mobileCandidates = Array.from(new Set(mobileCandidates.filter(Boolean)));
+
+          let foundEmail = '';
+          let foundUserDoc: any = null;
+
+          for (const mNum of mobileCandidates) {
+            try {
+              const q = query(collection(db, 'users'), where('mobile', '==', mNum), limit(1));
+              const querySnapshot = await getDocs(q);
+              if (!querySnapshot.empty) {
+                foundUserDoc = querySnapshot.docs[0].data();
+                foundEmail = foundUserDoc.email;
+                break;
+              }
+            } catch (qErr) {
+              console.warn('Error querying mobile number candidate:', mNum, qErr);
+            }
+          }
+
+          if (!foundEmail) {
+            setError('এই মোবাইল নম্বরে কোনো অ্যাকাউন্ট পাওয়া যায়নি। অনুগ্রহ করে সঠিক মোবাইল বা ইমেইল দিয়ে চেষ্টা করুন। (No account found with this mobile number)');
+            setLoading(false);
+            return;
+          }
+          targetEmail = foundEmail.toLowerCase().trim();
         }
-        targetEmail = foundEmail.toLowerCase().trim();
       }
 
       const signInPromise = signInWithEmailAndPassword(auth, targetEmail, password);
@@ -289,6 +226,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
           }
           console.warn('Could not sync password or verify role in Firestore:', syncErr);
         }
+
+        // Record device login security monitoring
+        try {
+          const { isNewDevice } = await recordLoginHistory(userCredential.user.uid);
+          if (isNewDevice) {
+            setSecurityNotice('New device login detected. A security entry has been logged.');
+          }
+        } catch (devErr) {
+          console.warn('Could not record device login:', devErr);
+        }
       }
 
       onLoginSuccess();
@@ -331,7 +278,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
 
       {/* Main Container - Centered and mobile-optimized */}
       <div className="relative z-10 w-full max-w-sm sm:max-w-md my-auto flex flex-col">
-        {/* 2. Branding Section (top) */}
+        {/* Branding Section (top) */}
         <div className="flex flex-col items-center text-center mb-8">
           {/* App Logo Displayed Prominently in Glass Card */}
           <div className="relative mb-6 group">
@@ -381,10 +328,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             </div>
           )}
 
-          {/* 3. Email Form Field (Frosted / Glass Input Field) */}
+          {/* Security Notice Notification */}
+          {securityNotice && (
+            <div className="bg-amber-500/15 border border-amber-500/30 text-amber-200 p-3.5 rounded-2xl text-xs sm:text-sm backdrop-blur-md flex items-start gap-3 animate-in fade-in duration-200">
+              <ShieldCheck className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+              <span className="leading-relaxed flex-1">{securityNotice}</span>
+            </div>
+          )}
+
+          {/* Email or Reseller ID Form Field */}
           <div className="space-y-1.5">
             <label className="block text-xs font-medium text-slate-300 ml-3">
-              Email
+              Email or Reseller ID
             </label>
             <div className="relative flex items-center h-[52px] rounded-full bg-white/[0.06] hover:bg-white/[0.09] focus-within:bg-white/[0.09] border border-white/10 hover:border-white/20 focus-within:border-cyan-400/60 focus-within:ring-2 focus-within:ring-cyan-400/20 backdrop-blur-md transition-all duration-200">
               <div className="pl-4 pr-1 text-slate-400 pointer-events-none flex items-center">
@@ -398,13 +353,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
                 spellCheck={false}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="Enter your email"
+                placeholder="e.g. RSB-000001 or email@example.com"
                 className="w-full h-full bg-transparent text-white placeholder-slate-400 text-sm sm:text-base pl-2.5 pr-5 outline-none font-normal"
               />
             </div>
           </div>
 
-          {/* 3. Password Form Field (Frosted / Glass Input Field) */}
+          {/* Password Form Field */}
           <div className="space-y-1.5">
             <label className="block text-xs font-medium text-slate-300 ml-3">
               Password
@@ -435,7 +390,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             </div>
           </div>
 
-          {/* 4. Row below password field: Remember me + Forgot Password? */}
+          {/* Row below password field: Remember me + Forgot Password? */}
           <div className="flex items-center justify-between px-2 pt-1 pb-1">
             <label className="flex items-center gap-2.5 cursor-pointer select-none group">
               <input
@@ -458,7 +413,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             </button>
           </div>
 
-          {/* 5. Login Button: Full-width, rounded pill button with subtle shadow/glow effect */}
+          {/* Login Button */}
           <div className="pt-2">
             <button
               type="submit"
@@ -483,7 +438,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         </form>
       </div>
 
-      {/* 7. Bottom Section: Don't have an account? Create an account */}
+      {/* Bottom Section: Don't have an account? Create an account */}
       <div className="relative z-10 text-center pt-8 text-xs sm:text-sm text-slate-400">
         <span>Don't have an account? </span>
         <button

@@ -13,11 +13,16 @@ import {
   MapPin, Landmark, Briefcase, Camera, Lock, CheckCircle2, 
   ChevronRight, ChevronLeft, AlertCircle, Sparkles, ShieldCheck, 
   Eye, EyeOff, Upload, FileText, Check, ExternalLink, Globe, 
-  Trash2, Crop, AlertTriangle, FileCheck, ArrowRight
+  Trash2, Crop, AlertTriangle, FileCheck, ArrowRight, ChevronDown, ChevronUp, Copy, BookOpen
 } from 'lucide-react';
 import { OtpVerificationInput } from './register/OtpVerificationInput';
 import { SearchableSelect, SelectOption } from './register/SearchableSelect';
 import { SquareCropModal } from './register/SquareCropModal';
+import { PasswordStrengthIndicator, evaluatePassword } from './register/PasswordStrengthIndicator';
+import { PolicyModal } from './register/PolicyModal';
+import { RegistrationSuccessScreen } from './register/RegistrationSuccessScreen';
+import { DEFAULT_TERMS_POLICY, DEFAULT_PRIVACY_POLICY, PolicyDoc } from '../../data/defaultPolicies';
+import { finalizeResellerRegistration } from '../../lib/resellerRegistrationService';
 import { 
   getDivisions, getDistricts, getUpazilas, getUnions,
   BdDivision, BdDistrict, BdUpazila, BdUnion 
@@ -166,6 +171,10 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     password: '',
     confirmPassword: '',
     agreeToTerms: false,
+    agreeToPrivacy: false,
+    hasScrolledTerms: false,
+    hasScrolledPrivacy: false,
+    termsVersion: '1.0',
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -173,6 +182,21 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   const [loading, setLoading] = useState(false);
   const [stepError, setStepError] = useState('');
   const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+
+  // Policy Modal state
+  const [activePolicyModal, setActivePolicyModal] = useState<PolicyDoc | null>(null);
+
+  // Success Screen state
+  const [registrationSuccessData, setRegistrationSuccessData] = useState<{
+    resellerId: string;
+    shopName: string;
+  } | null>(null);
+
+  // Review card collapsible states
+  const [collapsedCards, setCollapsedCards] = useState<{ [key: string]: boolean }>({});
+
+  // Submitting detailed step progress text
+  const [submittingStepText, setSubmittingStepText] = useState('');
 
   // Crop Modal state
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -545,18 +569,22 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     // Step 7: Account Security & Terms
     if (currentStep === 7) {
       const invalid: string[] = [];
-      if (formData.password.length < 6) invalid.push('password');
+      const pwdEval = evaluatePassword(formData.password);
+      if (!pwdEval.isAcceptable) invalid.push('password');
       if (formData.password !== formData.confirmPassword) invalid.push('confirmPassword');
       if (!formData.agreeToTerms) invalid.push('agreeToTerms');
+      if (!formData.agreeToPrivacy) invalid.push('agreeToPrivacy');
 
       if (invalid.length > 0) {
         triggerShake(invalid);
         if (invalid.includes('password')) {
-          setStepError('Password must be at least 6 characters long.');
+          setStepError('Password must be at least 8 characters long and reach at least "Medium" strength.');
         } else if (invalid.includes('confirmPassword')) {
-          setStepError('Passwords do not match.');
+          setStepError('Passwords do not match. Please re-enter your confirm password.');
+        } else if (invalid.includes('agreeToTerms')) {
+          setStepError('Please review and accept the ReSellBD Reseller Terms & Conditions.');
         } else {
-          setStepError('Please accept the Reseller Terms of Service & Wholesale Policies.');
+          setStepError('Please review and accept the ReSellBD Privacy Policy.');
         }
         return false;
       }
@@ -663,7 +691,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     e.target.value = '';
   };
 
-  // Final Registration Submission
+  // Final Registration Submission with multi-stage verification
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isOnline) {
@@ -673,8 +701,15 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
 
     if (!validateCurrentStep()) return;
 
+    if (!formData.emailVerified) {
+      setStepError('Please complete email verification in Step 2 before submitting.');
+      setCurrentStep(2);
+      return;
+    }
+
     setLoading(true);
     setStepError('');
+    setSubmittingStepText('1/4: Verifying credentials & creating secure account...');
     triggerHaptic('medium');
 
     try {
@@ -688,20 +723,19 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         uid = userCredential.user.uid;
       } catch (authErr: any) {
         if (authErr.code === 'auth/email-already-in-use') {
-          try {
-            const loginRes = await signInWithEmailAndPassword(auth, cleanEmail, formData.password);
-            uid = loginRes.user.uid;
-          } catch (loginErr) {
-            throw authErr;
-          }
+          setStepError('This email is already registered on ReSellBD. Please sign in or use "Forgot Password" to recover your account.');
+          setLoading(false);
+          return;
+        } else if (authErr.code === 'auth/weak-password') {
+          setStepError('Password does not satisfy security criteria. Please use at least 8 characters with letters, numbers, and symbols.');
+          setLoading(false);
+          return;
         } else {
           throw authErr;
         }
       }
 
-      // Generate unique SGR Reseller Code (e.g. SGR-ERTY)
-      const randomSuffix = generateRandomResellerSuffix();
-      const resellerCode = `SGR-${randomSuffix}`;
+      setSubmittingStepText('2/4: Finalizing payout structure & KYC documents...');
 
       // Build PayoutMethod object adhering to payoutMethods[] standard
       const defaultPayoutMethod: PayoutMethod = {
@@ -717,68 +751,23 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         addedAt: new Date().toISOString(),
       };
 
-      // Write to Firestore users collection
-      await setDoc(doc(db, 'users', uid), {
-        uid,
-        resellerCode,
-        fullName: formData.fullName.trim(),
-        shopName: formData.shopName.trim(),
-        mobile: cleanMobile,
-        whatsappNumber: cleanWhatsApp,
-        whatsapp: cleanWhatsApp,
-        email: cleanEmail,
-        emailVerified: formData.emailVerified,
-        dob: formData.dob,
-        gender: formData.gender,
-        division: formData.division || formData.customDivision,
-        divisionId: formData.divisionId || '',
-        district: formData.district || formData.customDistrict,
-        districtId: formData.districtId || '',
-        upazila: formData.upazila || formData.customUpazila,
-        upazilaId: formData.upazilaId || '',
-        union: formData.union || formData.customUnion || '',
-        unionId: formData.unionId || '',
-        ward: formData.ward || '',
-        postalCode: formData.postalCode.trim(),
-        address: formData.address.trim(),
-
-        // Step 4: Payout Information (both array and legacy flat fields)
-        payoutMethod: formData.payoutMethod,
+      const completeFormData = {
+        ...formData,
         payoutMethods: [defaultPayoutMethod],
-        accountHolderName: (formData.accountHolderName || formData.fullName).trim(),
-        accountNumber: (formData.payoutMethod === 'bank' ? formData.accountNumber : formData.accountNumber || cleanMobile).trim(),
-        bkashNumber: formData.payoutMethod === 'bkash' ? (formData.accountNumber || cleanMobile).trim() : '',
-        nagadNumber: formData.payoutMethod === 'nagad' ? (formData.accountNumber || cleanMobile).trim() : '',
-        rocketNumber: formData.payoutMethod === 'rocket' ? (formData.accountNumber || cleanMobile).trim() : '',
-        upayNumber: formData.payoutMethod === 'upay' ? (formData.accountNumber || cleanMobile).trim() : '',
-        bankName: formData.payoutMethod === 'bank' ? (formData.bankName || formData.customBankName).trim() : '',
-        branchName: formData.payoutMethod === 'bank' ? formData.branchName.trim() : '',
-        routingNumber: formData.payoutMethod === 'bank' ? formData.routingNumber.trim() : '',
+      };
 
-        // Step 5: Business Information
-        facebookPage: formData.facebookPage.trim(),
-        tiktokUrl: formData.tiktokUrl.trim(),
-        instagramUrl: formData.instagramUrl.trim(),
-        youtubeUrl: formData.youtubeUrl.trim(),
+      setSubmittingStepText('3/4: Allocating sequential Reseller ID & locking security rules...');
 
-        // Step 6: Photography & Documents
-        shopLogoUrl: formData.shopLogoUrl,
-        documentType: formData.documentType,
-        nidFrontUrl: formData.nidFrontUrl,
-        nidBackUrl: formData.nidBackUrl,
-        birthCertificateUrl: formData.birthCertificateUrl,
-
-        // Backward compatibility image fields
-        profilePhotoUrl: formData.shopLogoUrl || formData.profilePhotoUrl,
-        shopPhotoUrl: formData.shopLogoUrl || formData.shopPhotoUrl,
-        nidUrl: formData.nidFrontUrl || formData.birthCertificateUrl || '',
-
-        role: 'reseller',
-        status: 'pending',
-        rejectReason: null,
-        plainPassword: formData.password,
-        createdAt: serverTimestamp(),
+      // Finalize registration via Cloud Function / atomic Firestore transaction on counters/resellerId
+      const finalizeResult = await finalizeResellerRegistration({
+        uid,
+        email: cleanEmail,
+        formData: completeFormData,
+        termsVersion: formData.termsVersion || '1.0',
+        password: formData.password,
       });
+
+      setSubmittingStepText('4/4: Complete! Launching your reseller dashboard...');
 
       // Clear local draft upon successful registration
       try {
@@ -788,7 +777,10 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       }
 
       triggerHaptic('heavy');
-      onRegistered();
+      setRegistrationSuccessData({
+        resellerId: finalizeResult.resellerId,
+        shopName: formData.shopName || formData.fullName,
+      });
     } catch (err: any) {
       console.error('Registration submit error:', err);
       let msg = 'Failed to register account. Please check your details and try again.';
@@ -797,13 +789,14 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       } else if (err.code === 'auth/invalid-email') {
         msg = 'Invalid email address format.';
       } else if (err.code === 'auth/weak-password') {
-        msg = 'Password is too weak. Please use at least 6 characters.';
+        msg = 'Password is too weak. Please use at least 8 characters with letters and numbers.';
       } else if (err.message) {
         msg = err.message;
       }
       setStepError(msg);
     } finally {
       setLoading(false);
+      setSubmittingStepText('');
     }
   };
 
@@ -1953,13 +1946,27 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
+                  {/* System Reseller ID Notice */}
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#0E9AA7]/15 to-[#3DD055]/15 border border-[#3DD055]/30 flex items-start gap-3 text-xs">
+                    <Sparkles className="w-5 h-5 text-[#3DD055] shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-white block">System-Assigned Unique Reseller ID</span>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        Your official Reseller ID (e.g. <span className="font-mono font-bold text-[#3DD055]">RSB-000001</span>) will be generated on the server during submission. You can use it as your username to sign in.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Password Input with Show/Hide Toggle */}
                   <div className={`space-y-1.5 ${shakeFields.has('password') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-[#0E9AA7]" /> Create Password (Min 6 chars) <span className="text-[#3DD055]">*</span>
+                        <Lock className="w-3.5 h-3.5 text-[#0E9AA7]" /> Create Password <span className="text-[#3DD055]">*</span>
                       </span>
-                      {formData.password.length >= 6 && (
-                        <span className="text-[10px] text-[#3DD055] font-bold">✓ Strong</span>
+                      {evaluatePassword(formData.password).isAcceptable && (
+                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                          <Check className="w-3 h-3" /> Minimum Strength Met
+                        </span>
                       )}
                     </label>
                     <div className="relative">
@@ -1975,13 +1982,17 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
                       >
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+
+                    {/* Password Strength Indicator with Checklist */}
+                    <PasswordStrengthIndicator password={formData.password} />
                   </div>
 
+                  {/* Confirm Password Input */}
                   <div className={`space-y-1.5 ${shakeFields.has('confirmPassword') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -1989,7 +2000,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                       </span>
                       {formData.confirmPassword && formData.password === formData.confirmPassword && (
                         <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Matched
+                          <Check className="w-3 h-3" /> Passwords Match
                         </span>
                       )}
                     </label>
@@ -2006,25 +2017,80 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
                       >
                         {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
 
-                  <div className={`pt-2 ${shakeFields.has('agreeToTerms') ? 'animate-shake' : ''}`}>
-                    <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={formData.agreeToTerms}
-                        onChange={(e) => setFormData({ ...formData, agreeToTerms: e.target.checked })}
-                        className="w-4 h-4 mt-0.5 rounded text-[#3DD055] accent-[#3DD055] shrink-0"
-                      />
-                      <span className="leading-relaxed">
-                        I agree to the <strong className="text-white">ReSellBD Reseller Terms of Service</strong>, Wholesale Pricing Rules, and Privacy Policy.
-                      </span>
-                    </label>
+                  {/* Separate Terms & Conditions and Privacy Checkboxes */}
+                  <div className="space-y-3 pt-2">
+                    {/* 1. Terms & Conditions Checkbox */}
+                    <div className={`p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 ${shakeFields.has('agreeToTerms') ? 'animate-shake' : ''}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <label className={`flex items-start gap-2.5 text-xs text-slate-300 ${!formData.hasScrolledTerms ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <input
+                            type="checkbox"
+                            disabled={!formData.hasScrolledTerms}
+                            checked={formData.agreeToTerms}
+                            onChange={(e) => setFormData({ ...formData, agreeToTerms: e.target.checked })}
+                            className="w-4 h-4 mt-0.5 rounded text-[#3DD055] accent-[#3DD055] shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                          <span className="leading-relaxed">
+                            I agree to the <strong className="text-white">ReSellBD Reseller Terms & Conditions (v1.0)</strong>, Wholesale Commission Rules, and Payout Guidelines.
+                          </span>
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => setActivePolicyModal(DEFAULT_TERMS_POLICY)}
+                          className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-[#38BDF8] text-[11px] font-bold shrink-0 transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Review Terms</span>
+                        </button>
+                      </div>
+
+                      {!formData.hasScrolledTerms && (
+                        <div className="text-[10px] text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1.5">
+                          <span>ℹ Please click "Review Terms" and scroll through the document once to enable this agreement.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. Privacy Policy Consent Checkbox */}
+                    <div className={`p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 ${shakeFields.has('agreeToPrivacy') ? 'animate-shake' : ''}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <label className={`flex items-start gap-2.5 text-xs text-slate-300 ${!formData.hasScrolledPrivacy ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <input
+                            type="checkbox"
+                            disabled={!formData.hasScrolledPrivacy}
+                            checked={formData.agreeToPrivacy}
+                            onChange={(e) => setFormData({ ...formData, agreeToPrivacy: e.target.checked })}
+                            className="w-4 h-4 mt-0.5 rounded text-[#3DD055] accent-[#3DD055] shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                          <span className="leading-relaxed">
+                            I consent to the collection and compliance verification of my <strong className="text-white">National ID / Birth Certificate & Shop Details</strong> under the ReSellBD Privacy Policy.
+                          </span>
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => setActivePolicyModal(DEFAULT_PRIVACY_POLICY)}
+                          className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-[#3DD055] text-[11px] font-bold shrink-0 transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Review Privacy</span>
+                        </button>
+                      </div>
+
+                      {!formData.hasScrolledPrivacy && (
+                        <div className="text-[10px] text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1.5">
+                          <span>ℹ Please click "Review Privacy" and scroll through the document once to enable consent.</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -2037,58 +2103,383 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.22 }}
-                  className="space-y-4 text-xs"
+                  className="space-y-3.5 text-xs"
                 >
-                  {/* Shop & Logo Preview */}
-                  <div className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-3">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">Store & Owner</span>
-                      <button type="button" onClick={() => setCurrentStep(1)} className="text-[11px] text-[#0E9AA7] font-bold hover:underline">Edit</button>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {formData.shopLogoUrl ? (
-                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#3DD055] shrink-0">
-                          <img src={formData.shopLogoUrl} alt="Logo" className="w-full h-full object-cover" />
-                        </div>
-                      ) : null}
-                      <div className="grid grid-cols-2 gap-2 text-slate-200 flex-1">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">Shop Name:</span>
-                          <strong className="text-[#3DD055] text-xs">{formData.shopName}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">Owner Name:</span>
-                          <strong className="text-white text-xs">{formData.fullName}</strong>
-                        </div>
+                  <p className="text-xs text-slate-300 bg-white/[0.04] p-3 rounded-2xl border border-white/10 flex items-center justify-between">
+                    <span>Review your details carefully before final submission. Tap "Edit" to modify any section.</span>
+                    <span className="text-[10px] text-[#3DD055] font-bold">7 of 7 Sections Ready</span>
+                  </p>
+
+                  {/* 1. Basic Details Card */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-[#0E9AA7]" />
+                        <span className="font-bold text-white text-xs">1. Basic Details</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(1)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, basic: !prev.basic }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.basic ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
                     </div>
+
+                    {!collapsedCards.basic && (
+                      <div className="p-3.5 grid grid-cols-2 gap-2 text-slate-300">
+                        <div>
+                          <span className="text-slate-400 text-[10px] block">Shop Name:</span>
+                          <strong className="text-[#3DD055]">{formData.shopName || '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] block">Owner Name:</span>
+                          <strong className="text-white">{formData.fullName || '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] block">Date of Birth:</span>
+                          <span>{formData.dob || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[10px] block">Gender:</span>
+                          <span className="capitalize">{formData.gender || '—'}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Payout & Contact */}
-                  <div className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-2.5">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">Payout & Location</span>
-                      <button type="button" onClick={() => setCurrentStep(4)} className="text-[11px] text-[#0E9AA7] font-bold hover:underline">Edit</button>
+                  {/* 2. Contact Information Card */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-[#3DD055]" />
+                        <span className="font-bold text-white text-xs">2. Contact Information</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(2)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, contact: !prev.contact }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.contact ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </div>
-                    <div className="space-y-1 text-slate-200">
-                      <div><span className="text-slate-400">Payout:</span> <strong className="text-white uppercase">{formData.payoutMethod}</strong> ({formData.accountHolderName} — {formData.accountNumber})</div>
-                      <div><span className="text-slate-400">Email:</span> <strong className="text-white">{formData.email}</strong> (Verified ✓)</div>
-                      <div><span className="text-slate-400">Address:</span> {formData.address}, {formData.upazila}, {formData.district}</div>
-                      {formData.facebookPage && (
-                        <div><span className="text-slate-400">Facebook:</span> <span className="text-[#0E9AA7]">{formData.facebookPage}</span></div>
-                      )}
-                    </div>
+
+                    {!collapsedCards.contact && (
+                      <div className="p-3.5 space-y-1.5 text-slate-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Email Address:</span>
+                          <span className="text-white font-mono flex items-center gap-1">
+                            {formData.email} <span className="text-[#3DD055] font-bold text-[10px]">✓ Verified</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Mobile Number:</span>
+                          <span className="text-white font-mono">{formData.mobile || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">WhatsApp Number:</span>
+                          <span className="text-white font-mono">
+                            {formData.sameAsMobile ? formData.mobile : formData.whatsappNumber || '—'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
+                  {/* 3. Shop Address Card */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-cyan-400" />
+                        <span className="font-bold text-white text-xs">3. Shop Address</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(3)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, address: !prev.address }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.address ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedCards.address && (
+                      <div className="p-3.5 space-y-1 text-slate-300">
+                        <div>
+                          <span className="text-slate-400">Region:</span>{' '}
+                          <strong className="text-white">
+                            {formData.upazila || formData.customUpazila}, {formData.district || formData.customDistrict}, {formData.division || formData.customDivision}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Union / Ward:</span>{' '}
+                          <span>{formData.union || formData.customUnion || '—'} {formData.ward ? `(Ward ${formData.ward})` : ''}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Postal Code:</span>{' '}
+                          <span className="font-mono">{formData.postalCode || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Street Address:</span>{' '}
+                          <span className="text-white">{formData.address || '—'}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4. Payout Information Card (Masked) */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <Landmark className="w-4 h-4 text-amber-400" />
+                        <span className="font-bold text-white text-xs">4. Payout Information</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(4)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, payout: !prev.payout }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.payout ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedCards.payout && (
+                      <div className="p-3.5 space-y-1.5 text-slate-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Payout Method:</span>
+                          <span className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-[#0E9AA7]/20 to-[#3DD055]/20 border border-[#3DD055]/40 text-[#3DD055] font-extrabold uppercase">
+                            {formData.payoutMethod}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Account Holder:</span>
+                          <strong className="text-white">{formData.accountHolderName || formData.fullName}</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Account Number:</span>
+                          <span className="font-mono text-white">
+                            {formData.accountNumber ? `${formData.accountNumber.slice(0, 3)}•••••${formData.accountNumber.slice(-3)}` : '••••'}
+                          </span>
+                        </div>
+                        {formData.payoutMethod === 'bank' && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Bank & Branch:</span>
+                              <span className="text-white">{formData.bankName || formData.customBankName} — {formData.branchName}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Routing Number:</span>
+                              <span className="font-mono text-white">{formData.routingNumber}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 5. Business Information Card */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="w-4 h-4 text-purple-400" />
+                        <span className="font-bold text-white text-xs">5. Business Channels</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(5)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, business: !prev.business }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.business ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedCards.business && (
+                      <div className="p-3.5 space-y-1 text-slate-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Facebook Page:</span>
+                          <span className="text-[#38BDF8] truncate max-w-[200px]">{formData.facebookPage}</span>
+                        </div>
+                        {formData.tiktokUrl && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">TikTok:</span>
+                            <span className="text-rose-400 truncate max-w-[200px]">{formData.tiktokUrl}</span>
+                          </div>
+                        )}
+                        {formData.instagramUrl && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Instagram:</span>
+                            <span className="text-pink-400 truncate max-w-[200px]">{formData.instagramUrl}</span>
+                          </div>
+                        )}
+                        {formData.youtubeUrl && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">YouTube:</span>
+                            <span className="text-red-400 truncate max-w-[200px]">{formData.youtubeUrl}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 6. Photography & Documents Card */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-emerald-400" />
+                        <span className="font-bold text-white text-xs">6. Photography & Documents</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(6)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, photos: !prev.photos }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.photos ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedCards.photos && (
+                      <div className="p-3.5 flex items-center gap-3">
+                        {formData.shopLogoUrl && (
+                          <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-[#3DD055] shrink-0 bg-black/40 shadow-md">
+                            <img src={formData.shopLogoUrl} alt="Logo" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div className="space-y-1 text-slate-300 flex-1">
+                          <div>
+                            <span className="text-slate-400">Document Type:</span>{' '}
+                            <strong className="text-white uppercase">{formData.documentType}</strong>
+                          </div>
+                          <div className="text-[11px] text-[#3DD055] font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>
+                              {formData.documentType === 'nid'
+                                ? `NID Front & Back Attached`
+                                : 'Birth Certificate Photo Attached'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 7. Security & Policy Consents Card */}
+                  <div className="rounded-2xl bg-white/[0.05] border border-white/10 overflow-hidden">
+                    <div className="p-3.5 flex items-center justify-between border-b border-white/10 bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-[#0E9AA7]" />
+                        <span className="font-bold text-white text-xs">7. Security & Consents</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(7)}
+                          className="text-[11px] text-[#38BDF8] font-bold hover:underline cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedCards((prev) => ({ ...prev, security: !prev.security }))}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {collapsedCards.security ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {!collapsedCards.security && (
+                      <div className="p-3.5 space-y-1.5 text-slate-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Password:</span>
+                          <span className="font-mono text-white">••••••••••••</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Terms & Conditions:</span>
+                          <span className="text-[#3DD055] font-bold flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" /> Version 1.0 Accepted
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Privacy & KYC Consent:</span>
+                          <span className="text-[#3DD055] font-bold flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" /> Consent Granted
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Final Reassurance Box */}
                   <div className="p-3.5 rounded-2xl bg-[#3DD055]/10 border border-[#3DD055]/20 flex items-center gap-2.5">
                     <ShieldCheck className="w-5 h-5 text-[#3DD055] shrink-0" />
                     <p className="text-slate-300 text-[11px] leading-tight">
-                      Your application will be submitted for admin review. Once approved, you can immediately start reselling wholesale products and earning high profit margins!
+                      By submitting, your application enters the admin verification pipeline. Upon KYC approval, your Reseller ID will activate with full wholesale catalog privileges!
                     </p>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Submitting Multi-stage Progress Feedback */}
+            {loading && submittingStepText && (
+              <div className="mt-4 p-3 rounded-2xl bg-white/[0.08] border border-[#0E9AA7]/50 flex items-center gap-2.5 text-xs text-cyan-300 animate-pulse">
+                <Sparkles className="w-4 h-4 text-[#3DD055] shrink-0" />
+                <span className="font-semibold">{submittingStepText}</span>
+              </div>
+            )}
 
             {/* 4. Sticky Bottom Controls (Back, Next, Submit) */}
             <div className="mt-6 pt-4 border-t border-white/10 flex items-center gap-3">
@@ -2120,13 +2511,16 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 min-h-[50px] px-6 rounded-2xl bg-gradient-to-r from-[#0E9AA7] via-[#3DD055] to-[#0E9AA7] hover:brightness-110 active:scale-98 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_12px_30px_-5px_rgba(61,208,85,0.5)] border border-white/30 transition-all cursor-pointer select-none relative overflow-hidden group"
+                  className="flex-1 min-h-[50px] px-6 rounded-2xl bg-gradient-to-r from-[#0E9AA7] via-[#3DD055] to-[#0E9AA7] hover:brightness-110 active:scale-98 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_12px_30px_-5px_rgba(61,208,85,0.5)] border border-white/30 transition-all cursor-pointer select-none relative overflow-hidden group disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <div className="absolute inset-0 pointer-events-none overflow-hidden">
                     <div className="absolute -inset-[100%] bg-gradient-to-tr from-transparent via-white/30 to-transparent group-hover:animate-shimmer-sweep" />
                   </div>
                   {loading ? (
-                    <span>Registering Account...</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>{submittingStepText || 'Submitting Registration...'}</span>
+                    </div>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-white" />
@@ -2172,6 +2566,22 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
           }));
           setCropModalOpen(false);
           setRawImageForCrop('');
+          triggerHaptic('medium');
+        }}
+      />
+
+      {/* Policy Modal (Terms & Privacy with Bangla/English and Scroll Detection) */}
+      <PolicyModal
+        isOpen={!!activePolicyModal}
+        policy={activePolicyModal}
+        alreadyScrolled={activePolicyModal?.key === 'terms' ? formData.hasScrolledTerms : formData.hasScrolledPrivacy}
+        onClose={() => setActivePolicyModal(null)}
+        onScrolledToBottom={() => {
+          if (activePolicyModal?.key === 'terms') {
+            setFormData((prev) => ({ ...prev, hasScrolledTerms: true, agreeToTerms: true }));
+          } else if (activePolicyModal?.key === 'privacy') {
+            setFormData((prev) => ({ ...prev, hasScrolledPrivacy: true, agreeToPrivacy: true }));
+          }
           triggerHaptic('medium');
         }}
       />
