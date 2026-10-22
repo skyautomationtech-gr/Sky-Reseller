@@ -7,23 +7,33 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isAdmin() {
-      return request.auth != null && (
+      return isSignedIn() && (
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+      );
+    }
+
+    function isApproved() {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved'
       );
     }
 
     // Users collection rules
     match /users/{userId} {
-      allow read, list: if true;
+      allow read, list: if isSignedIn();
 
       // Resellers can create their own document if role is reseller and status is pending
-      allow create: if request.auth != null && (
+      allow create: if isSignedIn() && (
         isAdmin() ||
         (
           request.auth.uid == userId &&
           request.resource.data.role in ['reseller', 'customer'] &&
-          request.resource.data.status in ['pending', 'active'] &&
+          request.resource.data.status == 'pending' &&
           !request.resource.data.keys().hasAny([
             'rejectReason', 'suspensionType', 'approvedAt'
           ])
@@ -31,7 +41,7 @@ service cloud.firestore {
       );
 
       // Resellers can only update their own document without altering restricted fields
-      allow update: if request.auth != null && (
+      allow update: if isSignedIn() && (
         isAdmin() ||
         (
           request.auth.uid == userId &&
@@ -41,12 +51,12 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if request.auth != null && isAdmin();
+      allow delete: if isSignedIn() && isAdmin();
 
       // Login History subcollection
       match /loginHistory/{historyId} {
-        allow read, list: if request.auth != null && (request.auth.uid == userId || isAdmin());
-        allow create: if request.auth != null && request.auth.uid == userId;
+        allow read, list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+        allow create: if isSignedIn() && request.auth.uid == userId;
         allow update, delete: if false;
       }
     }
@@ -54,143 +64,78 @@ service cloud.firestore {
     // Policy Pages collection rules (terms, privacy, rules, etc.)
     match /policyPages/{policyId} {
       allow read, list: if true;
-      allow write: if request.auth != null && isAdmin();
+      allow write: if isAdmin();
     }
 
-    // Categories collection rules
-    match /categories/{categoryId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Brands collection rules
-    match /brands/{brandId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Products collection rules
+    // Products collection rules (Read for all, Write for Admin)
     match /products/{productId} {
       allow read, list: if true;
-      allow write: if request.auth != null;
+      allow write: if isAdmin();
     }
 
-    // Orders collection rules
+    // Orders collection rules (Only approved users can create)
     match /orders/{orderId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isApproved();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // Wallets collection rules
+    // Wallets, Transactions, WithdrawalRequests (Only approved)
     match /wallets/{walletId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow write: if isApproved() || isAdmin();
     }
 
-    // Transactions collection rules
     match /transactions/{transactionId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isApproved() || isAdmin();
+      allow update, delete: if isAdmin();
     }
 
-    // Commission Settings rules
-    match /commissionSettings/{settingId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Counters collection rules (for order numbering)
-    match /counters/{counterId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Notices collection rules
-    match /notices/{noticeId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Notice reads tracking rules
-    match /noticeReads/{readId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Support Tickets collection rules
-    match /supportTickets/{ticketId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Audit logs collection rules
-    match /auditLogs/{logId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // User sessions tracking rules
-    match /userSessions/{sessionId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // System settings rules
-    match /settings/{settingId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // System Settings (maintenance mode, etc.)
-    match /systemSettings/{settingId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // App Version configuration
-    match /appVersion/{versionId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Withdrawal Requests collection rules
     match /withdrawalRequests/{requestId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isApproved();
+      allow update, delete: if isAdmin();
     }
 
-    // Payout Change Requests collection rules
-    match /payoutChangeRequests/{requestId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
+    // Support Tickets (Only approved)
+    match /supportTickets/{ticketId} {
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isApproved();
+      allow update, delete: if isAdmin();
     }
 
-    // Product Reviews collection rules
+    // Product Reviews (Only approved)
     match /productReviews/{reviewId} {
       allow read, list: if true;
-      allow write: if request.auth != null;
+      allow create: if isApproved();
+      allow update, delete: if isAdmin();
     }
 
-    // Feedback collection rules
-    match /feedback/{feedbackId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
+    // Other collections (Admin only writes)
+    match /categories/{categoryId} { allow read: if true; allow write: if isAdmin(); }
+    match /brands/{brandId} { allow read: if true; allow write: if isAdmin(); }
+    match /commissionSettings/{settingId} { allow read: if true; allow write: if isAdmin(); }
+    match /counters/{counterId} { allow read: if true; allow write: if isAdmin(); }
+    match /notices/{noticeId} { allow read: if true; allow write: if isAdmin(); }
+    match /noticeReads/{readId} { allow read: if true; allow write: if isSignedIn(); }
+    match /auditLogs/{logId} { allow read: if isAdmin(); allow write: if isAdmin(); }
+    match /userSessions/{sessionId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
+    match /settings/{settingId} { allow read: if true; allow write: if isAdmin(); }
+    match /systemSettings/{settingId} { allow read: if true; allow write: if isAdmin(); }
+    match /appVersion/{versionId} { allow read: if true; allow write: if isAdmin(); }
+    match /payoutChangeRequests/{requestId} { allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin()); allow write: if isApproved() || isAdmin(); }
+    match /feedback/{feedbackId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
+    match /changelogs/{changelogId} { allow read: if true; allow write: if isAdmin(); }
 
-    // Changelogs collection rules
-    match /changelogs/{changelogId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Live Chats collection & subcollections
     match /liveChats/{chatId} {
-      allow read, list: if true;
-      allow write: if request.auth != null;
+      allow read, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isApproved() || isAdmin();
 
       match /messages/{messageId} {
-        allow read, list: if true;
-        allow write: if request.auth != null;
+        allow read, list: if isSignedIn() && (get(/databases/$(database)/documents/liveChats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow write: if isApproved() || isAdmin();
       }
     }
 
@@ -200,4 +145,5 @@ service cloud.firestore {
     }
   }
 }
+
 

@@ -699,3 +699,54 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
   }
 });
 
+
+/**
+ * 10. Check Pending Approvals - 1-hour SLA Reminder
+ */
+exports.checkPendingApprovals = functions.pubsub.schedule('every 10 minutes').onRun(async (context) => {
+  const db = admin.firestore();
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+  const pendingResellers = await db.collection('users')
+    .where('status', '==', 'pending')
+    .where('createdAt', '<', admin.firestore.Timestamp.fromDate(oneHourAgo))
+    .get();
+
+  const batch = db.batch();
+  const adminTokens = [];
+  const adminSnap = await db.collection('users').where('role', 'in', ['admin', 'super_admin']).get();
+  adminSnap.forEach(d => {
+    const u = d.data();
+    if (Array.isArray(u.fcmTokens)) adminTokens.push(...u.fcmTokens);
+  });
+  const uniqueAdminTokens = [...new Set(adminTokens)];
+
+  for (const doc of pendingResellers.docs) {
+    const reseller = doc.data();
+    if (reseller.slaNotified === true) continue;
+
+    // Notify Admin
+    if (uniqueAdminTokens.length > 0) {
+      try {
+        await admin.messaging().sendToDevice(uniqueAdminTokens, {
+          notification: { title: 'Registration Pending > 1h', body: `Registration pending for: ${reseller.shopName || 'Reseller'} (${reseller.resellerId})` }
+        });
+      } catch (e) { console.error(e); }
+    }
+
+    // Notify Reseller
+    if (Array.isArray(reseller.fcmTokens) && reseller.fcmTokens.length > 0) {
+      try {
+        await admin.messaging().sendToDevice(reseller.fcmTokens, {
+          notification: { title: 'Review in Progress', body: 'Your approval is taking a little longer than usual. We are reviewing it — thank you for your patience.' }
+        });
+      } catch (e) { console.error(e); }
+    }
+
+    batch.update(doc.ref, { slaNotified: true });
+  }
+
+  await batch.commit();
+  return null;
+});
