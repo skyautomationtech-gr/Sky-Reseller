@@ -5,28 +5,45 @@ export interface SendOtpResponse {
   success: boolean;
   message: string;
   email?: string;
+  emailSent?: boolean;
   expiresInSeconds?: number;
   cooldownSeconds?: number;
-  isMockFallback?: boolean;
 }
 
 export interface VerifyOtpResponse {
   success: boolean;
   verified: boolean;
   message: string;
-  isMockFallback?: boolean;
 }
 
 /**
- * Sends a 6-digit OTP code to the specified email address using Gmail SMTP
- * with Google App Password (skyautomationtech@gmail.com).
- * First attempts the Express proxy route (/api/send-email-otp),
- * falling back to the Firebase Cloud Function if needed.
+ * Sends a 6-digit OTP code to the specified email address.
+ * First calls the Cloud Function 'sendEmailOtp'.
+ * If the Cloud Function is not available (e.g. running in local preview),
+ * falls back to the server API route (/api/send-email-otp).
+ * Never exposes the code or uses client-side mock fallbacks.
  */
 export async function sendEmailOtpCall(email: string): Promise<SendOtpResponse> {
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Try Express Backend Route (Direct Gmail SMTP with Google App Password)
+  // 1. Try Firebase Callable Cloud Function first
+  try {
+    const sendFn = httpsCallable<{ email: string }, SendOtpResponse>(functions, 'sendEmailOtp');
+    const result = await sendFn({ email: cleanEmail });
+    if (result.data && result.data.success) {
+      return result.data;
+    }
+  } catch (fnErr: any) {
+    if (fnErr.code === 'resource-exhausted' || fnErr.message?.includes('wait')) {
+      throw new Error(fnErr.message || 'Please wait before requesting a new code.');
+    }
+    if (fnErr.code === 'already-exists') {
+      throw new Error('This email is already registered and approved. Please sign in.');
+    }
+    console.warn('[emailOtpService] Cloud Function sendEmailOtp failed or not deployed, trying server endpoint:', fnErr?.message || fnErr);
+  }
+
+  // 2. Try server Express API fallback (/api/send-email-otp)
   try {
     const res = await fetch('/api/send-email-otp', {
       method: 'POST',
@@ -36,48 +53,59 @@ export async function sendEmailOtpCall(email: string): Promise<SendOtpResponse> 
 
     const data = await res.json();
     if (res.ok && data.success) {
-      return data;
-    } else if (res.status === 429) {
-      throw new Error(data.error || 'Please wait before requesting a new code.');
-    }
-  } catch (apiErr: any) {
-    if (apiErr.message?.includes('wait')) {
-      throw apiErr;
-    }
-    console.warn('[emailOtpService] Local /api/send-email-otp failed, trying Firebase Cloud Function:', apiErr);
-  }
-
-  // 2. Fallback to Firebase Callable Function
-  try {
-    const sendFn = httpsCallable<{ email: string }, SendOtpResponse>(functions, 'sendEmailOtp');
-    const result = await sendFn({ email: cleanEmail });
-    return result.data;
-  } catch (err: any) {
-    console.warn('[emailOtpService] sendEmailOtp Cloud Function error:', err);
-
-    if (err.code === 'functions/not-found' || err.code === 'functions/unavailable' || err.message?.includes('not found')) {
       return {
         success: true,
-        message: 'A 6-digit code has been sent to your email (Dev Demo mode: use 123456).',
+        message: data.message || 'Verification code sent to your email.',
         email: cleanEmail,
-        expiresInSeconds: 600,
-        cooldownSeconds: 60,
-        isMockFallback: true,
+        emailSent: true,
+        expiresInSeconds: data.expiresInSeconds || 600,
+        cooldownSeconds: data.cooldownSeconds || 60,
       };
+    } else if (res.status === 429) {
+      throw new Error(data.error || 'Please wait before requesting a new code.');
+    } else if (data.error) {
+      throw new Error(data.error);
     }
-
-    throw new Error(err.message || 'Failed to send verification code. Please check your email.');
+  } catch (apiErr: any) {
+    if (apiErr.message?.includes('wait') || apiErr.message?.includes('registered')) {
+      throw apiErr;
+    }
+    console.warn('[emailOtpService] Local /api/send-email-otp failed:', apiErr);
   }
+
+  // 3. Strict failure: never generate mock codes or fall back to demo mode
+  throw new Error('Could not send the verification email. Please try again later.');
 }
 
 /**
- * Verifies the 6-digit code entered by the user.
+ * Verifies the 6-digit code against the server.
+ * First calls the Cloud Function 'verifyEmailOtp'.
+ * If the Cloud Function is unreachable, falls back to /api/verify-email-otp.
+ * Never performs verification on the client or accepts demo codes.
  */
 export async function verifyEmailOtpCall(email: string, code: string): Promise<VerifyOtpResponse> {
   const cleanEmail = email.trim().toLowerCase();
   const cleanCode = code.trim();
 
-  // 1. Try Express Backend Route
+  if (cleanCode.length !== 6) {
+    throw new Error('Please enter the full 6-digit code.');
+  }
+
+  // 1. Try Firebase Callable Cloud Function first
+  try {
+    const verifyFn = httpsCallable<{ email: string; code: string }, VerifyOtpResponse>(functions, 'verifyEmailOtp');
+    const result = await verifyFn({ email: cleanEmail, code: cleanCode });
+    if (result.data && result.data.verified) {
+      return result.data;
+    }
+  } catch (fnErr: any) {
+    if (fnErr.message && !fnErr.message.includes('not found') && fnErr.code !== 'functions/not-found' && fnErr.code !== 'functions/unavailable') {
+      throw new Error(fnErr.message || 'Verification failed. Please check the code.');
+    }
+    console.warn('[emailOtpService] Cloud Function verifyEmailOtp failed or not deployed, trying server endpoint:', fnErr);
+  }
+
+  // 2. Try server Express API fallback (/api/verify-email-otp)
   try {
     const res = await fetch('/api/verify-email-otp', {
       method: 'POST',
@@ -87,38 +115,14 @@ export async function verifyEmailOtpCall(email: string, code: string): Promise<V
 
     const data = await res.json();
     if (res.ok && data.verified) {
-      return data;
-    } else if (!res.ok) {
-      throw new Error(data.error || 'Verification failed. Please check the code.');
+      return {
+        success: true,
+        verified: true,
+        message: data.message || 'Email address verified successfully!',
+      };
     }
+    throw new Error(data.error || 'Verification failed. Please check the code.');
   } catch (apiErr: any) {
-    if (apiErr.message && !apiErr.message.includes('fetch')) {
-      throw apiErr;
-    }
-    console.warn('[emailOtpService] Local /api/verify-email-otp failed, trying Firebase Cloud Function:', apiErr);
-  }
-
-  // 2. Fallback to Firebase Callable Function
-  try {
-    const verifyFn = httpsCallable<{ email: string; code: string }, VerifyOtpResponse>(functions, 'verifyEmailOtp');
-    const result = await verifyFn({ email: cleanEmail, code: cleanCode });
-    return result.data;
-  } catch (err: any) {
-    console.warn('[emailOtpService] verifyEmailOtp Cloud Function error:', err);
-
-    if (err.code === 'functions/not-found' || err.code === 'functions/unavailable' || err.message?.includes('not found')) {
-      if (cleanCode === '123456' || cleanCode.length === 6) {
-        return {
-          success: true,
-          verified: true,
-          message: 'Email address verified successfully (Dev Demo mode).',
-          isMockFallback: true,
-        };
-      } else {
-        throw new Error('Invalid verification code. Please check and try again.');
-      }
-    }
-
-    throw new Error(err.message || 'Verification failed. Please check the code and try again.');
+    throw new Error(apiErr.message || 'Verification failed. Please check the code and try again.');
   }
 }

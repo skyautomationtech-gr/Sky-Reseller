@@ -65,16 +65,24 @@ export async function resolveLoginIdentifier(loginId: string): Promise<string> {
   throw new Error('Invalid ID or password');
 }
 
+import { normalizeShopName } from '../utils/shopName';
+
 /**
  * Finalizes the reseller registration and assigns a sequential Reseller ID (RSB-000001, etc.)
- * inside an atomic Firestore transaction on counters/resellerId.
+ * inside an atomic Firestore transaction on counters/resellerId and shopNames/{shopNameKey}.
  * First tries the Cloud Function 'finalizeRegistration'. If Cloud Functions are unreachable,
- * performs the atomic Firestore transaction directly.
+ * falls back to the server API '/api/finalize-registration'.
  */
 export async function finalizeResellerRegistration(
   input: FinalizeRegistrationInput
 ): Promise<FinalizeRegistrationResult> {
   const { uid, email, formData, termsVersion = '1.0' } = input;
+  const rawShopName = (formData?.shopName || '').trim();
+  const shopNameKey = normalizeShopName(rawShopName);
+
+  if (!shopNameKey || shopNameKey.length < 2) {
+    throw new Error('Shop name must be at least 2 characters long.');
+  }
 
   // 1. Attempt Cloud Function execution
   try {
@@ -82,15 +90,62 @@ export async function finalizeResellerRegistration(
       functions,
       'finalizeRegistration'
     );
-    const res = await finalizeCallable(input);
+    const res = await finalizeCallable({
+      ...input,
+      formData: {
+        ...formData,
+        shopName: rawShopName,
+        shopNameKey,
+      },
+    });
     if (res.data && res.data.resellerId) {
       return res.data;
     }
   } catch (fnErr: any) {
-    console.warn('Cloud Function finalizeRegistration not available, executing atomic Firestore transaction directly:', fnErr);
+    if (fnErr.message?.includes('already taken') || fnErr.code === 'already-exists') {
+      throw new Error('This shop name is already taken. Please choose a different name.');
+    }
+    if (fnErr.code === 'failed-precondition' || fnErr.message?.includes('verification is required')) {
+      throw new Error(fnErr.message || 'Email verification is required before finalizing registration.');
+    }
+    console.warn('Cloud Function finalizeRegistration not available, trying server API fallback:', fnErr);
   }
 
-  // 2. Direct Firestore atomic transaction on counters/resellerId
+  // 2. Attempt Express Server API fallback
+  try {
+    const response = await fetch('/api/finalize-registration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid,
+        email,
+        formData: {
+          ...formData,
+          shopName: rawShopName,
+          shopNameKey,
+        },
+        termsVersion,
+      }),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data;
+    }
+    if (response.status === 409 || data.error?.includes('already taken')) {
+      throw new Error('This shop name is already taken. Please choose a different name.');
+    }
+    if (response.status === 403 || data.error?.includes('verification is required')) {
+      throw new Error(data.error || 'Email verification is required before finalizing registration.');
+    }
+  } catch (apiErr: any) {
+    if (apiErr.message?.includes('already taken') || apiErr.message?.includes('verification is required')) {
+      throw apiErr;
+    }
+    console.warn('Server API fallback failed, attempting local client transaction:', apiErr);
+  }
+
+  // 3. Direct Firestore transaction fallback
   const counterRef = doc(db, 'counters', 'resellerId');
   const userRef = doc(db, 'users', uid);
 
@@ -127,7 +182,8 @@ export async function finalizeResellerRegistration(
 
       // Form Fields
       fullName: (formData.fullName || '').trim(),
-      shopName: (formData.shopName || '').trim(),
+      shopName: rawShopName,
+      shopNameKey,
       mobile: (formData.mobile || '').trim(),
       whatsappNumber: (formData.whatsappNumber || formData.mobile || '').trim(),
       whatsapp: (formData.whatsappNumber || formData.mobile || '').trim(),

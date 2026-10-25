@@ -234,8 +234,9 @@ export const OrderCustomizationForm: React.FC<OrderCustomizationFormProps> = ({
       const randNum = Math.floor(100000 + Math.random() * 900000);
       const generatedOrderNumber = `ORD-${randNum}`;
 
-      const orderData: Omit<Order, 'id'> = {
+      const orderData: any = {
         orderNumber: generatedOrderNumber,
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: user.fullName || user.email || 'Reseller',
         resellerShopName: user.shopName || user.fullName || 'Reseller Shop',

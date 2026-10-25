@@ -71,7 +71,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 rounded-2xl p-5 text-center backdrop-blur-md">
             <CheckCircle2 className="w-9 h-9 text-emerald-400 mx-auto mb-2.5" />
             <p className="font-semibold text-white">Reset Link Sent!</p>
-            <p className="text-xs mt-1 text-slate-300">Check your inbox for instructions to reset your password.</p>
+            <p className="text-xs mt-1 text-slate-300">Check your inbox or Spam/Junk folder for password reset instructions.</p>
             <button
               onClick={onClose}
               className="mt-5 w-full h-[46px] bg-emerald-600 hover:bg-emerald-500 text-white rounded-full font-medium transition-colors text-sm shadow-lg shadow-emerald-900/30"

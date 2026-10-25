@@ -62,6 +62,9 @@ export const AdminFeedbackList: React.FC<AdminFeedbackListProps> = ({ user }) =>
         const updated = list.find((f) => f.id === selectedItem.id);
         if (updated) setSelectedItem(updated);
       }
+    }, (err) => {
+      console.warn('Feedback listener error:', err);
+      setLoading(false);
     });
 
     return () => unsubscribe();

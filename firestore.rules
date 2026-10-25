@@ -11,25 +11,66 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSuperAdminEmail() {
+      return isSignedIn() &&
+        request.auth.token.email != null &&
+        request.auth.token.email.lower() == 'skyautomationtech@gmail.com';
+    }
+
     function isAdmin() {
       return isSignedIn() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+        isSuperAdminEmail() ||
+        (request.auth.token.role in ['admin', 'super_admin']) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin'])
       );
     }
 
     function isApproved() {
       return isSignedIn() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved'
+        isSuperAdminEmail() ||
+        (request.auth.token.role in ['admin', 'super_admin']) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved')
       );
+    }
+
+    // Two-step OTP verified session check:
+    // 1. Checks Firebase Auth Custom Claims (Production Cloud Function claims: otpSession & otpExpiresAt)
+    // 2. OR checks verified adminSessions document (active 12-hour session)
+    function isOtpVerified() {
+      return isSignedIn() && (
+        (request.auth.token.otpSession != null &&
+         request.auth.token.otpExpiresAt != null &&
+         request.time.toMillis() < request.auth.token.otpExpiresAt) ||
+        (exists(/databases/$(database)/documents/adminSessions/$(request.auth.uid)) &&
+         request.time.toMillis() < get(/databases/$(database)/documents/adminSessions/$(request.auth.uid)).data.expiresAt)
+      );
+    }
+
+    // Super Admin requires BOTH the Super Admin identity AND an active OTP-verified session
+    // (A Super Admin who signed in with password only has NO Super Admin powers until OTP is verified)
+    function isSuperAdmin() {
+      return isSignedIn() &&
+        (
+          isSuperAdminEmail() ||
+          request.auth.token.role == 'super_admin' ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
+        ) &&
+        isOtpVerified();
     }
 
     // Users collection rules
     match /users/{userId} {
       allow read, list: if isSignedIn();
 
-      // Resellers can create their own document if role is reseller and status is pending
+      // Creating users: Resellers can self-register as pending; Admins can create resellers; Super Admin manages admins
       allow create: if isSignedIn() && (
-        isAdmin() ||
+        isSuperAdminEmail() ||
+        (
+          request.resource.data.role in ['admin', 'super_admin'] ? isSuperAdmin() : isAdmin()
+        ) ||
         (
           request.auth.uid == userId &&
           request.resource.data.role in ['reseller', 'customer'] &&
@@ -40,9 +81,17 @@ service cloud.firestore {
         )
       );
 
-      // Resellers can only update their own document without altering restricted fields
+      // Updating users: Super Admin can update all; Admins can update resellers; Resellers can update basic profile
       allow update: if isSignedIn() && (
-        isAdmin() ||
+        isSuperAdmin() ||
+        (request.auth.uid == userId && isSuperAdminEmail()) ||
+        (
+          isAdmin() &&
+          resource.data.role != 'admin' &&
+          resource.data.role != 'super_admin' &&
+          request.resource.data.role != 'admin' &&
+          request.resource.data.role != 'super_admin'
+        ) ||
         (
           request.auth.uid == userId &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
@@ -51,7 +100,8 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isSignedIn() && isAdmin();
+      // Deleting users is strictly restricted to verified Super Admin
+      allow delete: if isSignedIn() && isSuperAdmin();
 
       // Login History subcollection
       match /loginHistory/{historyId} {
@@ -75,35 +125,58 @@ service cloud.firestore {
 
     // Orders collection rules (Only approved users can create)
     match /orders/{orderId} {
-      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
       allow create: if isApproved();
       allow update: if isAdmin();
-      allow delete: if isAdmin();
+      // Deleting orders is strictly restricted to verified Super Admin
+      allow delete: if isSuperAdmin();
     }
 
-    // Wallets, Transactions, WithdrawalRequests (Only approved)
+    // Wallets & Transactions
     match /wallets/{walletId} {
-      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || request.auth.uid == walletId || isAdmin());
       allow write: if isApproved() || isAdmin();
     }
 
     match /transactions/{transactionId} {
-      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
       allow create: if isApproved() || isAdmin();
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      // Deleting transactions is strictly restricted to verified Super Admin
+      allow delete: if isSuperAdmin();
     }
 
+    // Withdrawal Requests: Approvals require Admin/SuperAdmin; Deleting requires Super Admin
     match /withdrawalRequests/{requestId} {
-      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
       allow create: if isApproved();
-      allow update, delete: if isAdmin();
+      allow update: if isSuperAdmin() || isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // Commission Settings: Strictly Super Admin only
+    match /commissionSettings/{settingId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // Company & System Settings: Strictly Super Admin only
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /systemSettings/{settingId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
     }
 
     // Support Tickets (Only approved)
     match /supportTickets/{ticketId} {
-      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
       allow create: if isApproved();
-      allow update, delete: if isAdmin();
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
+      allow delete: if isAdmin();
     }
 
     // Product Reviews (Only approved)
@@ -113,37 +186,48 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Other collections (Admin only writes)
+    // Other collections (Admin writes)
     match /categories/{categoryId} { allow read: if true; allow write: if isAdmin(); }
     match /brands/{brandId} { allow read: if true; allow write: if isAdmin(); }
-    match /commissionSettings/{settingId} { allow read: if true; allow write: if isAdmin(); }
     match /counters/{counterId} { allow read: if true; allow write: if isAdmin(); }
     match /notices/{noticeId} { allow read: if true; allow write: if isAdmin(); }
     match /noticeReads/{readId} { allow read: if true; allow write: if isSignedIn(); }
-    match /auditLogs/{logId} { allow read: if isAdmin(); allow write: if isAdmin(); }
+    match /auditLogs/{logId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
     match /userSessions/{sessionId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
-    match /settings/{settingId} { allow read: if true; allow write: if isAdmin(); }
-    match /systemSettings/{settingId} { allow read: if true; allow write: if isAdmin(); }
     match /appVersion/{versionId} { allow read: if true; allow write: if isAdmin(); }
-    match /payoutChangeRequests/{requestId} { allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin()); allow write: if isApproved() || isAdmin(); }
+    match /payoutChangeRequests/{requestId} { allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin()); allow write: if isApproved() || isAdmin(); }
     match /feedback/{feedbackId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
     match /changelogs/{changelogId} { allow read: if true; allow write: if isAdmin(); }
 
     match /liveChats/{chatId} {
-      allow read, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read, list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.resellerId == request.auth.uid || isAdmin());
       allow write: if isApproved() || isAdmin();
 
       match /messages/{messageId} {
-        allow read, list: if isSignedIn() && (get(/databases/$(database)/documents/liveChats/$(chatId)).data.userId == request.auth.uid || isAdmin());
+        allow read, list: if isSignedIn() && (get(/databases/$(database)/documents/liveChats/$(chatId)).data.userId == request.auth.uid || get(/databases/$(database)/documents/liveChats/$(chatId)).data.resellerId == request.auth.uid || isAdmin());
         allow write: if isApproved() || isAdmin();
       }
+    }
+
+    // Super Admin Active Verified Sessions (12-hour session tracking)
+    match /adminSessions/{userId} {
+      allow read, list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Super Admin Login OTPs - strictly server-side / Cloud Functions only
+    match /adminLoginOtps/{docId} {
+      allow read, write: if false;
     }
 
     // Email OTPs collection - strictly server-side / Cloud Functions only
     match /emailOtps/{docId} {
       allow read, write: if false;
     }
+
+    // Unique Shop Name Reservations - strictly server-side / Cloud Functions only
+    match /shopNames/{shopNameKey} {
+      allow read, write: if false;
+    }
   }
 }
-
-

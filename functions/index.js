@@ -358,6 +358,10 @@ exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
     console.log(`[ReSellBD OTP Engine] Successfully dispatched email via Gmail SMTP to: ${email}`);
   } catch (emailErr) {
     console.error(`[ReSellBD OTP Engine] Error sending email via Gmail SMTP:`, emailErr);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Could not send the verification email. Please try again later.'
+    );
   }
 
   return {
@@ -538,11 +542,97 @@ exports.resolveLoginId = functions.https.onCall(async (data, context) => {
 });
 
 /**
+ * Normalizes a shop name for strict uniqueness checking across all resellers:
+ * - trim leading and trailing spaces
+ * - collapse multiple spaces into one
+ * - lowercase
+ * - ignore punctuation and symbols (so "Sky  Gadget!", "sky gadget" and "SKY-GADGET" count as the SAME name)
+ * - Supports both English and Bengali (\p{L}\p{M}\p{N})
+ */
+function normalizeShopName(name) {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+// In-memory rate limiting map for live shop name checks (per IP)
+const checkShopNameRateLimits = new Map();
+function isRateLimited(key, limit = 60, windowMs = 60000) {
+  const now = Date.now();
+  const record = checkShopNameRateLimits.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > record.resetAt) {
+    record.count = 1;
+    record.resetAt = now + windowMs;
+    checkShopNameRateLimits.set(key, record);
+    return false;
+  }
+  record.count += 1;
+  checkShopNameRateLimits.set(key, record);
+  return record.count > limit;
+}
+
+/**
+ * 8b. Live Shop Name Availability Check (Pre-Auth Callable)
+ * Returns { available: boolean, shopNameKey: string, message?: string }
+ * Keeps the 'users' and 'shopNames' collections private and enforces simple rate limiting.
+ */
+exports.checkShopName = functions.https.onCall(async (data, context) => {
+  const ip = context.rawRequest?.headers['x-forwarded-for'] ||
+    context.rawRequest?.connection?.remoteAddress ||
+    'unknown_ip';
+
+  if (isRateLimited(ip, 60, 60000)) {
+    throw new functions.https.HttpsError('resource-exhausted', 'Too many requests. Please wait a moment before trying again.');
+  }
+
+  const rawName = (data?.name || data?.shopName || '').trim();
+  const shopNameKey = normalizeShopName(rawName);
+
+  if (!shopNameKey || shopNameKey.length < 2) {
+    return {
+      available: false,
+      shopNameKey,
+      message: 'Shop name must be at least 2 characters long.',
+    };
+  }
+
+  const excludeUid = data?.excludeUid || context.auth?.uid;
+  const firestore = admin.firestore();
+  const snap = await firestore.collection('shopNames').doc(shopNameKey).get();
+
+  if (!snap.exists) {
+    return {
+      available: true,
+      shopNameKey,
+      message: 'Shop name is available',
+    };
+  }
+
+  const docData = snap.data();
+  if (excludeUid && docData?.uid === excludeUid) {
+    return {
+      available: true,
+      shopNameKey,
+      isOwn: true,
+      message: 'Shop name is available',
+    };
+  }
+
+  return {
+    available: false,
+    shopNameKey,
+    message: 'This shop name is already taken. Please choose a different name.',
+  };
+});
+
+/**
  * 9. Reseller Registration - Finalize Registration & Assign Reseller ID
- * Performs atomic Firestore transaction on counters/resellerId to assign
- * sequential RSB-000001, RSB-000002...
- * Writes trusted fields (role, status: 'pending', resellerId, emailVerified, termsAcceptedAt)
- * that client security rules block from direct client modification.
+ * Performs atomic Firestore transaction on counters/resellerId and shopNames/{shopNameKey}
+ * to strictly guarantee shop name uniqueness across all resellers.
+ * Writes trusted fields (role, status: 'pending', resellerId, shopNameKey, emailVerified, termsAcceptedAt).
  * Dispatches push notification to Admins.
  */
 exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
@@ -553,16 +643,60 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
 
   const formData = data?.formData || {};
   const email = (data?.email || formData.email || '').trim().toLowerCase();
+  const rawShopName = (formData.shopName || '').trim();
+  const shopNameKey = normalizeShopName(rawShopName);
+
+  if (!shopNameKey || shopNameKey.length < 2) {
+    throw new functions.https.HttpsError('invalid-argument', 'Shop name must be at least 2 characters long.');
+  }
 
   const firestore = admin.firestore();
   const counterRef = firestore.collection('counters').doc('resellerId');
   const userRef = firestore.collection('users').doc(uid);
+  const shopNameReservationRef = firestore.collection('shopNames').doc(shopNameKey);
+  const emailOtpRef = firestore.collection('emailOtps').doc(email);
 
   let assignedResellerId = '';
 
   try {
-    // Transaction to safely increment sequential resellerId
+    // Atomic transaction to safely verify & reserve unique shop name and assign sequential reseller ID
     await firestore.runTransaction(async (t) => {
+      // 0. Enforce server-side email OTP verification
+      const emailOtpSnap = await t.get(emailOtpRef);
+      if (!emailOtpSnap.exists) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Email verification is required before finalizing registration.'
+        );
+      }
+      const otpData = emailOtpSnap.data();
+      const verifiedUntil = otpData?.verifiedUntil?.toDate
+        ? otpData.verifiedUntil.toDate().getTime()
+        : (otpData?.verifiedUntil || 0);
+
+      if (!otpData?.verified || (verifiedUntil && Date.now() > verifiedUntil)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Email verification has expired or has not been completed. Please verify your email.'
+        );
+      }
+
+      // 1. Enforce shop name uniqueness
+      const shopNameSnap = await t.get(shopNameReservationRef);
+      if (shopNameSnap.exists) {
+        const existingReservation = shopNameSnap.data();
+        if (existingReservation && existingReservation.uid !== uid) {
+          throw new functions.https.HttpsError(
+            'already-exists',
+            'This shop name is already taken. Please choose a different name.'
+          );
+        }
+      }
+
+      // Consume OTP record so it cannot be re-used
+      t.delete(emailOtpRef);
+
+      // 2. Increment sequential resellerId
       const counterDoc = await t.get(counterRef);
       let currentCount = 0;
       if (counterDoc.exists) {
@@ -576,6 +710,14 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
         lastCount: nextCount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
+
+      // Reserve shop name atomically
+      t.set(shopNameReservationRef, {
+        uid,
+        shopName: rawShopName,
+        shopNameKey,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
       // Build trusted profile payload
       const userPayload = {
@@ -593,7 +735,8 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
 
         // Form Fields
         fullName: (formData.fullName || '').trim(),
-        shopName: (formData.shopName || '').trim(),
+        shopName: rawShopName,
+        shopNameKey,
         mobile: (formData.mobile || '').trim(),
         whatsappNumber: (formData.whatsappNumber || formData.mobile || '').trim(),
         whatsapp: (formData.whatsappNumber || formData.mobile || '').trim(),
@@ -650,7 +793,7 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
       t.set(userRef, userPayload, { merge: true });
     });
 
-    console.log(`[ReSellBD Registration] Successfully assigned ${assignedResellerId} to user ${uid}`);
+    console.log(`[ReSellBD Registration] Successfully assigned ${assignedResellerId} with shopNameKey "${shopNameKey}" to user ${uid}`);
 
     // Send push notification to all Admins & Super Admins
     try {
@@ -672,13 +815,13 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
         const payload = {
           notification: {
             title: 'New Reseller Pending Approval',
-            body: `${formData.shopName || 'New Reseller'} (${assignedResellerId}) has applied and is waiting for review.`,
+            body: `${rawShopName || 'New Reseller'} (${assignedResellerId}) has applied and is waiting for review.`,
           },
           data: {
             type: 'reseller_approval',
             uid,
             resellerId: assignedResellerId,
-            shopName: formData.shopName || '',
+            shopName: rawShopName,
           },
         };
         await admin.messaging().sendToDevice(uniqueTokens, payload);
@@ -691,12 +834,218 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
     return {
       success: true,
       resellerId: assignedResellerId,
+      shopNameKey,
       message: 'Registration finalized successfully! Your account is pending admin approval.',
     };
   } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      throw err;
+    }
     console.error('Error finalizing registration:', err);
     throw new functions.https.HttpsError('internal', err.message || 'Failed to finalize registration.');
   }
+});
+
+/**
+ * 9b. Atomic Shop Name Update
+ * Updates shop name in Reseller Settings, Edit & Resubmit, or Admin User Edit.
+ * Releases old reservation and creates new reservation in a single Firestore transaction.
+ */
+exports.updateShopName = functions.https.onCall(async (data, context) => {
+  const callerUid = context.auth?.uid;
+  if (!callerUid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  const rawShopName = (data?.shopName || data?.newShopName || '').trim();
+  const newKey = normalizeShopName(rawShopName);
+
+  if (!newKey || newKey.length < 2) {
+    throw new functions.https.HttpsError('invalid-argument', 'Shop name must be at least 2 characters long.');
+  }
+
+  const firestore = admin.firestore();
+  const callerDoc = await firestore.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'Caller user record not found.');
+  }
+  const callerData = callerDoc.data();
+  const isCallerAdmin = callerData.role === 'admin' || callerData.role === 'super_admin';
+
+  const targetUid = (isCallerAdmin && data?.targetUid) ? data.targetUid : callerUid;
+  const targetUserRef = firestore.collection('users').doc(targetUid);
+
+  try {
+    await firestore.runTransaction(async (t) => {
+      const targetUserSnap = await t.get(targetUserRef);
+      if (!targetUserSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Target user does not exist.');
+      }
+      const targetUserData = targetUserSnap.data();
+      const oldKey = targetUserData.shopNameKey || normalizeShopName(targetUserData.shopName || '');
+
+      const newReservationRef = firestore.collection('shopNames').doc(newKey);
+      const newReservationSnap = await t.get(newReservationRef);
+
+      if (newReservationSnap.exists) {
+        const reservationData = newReservationSnap.data();
+        if (reservationData?.uid !== targetUid) {
+          throw new functions.https.HttpsError(
+            'already-exists',
+            'This shop name is already taken. Please choose a different name.'
+          );
+        }
+      }
+
+      // If the normalized key changed, release the old reservation
+      if (oldKey && oldKey !== newKey) {
+        const oldReservationRef = firestore.collection('shopNames').doc(oldKey);
+        t.delete(oldReservationRef);
+      }
+
+      // Set new reservation
+      t.set(newReservationRef, {
+        uid: targetUid,
+        shopName: rawShopName,
+        shopNameKey: newKey,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      // Update user document
+      t.update(targetUserRef, {
+        shopName: rawShopName,
+        shopNameKey: newKey,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return {
+      success: true,
+      shopName: rawShopName,
+      shopNameKey: newKey,
+      message: 'Shop name updated successfully!',
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      throw err;
+    }
+    console.error('Error updating shop name:', err);
+    throw new functions.https.HttpsError('internal', err.message || 'Failed to update shop name.');
+  }
+});
+
+/**
+ * 9c. Existing Resellers Migration (Admin Only)
+ * Backfills shopNameKey on user docs and creates reservations in shopNames/{shopNameKey}.
+ * If duplicate shop names are found:
+ * DO NOT delete or rename anything.
+ * Lists all duplicates (shop name + reseller IDs + emails) so Admin can fix manually.
+ */
+exports.migrateShopNames = functions.https.onCall(async (data, context) => {
+  const callerUid = context.auth?.uid;
+  if (!callerUid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  const firestore = admin.firestore();
+  const callerDoc = await firestore.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'User record not found.');
+  }
+  const callerData = callerDoc.data();
+  if (callerData.role !== 'admin' && callerData.role !== 'super_admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Only Admins can run the shop name migration.');
+  }
+
+  const usersSnap = await firestore.collection('users').get();
+  const resellers = [];
+
+  usersSnap.forEach((docSnap) => {
+    const u = docSnap.data();
+    if (u.role === 'reseller' || u.shopName) {
+      resellers.push({
+        uid: docSnap.id,
+        shopName: (u.shopName || '').trim(),
+        resellerId: u.resellerId || u.resellerCode || docSnap.id,
+        email: u.email || '',
+        shopNameKey: u.shopNameKey || '',
+      });
+    }
+  });
+
+  // Group by normalized key
+  const groups = new Map();
+  for (const r of resellers) {
+    if (!r.shopName) continue;
+    const key = normalizeShopName(r.shopName);
+    if (!key) continue;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(r);
+  }
+
+  const duplicates = [];
+  let migratedCount = 0;
+  const batch = firestore.batch();
+  let opsCount = 0;
+  const batches = [batch];
+
+  for (const [key, list] of groups.entries()) {
+    if (list.length > 1) {
+      // DUPLICATE FOUND!
+      // Requirement: DO NOT delete or rename anything. List for manual admin resolution.
+      duplicates.push({
+        shopNameKey: key,
+        shopName: list[0].shopName,
+        resellers: list.map((item) => ({
+          uid: item.uid,
+          resellerId: item.resellerId,
+          email: item.email,
+          shopName: item.shopName,
+        })),
+      });
+      continue;
+    }
+
+    // Unique reseller: Reserve shopName and update user document
+    const single = list[0];
+    const currentBatch = batches[batches.length - 1];
+
+    const reservationRef = firestore.collection('shopNames').doc(key);
+    currentBatch.set(reservationRef, {
+      uid: single.uid,
+      shopName: single.shopName,
+      shopNameKey: key,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    const userRef = firestore.collection('users').doc(single.uid);
+    currentBatch.update(userRef, {
+      shopNameKey: key,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    migratedCount++;
+    opsCount += 2;
+    if (opsCount >= 400) {
+      batches.push(firestore.batch());
+      opsCount = 0;
+    }
+  }
+
+  for (const b of batches) {
+    await b.commit();
+  }
+
+  return {
+    success: true,
+    totalResellers: resellers.length,
+    migratedCount,
+    duplicateCount: duplicates.length,
+    duplicates,
+  };
 });
 
 
@@ -749,4 +1098,361 @@ exports.checkPendingApprovals = functions.pubsub.schedule('every 10 minutes').on
 
   await batch.commit();
   return null;
+});
+
+/**
+ * ========================================================
+ * 11. SUPER ADMIN TWO-STEP VERIFICATION (MANDATORY OTP LOGIN)
+ * ========================================================
+ */
+
+// Easy-to-edit duration constant: session validity in hours (12 hours)
+const SUPER_ADMIN_OTP_SESSION_HOURS = 12;
+
+// Easy-to-edit role constant: roles that require mandatory 2-step OTP
+const OTP_ENFORCED_ROLES = ['super_admin'];
+
+/**
+ * 11a. Start Super Admin Login (Callable)
+ * - Requires caller to be signed in with a role in OTP_ENFORCED_ROLES (super_admin).
+ * - CLEARS any previous OTP-verified session custom claims.
+ * - Enforces 15-minute lock if 5 attempts were previously exceeded.
+ * - Enforces 60-second rate-limiting cooldown.
+ * - Generates cryptographically secure 6-digit OTP, stores hashed code in adminLoginOtps/{uid}.
+ * - Sends transactional email via Gmail SMTP (skyautomationtech@gmail.com).
+ * - Logs security entry in auditLogs.
+ * - NEVER leaks or returns code to client.
+ */
+exports.startSuperAdminLogin = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  const firestore = admin.firestore();
+  const userDoc = await firestore.collection('users').doc(uid).get();
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'User record not found.');
+  }
+
+  const userData = userDoc.data();
+  const userRole = userData.role;
+  const email = (userData.email || context.auth.token?.email || data?.email || '').trim().toLowerCase();
+
+  // Validate that user role requires OTP
+  if (!OTP_ENFORCED_ROLES.includes(userRole)) {
+    throw new functions.https.HttpsError('failed-precondition', 'Two-step verification is not required for this role.');
+  }
+
+  // 1. Immediately CLEAR any previous OTP-verified session custom claims
+  await admin.auth().setCustomUserClaims(uid, {
+    role: userRole,
+    otpSession: null,
+    otpExpiresAt: null,
+  });
+
+  const otpDocRef = firestore.collection('adminLoginOtps').doc(uid);
+  const otpDocSnap = await otpDocRef.get();
+  const now = Date.now();
+
+  // 2. Enforce 15-minute lockout if previously triggered
+  if (otpDocSnap.exists) {
+    const existing = otpDocSnap.data();
+    const lockedUntil = existing?.lockedUntil?.toDate ? existing.lockedUntil.toDate().getTime() : (existing?.lockedUntil || 0);
+    if (lockedUntil && now < lockedUntil) {
+      const waitMinutes = Math.ceil((lockedUntil - now) / 60000);
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        `Account is temporarily locked for ${waitMinutes} minute(s) due to too many failed attempts.`
+      );
+    }
+
+    // 3. Rate limiting: enforce 60-second resend cooldown
+    const lastSentAt = existing?.lastSentAt?.toDate ? existing.lastSentAt.toDate().getTime() : (existing?.lastSentAt || 0);
+    const elapsedSeconds = Math.floor((now - lastSentAt) / 1000);
+    if (elapsedSeconds < 60) {
+      const remainingSeconds = 60 - elapsedSeconds;
+      throw new functions.https.HttpsError(
+        'resource-exhausted',
+        `Please wait ${remainingSeconds} seconds before requesting a new verification code.`
+      );
+    }
+  }
+
+  // 4. Generate 6-digit random code & hash it
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashedCode = hashOtp(code);
+  const expiresInSeconds = 300; // 5 minutes
+  const expiresAt = admin.firestore.Timestamp.fromDate(new Date(now + expiresInSeconds * 1000));
+
+  // 5. Send Email via Gmail SMTP
+  const nodemailer = require('nodemailer');
+  const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
+
+  const gmailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: gmailUser,
+      pass: gmailPass,
+    },
+  });
+
+  try {
+    await gmailTransporter.sendMail({
+      from: `"ReSellBD Security" <${gmailUser}>`,
+      to: email,
+      subject: `${code} is your Super Admin Two-Step Verification Code`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; background: #050B1A; color: #ffffff; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #3DD055; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">ReSellBD Security</h1>
+            <p style="color: #0E9AA7; font-size: 13px; margin: 6px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Super Admin Two-Step Verification (দ্বি-স্তরীয় নিরাপত্তা)</p>
+          </div>
+          <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 20px;">
+            <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit Super Admin verification code is:</p>
+            <div style="font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #3DD055; padding: 14px 20px; background: rgba(0,0,0,0.4); border-radius: 12px; display: inline-block; font-family: monospace;">
+              ${code}
+            </div>
+            <p style="margin: 16px 0 0 0; color: #cbd5e1; font-size: 13px;">This code will expire in <strong>5 minutes</strong>. Maximum 5 verification attempts are allowed before a 15-minute security lock.</p>
+          </div>
+          <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 12px; color: #fde68a;">
+            ⚠️ <strong>Security Notice:</strong> If you did not initiate this login attempt, someone entered your password. Please change your password immediately.
+          </div>
+          <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
+            Sent automatically by ReSellBD via Sky Automation Tech.
+          </p>
+        </div>
+      `,
+    });
+    console.log(`[SuperAdmin 2-Step OTP] Dispatched verification email to: ${email}`);
+  } catch (err) {
+    console.error('[SuperAdmin 2-Step OTP] Error sending email:', err);
+    throw new functions.https.HttpsError('internal', 'Could not send the verification email. Please try again later.');
+  }
+
+  // 6. Save hashed record to private Firestore collection
+  await otpDocRef.set({
+    uid,
+    email,
+    hashedCode,
+    expiresAt,
+    attemptsLeft: 5,
+    lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+    lockedUntil: null,
+  });
+
+  // 7. Security audit log entry
+  try {
+    await firestore.collection('auditLogs').add({
+      action: 'super_admin_otp_requested',
+      userId: uid,
+      userEmail: email,
+      role: userRole,
+      ip: context.rawRequest?.headers['x-forwarded-for'] || context.rawRequest?.connection?.remoteAddress || 'unknown',
+      userAgent: context.rawRequest?.headers['user-agent'] || 'unknown',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (logErr) {
+    console.warn('Could not record audit log:', logErr);
+  }
+
+  return {
+    success: true,
+    message: 'Verification code sent to your registered Super Admin email.',
+    email,
+    expiresInSeconds,
+    cooldownSeconds: 60,
+  };
+});
+
+/**
+ * 11b. Verify Super Admin OTP (Callable)
+ * - Checks hashed code, 5-minute expiry, and max 5 attempts.
+ * - On 5 wrong attempts, locks account for 15 minutes.
+ * - On success: sets custom claim (otpSession: <uuid>, otpExpiresAt: now + 12h),
+ *   clears OTP record, writes login audit log, and notifies Super Admin by push notification.
+ */
+exports.verifySuperAdminOtp = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  const code = (data?.code || '').trim();
+  if (!code || code.length !== 6) {
+    throw new functions.https.HttpsError('invalid-argument', 'Please enter the full 6-digit code.');
+  }
+
+  const firestore = admin.firestore();
+  const otpDocRef = firestore.collection('adminLoginOtps').doc(uid);
+  const otpDocSnap = await otpDocRef.get();
+
+  if (!otpDocSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'No active verification code found. Please request a new code.');
+  }
+
+  const otpData = otpDocSnap.data();
+  const now = Date.now();
+
+  // 1. Check 15-minute lock
+  const lockedUntil = otpData?.lockedUntil?.toDate ? otpData.lockedUntil.toDate().getTime() : (otpData?.lockedUntil || 0);
+  if (lockedUntil && now < lockedUntil) {
+    const waitMinutes = Math.ceil((lockedUntil - now) / 60000);
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      `Account is temporarily locked for ${waitMinutes} minute(s) due to too many failed attempts.`
+    );
+  }
+
+  // 2. Check 5-minute expiration
+  const expiresAt = otpData?.expiresAt?.toDate ? otpData.expiresAt.toDate().getTime() : (otpData?.expiresAt || 0);
+  if (now > expiresAt) {
+    await otpDocRef.delete();
+    throw new functions.https.HttpsError(
+      'deadline-exceeded',
+      'Verification code has expired. Please request a new code.'
+    );
+  }
+
+  // 3. Verify Hash
+  const inputHash = hashOtp(code);
+  if (inputHash !== otpData.hashedCode) {
+    const attemptsLeft = (otpData.attemptsLeft !== undefined ? otpData.attemptsLeft : 5) - 1;
+
+    // Log failure in auditLogs
+    try {
+      await firestore.collection('auditLogs').add({
+        action: 'super_admin_otp_failed_attempt',
+        userId: uid,
+        userEmail: otpData.email || '',
+        attemptsRemaining: attemptsLeft,
+        ip: context.rawRequest?.headers['x-forwarded-for'] || context.rawRequest?.connection?.remoteAddress || 'unknown',
+        userAgent: context.rawRequest?.headers['user-agent'] || 'unknown',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+
+    if (attemptsLeft <= 0) {
+      const lockDuration = 15 * 60 * 1000; // 15 minutes
+      const lockUntilDate = new Date(now + lockDuration);
+      await otpDocRef.update({
+        attemptsLeft: 0,
+        lockedUntil: admin.firestore.Timestamp.fromDate(lockUntilDate),
+      });
+
+      // Clear any custom claims to ensure lock
+      await admin.auth().setCustomUserClaims(uid, {
+        role: 'super_admin',
+        otpSession: null,
+        otpExpiresAt: null,
+      });
+
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Account is temporarily locked for 15 minutes due to too many failed attempts.'
+      );
+    }
+
+    await otpDocRef.update({ attemptsLeft });
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      `Incorrect code. You have ${attemptsLeft} attempt(s) remaining.`
+    );
+  }
+
+  // 4. Verification Successful!
+  // Generate random session ID & 12-hour expiration
+  const cryptoModule = require('crypto');
+  const sessionId = cryptoModule.randomUUID ? cryptoModule.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
+  const sessionDurationMs = SUPER_ADMIN_OTP_SESSION_HOURS * 60 * 60 * 1000; // 12 hours
+  const sessionExpiresAt = now + sessionDurationMs;
+
+  // Set trusted Custom User Claims in Firebase Auth
+  await admin.auth().setCustomUserClaims(uid, {
+    role: 'super_admin',
+    otpSession: sessionId,
+    otpExpiresAt: sessionExpiresAt,
+  });
+
+  // Delete the OTP document so it cannot be reused
+  await otpDocRef.delete();
+
+  // Write success security audit log
+  const clientIp = context.rawRequest?.headers['x-forwarded-for'] || context.rawRequest?.connection?.remoteAddress || 'unknown';
+  const clientUserAgent = context.rawRequest?.headers['user-agent'] || 'unknown';
+
+  try {
+    await firestore.collection('auditLogs').add({
+      action: 'super_admin_otp_login_success',
+      userId: uid,
+      userEmail: otpData.email || '',
+      role: 'super_admin',
+      sessionId,
+      sessionExpiresAt,
+      ip: clientIp,
+      userAgent: clientUserAgent,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (logErr) {
+    console.warn('Could not record login success audit log:', logErr);
+  }
+
+  // Notify Super Admin by push notification that a new session was authenticated
+  try {
+    const userDoc = await firestore.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      const uData = userDoc.data();
+      if (Array.isArray(uData.fcmTokens) && uData.fcmTokens.length > 0) {
+        const uniqueTokens = [...new Set(uData.fcmTokens)];
+        await admin.messaging().sendToDevice(uniqueTokens, {
+          notification: {
+            title: 'Security Alert: Super Admin Login',
+            body: `Your Super Admin account was authenticated via two-step verification from a new session.`,
+          },
+          data: {
+            type: 'security_alert',
+            action: 'super_admin_login',
+            sessionId,
+            timestamp: String(now),
+          },
+        });
+      }
+    }
+  } catch (pushErr) {
+    console.warn('Could not dispatch security push notification:', pushErr);
+  }
+
+  console.log(`[SuperAdmin 2-Step OTP] Successfully verified and granted 12-hour session to uid: ${uid}`);
+
+  return {
+    success: true,
+    verified: true,
+    expiresAt: sessionExpiresAt,
+    message: 'Two-step verification completed successfully!',
+  };
+});
+
+/**
+ * 11c. Clear Super Admin OTP Session (Callable)
+ * Clears the custom claim on Sign Out so OTP is strictly required on next login.
+ */
+exports.clearSuperAdminOtpSession = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    return { success: true };
+  }
+
+  try {
+    await admin.auth().setCustomUserClaims(uid, {
+      role: 'super_admin',
+      otpSession: null,
+      otpExpiresAt: null,
+    });
+    console.log(`[SuperAdmin 2-Step OTP] Cleared OTP session claims for uid: ${uid}`);
+  } catch (err) {
+    console.warn('Could not clear custom claims on logout:', err);
+  }
+
+  return { success: true };
 });

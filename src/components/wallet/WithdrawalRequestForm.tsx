@@ -177,8 +177,9 @@ export const WithdrawalRequestForm: React.FC<WithdrawalRequestFormProps> = ({
       const randNum = Math.floor(100000 + Math.random() * 900000);
       const generatedRequestId = `WR-${randNum}`;
 
-      const withdrawalData: Omit<WithdrawalRequest, 'id'> = {
+      const withdrawalData: any = {
         requestId: generatedRequestId,
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: user.fullName || user.email || 'Reseller',
         resellerShopName: user.shopName || '',
@@ -200,6 +201,7 @@ export const WithdrawalRequestForm: React.FC<WithdrawalRequestFormProps> = ({
       // 2. Also save to transactions collection for backward compatibility with wallet history
       const txRef = doc(collection(db, 'transactions'));
       await setDoc(txRef, {
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: user.fullName,
         resellerShopName: user.shopName || user.fullName,

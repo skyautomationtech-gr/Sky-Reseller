@@ -20,12 +20,14 @@ import {
   Sparkles, Layers, ChevronRight, AlertCircle, Headphones, Watch, Zap, 
   Cable, Speaker, BatteryCharging, Smartphone, Package, Check, ChevronLeft,
   ShoppingCart, Trash2, Plus, Minus, AlertTriangle, Share2, Bot, ShieldCheck,
-  TrendingUp, CheckCircle2
+  TrendingUp, CheckCircle2, Lock
 } from 'lucide-react';
 
 interface ResellerHomePageProps {
   user: UserProfile;
   onNavigateTab: (tab: string) => void;
+  canAccessFullApp?: boolean;
+  onOpenLockedModal?: (featureName?: string) => void;
 }
 
 const CATEGORY_ICONS: { [key: string]: React.ElementType } = {
@@ -41,7 +43,12 @@ const CATEGORY_ICONS: { [key: string]: React.ElementType } = {
   'accessories': Smartphone,
 };
 
-export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavigateTab }) => {
+export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ 
+  user, 
+  onNavigateTab,
+  canAccessFullApp = true,
+  onOpenLockedModal,
+}) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +128,8 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         cList.push(Object.assign({ id: docSnap.id }, docSnap.data()) as unknown as Category);
       });
       setCategories(cList);
+    }, (err) => {
+      console.warn('Real-time categories listener error:', err);
     });
 
     fetchInitialData();
@@ -382,6 +391,8 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         onAddToCart={handleAddToCartClick}
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
+        canAccessFullApp={canAccessFullApp}
+        onOpenLockedModal={onOpenLockedModal}
       />
 
       {/* 2. TOP BANNER / HERO SECTION (Glassmorphic Luxury Dark Theme, Mobile-Optimized) */}
@@ -471,19 +482,25 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         <div 
           onClick={() => {
             triggerHaptic('light');
+            if (!canAccessFullApp) {
+              if (onOpenLockedModal) onOpenLockedModal('My Wallet');
+              return;
+            }
             onNavigateTab('wallet');
           }}
           className="bg-white border border-slate-200/90 hover:border-emerald-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group select-none relative overflow-hidden"
         >
           <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Wallet Balance</span>
-            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">৳{walletBalance.toLocaleString()}</span>
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">
+              {canAccessFullApp ? `৳${walletBalance.toLocaleString()}` : 'Locked'}
+            </span>
             <span className="text-[10px] font-bold text-emerald-600 block truncate">
-              Payouts →
+              {canAccessFullApp ? 'Payouts →' : 'Under Review'}
             </span>
           </div>
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0">
-            <WalletIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {canAccessFullApp ? <WalletIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Lock className="w-3.5 h-3.5 text-amber-600" />}
           </div>
         </div>
 
@@ -491,19 +508,25 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         <div 
           onClick={() => {
             triggerHaptic('light');
+            if (!canAccessFullApp) {
+              if (onOpenLockedModal) onOpenLockedModal('Orders Tracking');
+              return;
+            }
             onNavigateTab('orders');
           }}
           className="bg-white border border-slate-200/90 hover:border-blue-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group select-none relative overflow-hidden"
         >
           <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Today's Orders</span>
-            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">{todayOrdersCount} Orders</span>
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">
+              {canAccessFullApp ? `${todayOrdersCount} Orders` : 'Locked'}
+            </span>
             <span className="text-[10px] font-bold text-blue-600 block truncate">
-              Orders →
+              {canAccessFullApp ? 'Orders →' : 'Requires Approval'}
             </span>
           </div>
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center shrink-0">
-            <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {canAccessFullApp ? <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Lock className="w-3.5 h-3.5 text-amber-600" />}
           </div>
         </div>
 
@@ -511,19 +534,25 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         <div 
           onClick={() => {
             triggerHaptic('light');
+            if (!canAccessFullApp) {
+              if (onOpenLockedModal) onOpenLockedModal('Orders Tracking');
+              return;
+            }
             onNavigateTab('orders');
           }}
           className="bg-white border border-slate-200/90 hover:border-amber-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group select-none relative overflow-hidden"
         >
           <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Processing</span>
-            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">{pendingOrdersCount} Pending</span>
+            <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">
+              {canAccessFullApp ? `${pendingOrdersCount} Pending` : 'Locked'}
+            </span>
             <span className="text-[10px] font-bold text-amber-600 block truncate">
-              Status →
+              {canAccessFullApp ? 'Status →' : 'Requires Approval'}
             </span>
           </div>
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
-            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {canAccessFullApp ? <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Lock className="w-3.5 h-3.5 text-amber-600" />}
           </div>
         </div>
 
@@ -531,6 +560,10 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         <div 
           onClick={() => {
             triggerHaptic('light');
+            if (!canAccessFullApp) {
+              if (onOpenLockedModal) onOpenLockedModal('Cart & Ordering');
+              return;
+            }
             setIsCartOpen(true);
           }}
           className="bg-white border border-slate-200/90 hover:border-orange-400/80 p-2.5 rounded-xl shadow-2xs hover:shadow-xs fluid-spring cursor-pointer flex items-center justify-between group relative overflow-hidden select-none"
@@ -538,14 +571,14 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
           <div className="min-w-0 pr-1 space-y-0.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Cart</span>
             <span className="text-sm sm:text-base font-black text-slate-900 block truncate tabular-nums">
-              {cart.reduce((acc, item) => acc + item.quantity, 0)} Items
+              {canAccessFullApp ? `${cart.reduce((acc, item) => acc + item.quantity, 0)} Items` : 'Locked'}
             </span>
             <span className="text-[10px] font-bold text-[#f57224] block truncate">
-              Order Now →
+              {canAccessFullApp ? 'Order Now →' : 'Requires Approval'}
             </span>
           </div>
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 text-[#f57224] flex items-center justify-center shrink-0">
-            <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {canAccessFullApp ? <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Lock className="w-3.5 h-3.5 text-amber-600" />}
           </div>
           {cart.length > 0 && (
             <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
@@ -672,12 +705,26 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                           key={product.id}
                           product={product}
                           isGridMode={true}
+                          canAccessFullApp={canAccessFullApp}
+                          onOpenLockedModal={onOpenLockedModal}
                           onDetailClick={() => {
                             setDetailProduct(product);
                             setIsDetailOpen(true);
                           }}
-                          onAddToCart={(prod) => handleAddToCartClick(prod)}
-                          onBuyNow={(prod) => handleBuyNowClick(prod)}
+                          onAddToCart={(prod) => {
+                            if (!canAccessFullApp) {
+                              if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+                              return;
+                            }
+                            handleAddToCartClick(prod);
+                          }}
+                          onBuyNow={(prod) => {
+                            if (!canAccessFullApp) {
+                              if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+                              return;
+                            }
+                            handleBuyNowClick(prod);
+                          }}
                           onShareClick={(prod) => {
                             setShareModalProduct(prod);
                             setIsShareModalOpen(true);
@@ -727,12 +774,26 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
                         key={product.id}
                         product={product}
                         isGridMode
+                        canAccessFullApp={canAccessFullApp}
+                        onOpenLockedModal={onOpenLockedModal}
                         onDetailClick={() => {
                           setDetailProduct(product);
                           setIsDetailOpen(true);
                         }}
-                        onAddToCart={(prod) => handleAddToCartClick(prod)}
-                        onBuyNow={(prod) => handleBuyNowClick(prod)}
+                        onAddToCart={(prod) => {
+                          if (!canAccessFullApp) {
+                            if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+                            return;
+                          }
+                          handleAddToCartClick(prod);
+                        }}
+                        onBuyNow={(prod) => {
+                          if (!canAccessFullApp) {
+                            if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+                            return;
+                          }
+                          handleBuyNowClick(prod);
+                        }}
                         onShareClick={(prod) => {
                           setShareModalProduct(prod);
                           setIsShareModalOpen(true);
@@ -755,6 +816,7 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({ user, onNavi
         product={detailProduct}
         isOpen={isDetailOpen}
         user={user}
+        canAccessFullApp={canAccessFullApp}
         onClose={() => {
           setIsDetailOpen(false);
           setDetailProduct(null);
@@ -1172,6 +1234,8 @@ interface ProductCardProps {
   onShareClick?: (product: Product) => void;
   onAICopyClick?: (product: Product) => void;
   isGridMode?: boolean;
+  canAccessFullApp?: boolean;
+  onOpenLockedModal?: (featureName?: string) => void;
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({
@@ -1181,7 +1245,9 @@ const ProductCard: React.FC<ProductCardProps> = ({
   onBuyNow,
   onShareClick,
   onAICopyClick,
-  isGridMode = true
+  isGridMode = true,
+  canAccessFullApp = true,
+  onOpenLockedModal,
 }) => {
   const coverImage = product.images?.[0]?.url;
   const isOutOfStock = (product.stock || 0) <= 0;
@@ -1230,7 +1296,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             ) : isLowStock ? (
               <span className="bg-amber-500/90 backdrop-blur-md text-white text-[8px] sm:text-[9px] font-extrabold px-2 py-0.5 rounded-lg shadow-xs">
-                Low ({product.stock})
+                {canAccessFullApp ? `Low (${product.stock})` : 'Low Stock'}
               </span>
             ) : null}
           </div>
@@ -1279,18 +1345,27 @@ const ProductCard: React.FC<ProductCardProps> = ({
           )}
 
           {/* Pricing Row - Compact Glassmorphism E-commerce */}
-          <div className="bg-slate-50/80 backdrop-blur-xs p-1.5 sm:p-2 rounded-xl border border-slate-100/90 space-y-0.5">
-            <div className="flex items-baseline justify-between gap-1">
-              <span className="text-[9px] text-slate-400 font-semibold truncate">Reseller:</span>
-              <span className="text-xs sm:text-sm font-extrabold text-blue-700">৳{product.resellerPrice}</span>
+          {!canAccessFullApp ? (
+            <div className="bg-amber-500/10 border border-amber-500/30 p-2 rounded-xl flex items-center justify-center gap-1.5 text-amber-800 select-none">
+              <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="text-[10px] font-extrabold uppercase tracking-tight truncate">
+                Price visible after approval
+              </span>
             </div>
-            <div className="flex items-baseline justify-between text-[9px]">
-              <span className="text-slate-400 font-medium">৳{product.retailPrice}</span>
-              {resellerProfit > 0 && (
-                <span className="text-emerald-700 font-bold">Profit: ৳{resellerProfit}</span>
-              )}
+          ) : (
+            <div className="bg-slate-50/80 backdrop-blur-xs p-1.5 sm:p-2 rounded-xl border border-slate-100/90 space-y-0.5">
+              <div className="flex items-baseline justify-between gap-1">
+                <span className="text-[9px] text-slate-400 font-semibold truncate">Reseller:</span>
+                <span className="text-xs sm:text-sm font-extrabold text-blue-700">৳{product.resellerPrice}</span>
+              </div>
+              <div className="flex items-baseline justify-between text-[9px]">
+                <span className="text-slate-400 font-medium">৳{product.retailPrice}</span>
+                {resellerProfit > 0 && (
+                  <span className="text-emerald-700 font-bold">Profit: ৳{resellerProfit}</span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1299,32 +1374,44 @@ const ProductCard: React.FC<ProductCardProps> = ({
         <button
           onClick={() => {
             triggerHaptic('medium');
+            if (!canAccessFullApp) {
+              if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+              return;
+            }
             onAddToCart(product);
           }}
           disabled={isOutOfStock}
           className={`h-7.5 sm:h-8 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all border flex items-center justify-center gap-1 cursor-pointer select-none overflow-hidden fluid-spring ${
             isOutOfStock
               ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200'
-              : 'bg-amber-50/90 hover:bg-amber-100 text-amber-800 border-amber-200/90 hover:border-amber-300 shadow-2xs'
+              : !canAccessFullApp
+                ? 'bg-slate-100 hover:bg-amber-50 text-slate-600 border-slate-200 shadow-2xs'
+                : 'bg-amber-50/90 hover:bg-amber-100 text-amber-800 border-amber-200/90 hover:border-amber-300 shadow-2xs'
           }`}
         >
-          <ShoppingCart className="w-3 h-3 shrink-0" />
-          <span className="truncate whitespace-nowrap">Add Cart</span>
+          {!canAccessFullApp ? <Lock className="w-3 h-3 text-amber-600 shrink-0" /> : <ShoppingCart className="w-3 h-3 shrink-0" />}
+          <span className="truncate whitespace-nowrap">{!canAccessFullApp ? 'Add Cart' : 'Add Cart'}</span>
         </button>
         <button
           onClick={() => {
             triggerHaptic('medium');
+            if (!canAccessFullApp) {
+              if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+              return;
+            }
             onBuyNow(product);
           }}
           disabled={isOutOfStock}
           className={`h-7.5 sm:h-8 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none overflow-hidden fluid-spring ${
             isOutOfStock
               ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              : 'bg-[#f57224] hover:bg-[#e0651d] text-white shadow-xs'
+              : !canAccessFullApp
+                ? 'bg-slate-800 hover:bg-slate-700 text-white shadow-xs'
+                : 'bg-[#f57224] hover:bg-[#e0651d] text-white shadow-xs'
           }`}
         >
-          <ShoppingBag className="w-3 h-3 shrink-0" />
-          <span className="truncate whitespace-nowrap">Buy Now</span>
+          {!canAccessFullApp ? <Lock className="w-3 h-3 text-amber-400 shrink-0" /> : <ShoppingBag className="w-3 h-3 shrink-0" />}
+          <span className="truncate whitespace-nowrap">{!canAccessFullApp ? 'Buy Now' : 'Buy Now'}</span>
         </button>
       </div>
     </div>

@@ -146,7 +146,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img src={user.profilePhotoUrl} alt={user.fullName} className="w-9 h-9 rounded-lg object-cover border border-slate-700" />
           ) : (
             <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-200 font-bold text-xs">
-              {user.fullName.charAt(0)}
+              {(user.fullName || 'U').charAt(0)}
             </div>
           )}
           <div className="overflow-hidden">

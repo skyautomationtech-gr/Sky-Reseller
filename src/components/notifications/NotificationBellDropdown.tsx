@@ -51,6 +51,8 @@ export const NotificationBellDropdown: React.FC<NotificationBellDropdownProps> =
       });
 
       setNotices(nList);
+    }, (err) => {
+      console.warn('Realtime notices listener error:', err);
     });
 
     // Fetch read list

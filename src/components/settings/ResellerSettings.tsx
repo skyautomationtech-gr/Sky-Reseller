@@ -376,7 +376,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
         mobile: mobile.trim(),
         email: email.trim(),
         address: address.trim(),
-        profilePhotoUrl,
+        profilePhotoUrl: profilePhotoUrl || '',
         updatedAt: serverTimestamp(),
       });
 

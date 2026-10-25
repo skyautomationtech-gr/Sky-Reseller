@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { collection, doc, updateDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile, SupportTicket, TicketStatus, TicketReply } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
@@ -75,14 +75,16 @@ export const SupportSystem: React.FC<SupportSystemProps> = ({ user, initialTab =
 
   useEffect(() => {
     // Realtime subscription for support tickets
-    const q = collection(db, 'supportTickets');
+    const ticketsCol = collection(db, 'supportTickets');
+    const q = isStaff
+      ? ticketsCol
+      : query(ticketsCol, where('resellerId', '==', user.uid));
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: SupportTicket[] = [];
       snapshot.forEach((d) => {
         const ticket = Object.assign({ id: d.id }, d.data()) as unknown as SupportTicket;
-        if (isStaff || ticket.resellerId === user.uid) {
-          list.push(ticket);
-        }
+        list.push(ticket);
       });
 
       list.sort((a, b) => {
@@ -99,6 +101,9 @@ export const SupportSystem: React.FC<SupportSystemProps> = ({ user, initialTab =
         const updated = list.find((t) => t.id === selectedTicket.id);
         if (updated) setSelectedTicket(updated);
       }
+    }, (err) => {
+      console.warn('Support tickets subscription error:', err);
+      setLoading(false);
     });
 
     return () => unsubscribe();

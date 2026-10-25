@@ -188,8 +188,9 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
 
       const selectedOrder = userOrders.find((o) => o.id === selectedOrderId);
 
-      const ticketPayload: Omit<SupportTicket, 'id'> = {
+      const ticketPayload: any = {
         ticketId: generatedTicketId,
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: user.fullName || user.email || 'Reseller',
         resellerShopName: user.shopName || '',

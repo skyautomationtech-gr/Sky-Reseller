@@ -30,6 +30,7 @@ export interface UserProfile {
   uid: string;
   fullName: string;
   shopName: string;
+  shopNameKey?: string;
   mobile: string;
   whatsappNumber?: string;
   whatsapp?: string;
@@ -77,6 +78,18 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   rejectReason?: string | null;
+  rejectedSections?: string[];
+  suspensionType?: 'temporary' | 'permanent';
+  suspensionReason?: string | null;
+  suspendedUntil?: string | null;
+  resubmissions?: Array<{
+    rejectedAt?: any;
+    rejectReason?: string | null;
+    rejectedSections?: string[];
+    resubmittedAt: any;
+  }>;
+  slaNotified?: boolean;
+  resellerId?: string;
   plainPassword?: string;
   lastSeenVersion?: string;
   appLockEnabled?: boolean;

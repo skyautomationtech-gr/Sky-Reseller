@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, X, Clock, Flame, ArrowRight, Sparkles, Package, 
-  ExternalLink, ShoppingCart, Check, Tag, ChevronRight 
+  ExternalLink, ShoppingCart, Check, Tag, ChevronRight, Lock 
 } from 'lucide-react';
 import { Product } from '../../types';
 import { triggerHaptic } from '../../lib/nativeFeedback';
@@ -15,6 +15,8 @@ interface FluidGlassSearchEngineProps {
   onAddToCart?: (product: Product) => void;
   selectedCategory: string;
   setSelectedCategory: (cat: string) => void;
+  canAccessFullApp?: boolean;
+  onOpenLockedModal?: (featureName?: string) => void;
 }
 
 const PLACEHOLDER_HINTS = [
@@ -182,6 +184,10 @@ export const FluidGlassSearchEngine: React.FC<FluidGlassSearchEngineProps> = ({
 
   const handleQuickAddToCart = (e: React.MouseEvent, product: Product) => {
     e.stopPropagation();
+    if (canAccessFullApp === false) {
+      if (onOpenLockedModal) onOpenLockedModal('Ordering & Cart');
+      return;
+    }
     triggerHaptic('medium');
     if (onAddToCart) {
       onAddToCart(product);
@@ -417,14 +423,23 @@ export const FluidGlassSearchEngine: React.FC<FluidGlassSearchEngineProps> = ({
                                   SKU: {p.sku}
                                 </span>
                               )}
-                              <span className="font-extrabold text-blue-700 tabular-nums">
-                                ৳{(p.resellerPrice || p.retailPrice || 0).toLocaleString()}
-                              </span>
-                              {p.stock !== undefined && (
-                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                                  p.stock > 5 ? 'bg-emerald-50 text-emerald-700' : p.stock > 0 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
-                                }`}>
-                                  {p.stock > 5 ? 'In Stock' : p.stock > 0 ? `Low (${p.stock})` : 'Out of Stock'}
+                              {canAccessFullApp !== false ? (
+                                <>
+                                  <span className="font-extrabold text-blue-700 tabular-nums">
+                                    ৳{(p.resellerPrice || p.retailPrice || 0).toLocaleString()}
+                                  </span>
+                                  {p.stock !== undefined && (
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                      p.stock > 5 ? 'bg-emerald-50 text-emerald-700' : p.stock > 0 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
+                                    }`}>
+                                      {p.stock > 5 ? 'In Stock' : p.stock > 0 ? `Low (${p.stock})` : 'Out of Stock'}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                  <Lock className="w-2.5 h-2.5 text-amber-600" />
+                                  Price visible after approval
                                 </span>
                               )}
                             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, CheckCircle2, RotateCw, AlertCircle, ShieldCheck, Clock } from 'lucide-react';
+import { CheckCircle2, RotateCw, AlertCircle, ShieldCheck, Clock } from 'lucide-react';
 import { sendEmailOtpCall, verifyEmailOtpCall } from '../../../lib/emailOtpService';
 import { triggerHaptic } from '../../../lib/nativeFeedback';
 
@@ -21,7 +21,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
-  const [cooldown, setCooldown] = useState(0); // in seconds
+  const [cooldown, setCooldown] = useState(0); // in seconds (60s)
   const [expiresIn, setExpiresIn] = useState(0); // in seconds (10 min = 600s)
   const [attemptsLeft, setAttemptsLeft] = useState(5);
   const [errorMessage, setErrorMessage] = useState('');
@@ -29,7 +29,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Cooldown & Expiry countdown timers
+  // Cooldown countdown timer (60s)
   useEffect(() => {
     let timer: any;
     if (cooldown > 0) {
@@ -40,6 +40,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
     return () => clearInterval(timer);
   }, [cooldown]);
 
+  // Expiration countdown timer (10 minutes)
   useEffect(() => {
     let timer: any;
     if (expiresIn > 0 && !isVerified) {
@@ -74,7 +75,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
       const response = await sendEmailOtpCall(cleanEmail);
       setCodeSent(true);
       setCooldown(response.cooldownSeconds || 60);
-      setExpiresIn(response.expiresInSeconds || 600);
+      setExpiresIn(response.expiresInSeconds || 600); // 10 minutes
       setAttemptsLeft(5);
       setOtp(['', '', '', '', '', '']);
       setSuccessNotice(response.message || 'Verification code sent to your email.');
@@ -84,7 +85,11 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
       }, 100);
     } catch (err: any) {
       console.error('Send OTP error:', err);
-      setErrorMessage(err.message || 'Failed to send OTP code.');
+      // Strictly do not expose code or simulate success on failure
+      setCodeSent(false);
+      setErrorMessage(
+        err.message || 'Could not send the verification email. Please try again later.'
+      );
     } finally {
       setIsSending(false);
     }
@@ -98,12 +103,12 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
     setOtp(newOtp);
     setErrorMessage('');
 
-    // Auto-advance
+    // Auto-advance to next input box
     if (cleaned && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-verify when all 6 digits entered
+    // Auto-verify when all 6 digits are typed
     const fullCode = newOtp.join('');
     if (fullCode.length === 6) {
       triggerVerifyOtp(fullCode);
@@ -134,9 +139,9 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
     }
   };
 
-  // Verify OTP
+  // Verify OTP strictly against server
   const triggerVerifyOtp = async (codeToVerify?: string) => {
-    const fullCode = codeToVerify || otp.join('');
+    const fullCode = (codeToVerify || otp.join('')).trim();
     if (fullCode.length !== 6) {
       setErrorMessage('Please enter all 6 digits.');
       return;
@@ -162,7 +167,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
     } catch (err: any) {
       console.error('Verify OTP error:', err);
       setAttemptsLeft((prev) => Math.max(0, prev - 1));
-      setErrorMessage(err.message || 'Invalid verification code.');
+      setErrorMessage(err.message || 'Incorrect verification code. Please check and try again.');
       onVerifiedChange(false);
     } finally {
       setIsVerifying(false);
@@ -178,11 +183,11 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
   return (
     <div className="space-y-3">
       {/* Verification Action / Status Bar */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         {isVerified ? (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#3DD055]/20 border border-[#3DD055]/40 text-[#3DD055] text-xs font-bold animate-in fade-in duration-300">
             <CheckCircle2 className="w-4 h-4 text-[#3DD055]" />
-            <span>Email Verified</span>
+            <span>✓ Email Verified</span>
           </div>
         ) : (
           <button
@@ -213,7 +218,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
             ) : (
               <>
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Verify Email (Send OTP)</span>
+                <span>Send OTP (ইমেইল কোড পাঠান)</span>
               </>
             )}
           </button>
@@ -234,6 +239,17 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
           exit={{ opacity: 0, height: 0 }}
           className="p-4 rounded-2xl bg-white/[0.05] border border-white/15 backdrop-blur-[20px] space-y-3"
         >
+          {/* Spam / Junk Folder Guide */}
+          <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5 text-[11px] text-amber-200 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-bold text-white">ইনবক্সে কোড না পেলে Spam / Junk ফোল্ডার চেক করুন</p>
+              <p className="text-slate-300">
+                A 6-digit verification code has been dispatched to your email address. Please check your inbox and Spam / Junk folder, then enter it below.
+              </p>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-200">
               Enter 6-Digit Verification Code
@@ -262,7 +278,7 @@ export const OtpVerificationInput: React.FC<OtpVerificationInputProps> = ({
             ))}
           </div>
 
-          {/* Manual Verify Button if not auto-triggered */}
+          {/* Manual Verify Button */}
           <div className="flex justify-center pt-1">
             <button
               type="button"

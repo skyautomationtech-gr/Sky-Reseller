@@ -13,9 +13,12 @@ import { ResellerAccountHub } from '../profile/ResellerAccountHub';
 import { BottomNavigation } from '../common/BottomNavigation';
 import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
-import { RotateCw, MessagesSquare, Store } from 'lucide-react';
+import { RotateCw, MessagesSquare, Store, Lock } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { triggerHaptic } from '../../lib/nativeFeedback';
+import { useAccess } from '../../hooks/useAccess';
+import { PendingHomeBanner } from '../auth/PendingHomeBanner';
+import { AccessLockedModal } from '../auth/AccessLockedModal';
 
 interface ResellerDashboardProps {
   user: UserProfile;
@@ -23,8 +26,16 @@ interface ResellerDashboardProps {
 }
 
 export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLogout }) => {
+  const { isPending, canAccessFullApp } = useAccess(user);
   const [activeTab, setActiveTab] = useState('home');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isLockedModalOpen, setIsLockedModalOpen] = useState(false);
+  const [lockedFeatureName, setLockedFeatureName] = useState('This feature');
+
+  const handleOpenLocked = (featName = 'This feature') => {
+    setLockedFeatureName(featName);
+    setIsLockedModalOpen(true);
+  };
 
   // Live Metrics
   const [walletBalance, setWalletBalance] = useState<number>(0);
@@ -209,9 +220,41 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
   };
 
   const renderContent = () => {
+    // If user is pending and tries to directly access locked tabs
+    if (!canAccessFullApp && (activeTab === 'orders' || activeTab === 'wallet')) {
+      return (
+        <div className="py-12 px-4 text-center">
+          <div className="bg-white/80 backdrop-blur-xl border border-slate-200/80 p-8 rounded-3xl shadow-sm max-w-md mx-auto space-y-4">
+            <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center mx-auto text-amber-500">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 capitalize">
+              {activeTab} is Locked
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              This feature unlocks automatically once your reseller registration is approved by an administrator.
+            </p>
+            <button
+              onClick={() => handleOpenLocked(activeTab === 'orders' ? 'Orders Tracking' : 'My Wallet')}
+              className="py-2.5 px-5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs active:scale-95 transition cursor-pointer"
+            >
+              View Verification Timeline
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'home':
-        return <ResellerHomePage user={user} onNavigateTab={setActiveTab} />;
+        return (
+          <ResellerHomePage 
+            user={user} 
+            onNavigateTab={setActiveTab} 
+            canAccessFullApp={canAccessFullApp}
+            onOpenLockedModal={handleOpenLocked}
+          />
+        );
       case 'products':
         return <ProductManagement user={user} />;
       case 'orders':
@@ -237,10 +280,19 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
             onLogout={onLogout}
             unreadChatCount={unreadChatCount}
             unreadNotificationsCount={unreadNotifications}
+            canAccessFullApp={canAccessFullApp}
+            onOpenLockedModal={handleOpenLocked}
           />
         );
       default:
-        return <ResellerHomePage user={user} onNavigateTab={setActiveTab} />;
+        return (
+          <ResellerHomePage 
+            user={user} 
+            onNavigateTab={setActiveTab} 
+            canAccessFullApp={canAccessFullApp}
+            onOpenLockedModal={handleOpenLocked}
+          />
+        );
     }
   };
 
@@ -254,7 +306,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
         <div className="absolute top-80 -left-20 w-80 h-80 bg-gradient-to-tr from-amber-400/10 via-orange-400/5 to-transparent rounded-full blur-3xl pointer-events-none -z-0" />
 
         {/* Native Mobile App Header (Transparent Sticky Top Bar) */}
-        <header className="sticky top-0 z-30 bg-transparent backdrop-blur-md border-b border-slate-200/40 px-3.5 py-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] flex items-center justify-between transition-colors">
+        <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-md border-b border-slate-200/40 px-3.5 py-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] flex items-center justify-between transition-colors">
           <div 
             onClick={() => {
               triggerHaptic('light');
@@ -286,7 +338,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
               <p className="text-[11px] font-medium text-slate-500 truncate leading-tight mt-0.5">
                 {user.shopName && user.fullName && user.shopName !== user.fullName
                   ? user.fullName
-                  : (user.resellerCode ? `ID: ${user.resellerCode}` : 'Verified Reseller')}
+                  : (user.resellerCode ? `ID: ${user.resellerCode}` : (isPending ? 'Pending Approval' : 'Verified Reseller'))}
               </p>
             </div>
           </div>
@@ -296,23 +348,40 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
             <button
               onClick={() => {
                 triggerHaptic('light');
+                if (!canAccessFullApp) {
+                  handleOpenLocked('My Wallet');
+                  return;
+                }
                 setActiveTab('wallet');
               }}
               className="bg-emerald-500/10 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/25 text-emerald-800 px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all fluid-spring cursor-pointer shadow-2xs"
-              title="Wallet Balance - Click to View"
+              title={canAccessFullApp ? "Wallet Balance - Click to View" : "Wallet Locked until Approval"}
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-extrabold tracking-tight tabular-nums">৳{walletBalance.toLocaleString()}</span>
+              {canAccessFullApp ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-extrabold tracking-tight tabular-nums">৳{walletBalance.toLocaleString()}</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3 h-3 text-amber-600" />
+                  <span className="text-xs font-bold text-slate-600">Locked</span>
+                </>
+              )}
             </button>
 
             {/* Live Chat Direct Button */}
             <button
               onClick={() => {
                 triggerHaptic('light');
+                if (!canAccessFullApp) {
+                  handleOpenLocked('Live Chat');
+                  return;
+                }
                 setActiveTab('chat');
               }}
               className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-slate-900/5 backdrop-blur-md rounded-xl transition-all min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer fluid-spring border border-slate-200/60 bg-transparent"
-              title="Live Chat Support"
+              title="Support"
             >
               <MessagesSquare className="w-5 h-5 text-slate-700 hover:text-blue-600" />
               {unreadChatCount > 0 && (
@@ -346,6 +415,14 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
           </div>
         </header>
 
+        {/* Sticky Pending Approval Notice Banner on Home / All Views */}
+        {isPending && (
+          <PendingHomeBanner 
+            user={user} 
+            onOpenLockedModal={() => handleOpenLocked('Account Review')} 
+          />
+        )}
+
         {/* Main Content Area */}
         <main className="flex-1 pb-24 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
           {renderContent()}
@@ -358,17 +435,28 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
           pendingOrdersCount={pendingOrders}
           unreadChatCount={unreadChatCount}
           unreadNotificationsCount={unreadNotifications}
+          isRestricted={!canAccessFullApp}
+          onOpenLockedModal={handleOpenLocked}
         />
 
-        {/* Create Order Modal */}
-        <CreateOrderModal
-          isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          user={user}
-          onOrderCreated={() => {
-            fetchResellerStats();
-            setActiveTab('orders');
-          }}
+        {/* Create Order Modal (only opens if approved) */}
+        {canAccessFullApp && (
+          <CreateOrderModal
+            isOpen={isCreateModalOpen}
+            onClose={() => setIsCreateModalOpen(false)}
+            user={user}
+            onOrderCreated={() => {
+              fetchResellerStats();
+              setActiveTab('orders');
+            }}
+          />
+        )}
+
+        {/* Friendly Glass Bottom-Sheet for Locked Features */}
+        <AccessLockedModal
+          isOpen={isLockedModalOpen}
+          onClose={() => setIsLockedModalOpen(false)}
+          featureName={lockedFeatureName}
         />
       </div>
     </div>

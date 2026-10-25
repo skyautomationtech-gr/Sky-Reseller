@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { UserProfile } from './types';
 import { LoginForm } from './components/auth/LoginForm';
@@ -10,9 +10,13 @@ import { RegisterForm } from './components/auth/RegisterForm';
 import { PendingApprovalScreen } from './components/auth/PendingApprovalScreen';
 import { RejectedScreen } from './components/auth/RejectedScreen';
 import { SuspendedScreen } from './components/auth/SuspendedScreen';
+import { StatusOverlay } from './components/auth/StatusOverlay';
 import { SuperAdminDashboard } from './components/dashboards/SuperAdminDashboard';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { ResellerDashboard } from './components/dashboards/ResellerDashboard';
+import { SuperAdminOtpScreen } from './components/auth/SuperAdminOtpScreen';
+import { OTP_REQUIRED_ROLES } from './config/authSecurity';
+import { checkSuperAdminOtpStatus, clearSuperAdminOtpSessionCall } from './lib/superAdminAuth';
 import { AppLockScreen } from './components/common/AppLockScreen';
 import { logUserSession } from './lib/auditLogger';
 import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from './lib/versionService';
@@ -53,6 +57,8 @@ function AppContent() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [authLoading, setAuthLoading] = useState(true);
+  const [isEditingResubmit, setIsEditingResubmit] = useState<boolean>(false);
+  const [isSuperAdminOtpPending, setIsSuperAdminOtpPending] = useState(false);
   const [splashActive, setSplashActive] = useState(true);
   const splashTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -240,6 +246,8 @@ function AppContent() {
       const docSnap = await Promise.race([getDocPromise, timeoutPromise]) as any;
 
       let profile: UserProfile;
+      const isSoleSuperAdmin = (currentUser.email || '').toLowerCase().trim() === 'skyautomationtech@gmail.com';
+
       if (docSnap && docSnap.exists()) {
         profile = docSnap.data() as UserProfile;
       } else if (cachedProfile) {
@@ -248,8 +256,8 @@ function AppContent() {
         // Auto-heal missing profile document so user isn't stuck
         const fallbackProfile: UserProfile = {
           uid: currentUser.uid,
-          fullName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Reseller User',
-          shopName: 'ReSellBD Shop',
+          fullName: isSoleSuperAdmin ? 'Super Admin' : (currentUser.displayName || currentUser.email?.split('@')[0] || 'Reseller User'),
+          shopName: isSoleSuperAdmin ? 'ReSellBD HQ' : 'ReSellBD Shop',
           mobile: '01700000000',
           email: currentUser.email || '',
           division: 'Dhaka',
@@ -259,8 +267,8 @@ function AppContent() {
           profilePhotoUrl: '',
           shopPhotoUrl: '',
           nidUrl: '',
-          role: 'reseller',
-          status: 'pending',
+          role: isSoleSuperAdmin ? 'super_admin' : 'reseller',
+          status: isSoleSuperAdmin ? 'approved' : 'pending',
           rejectReason: null,
           createdAt: new Date().toISOString(),
         };
@@ -277,17 +285,18 @@ function AppContent() {
 
       // 🔒 SOLE PERMANENT SUPER ADMIN ENFORCEMENT:
       // skyautomationtech@gmail.com is permanently and exclusively the Super Admin. No other account can hold this role.
-      const isSoleSuperAdmin = (currentUser.email || profile.email)?.toLowerCase().trim() === 'skyautomationtech@gmail.com';
       if (isSoleSuperAdmin) {
         profile.role = 'super_admin';
         profile.status = 'approved';
-        if (docSnap && docSnap.exists()) {
-          const dData = docSnap.data();
-          if (dData.role !== 'super_admin' || dData.status !== 'approved') {
-            updateDoc(docRef, { role: 'super_admin', status: 'approved' }).catch((uErr) => {
-              console.warn('Could not sync sole super admin role to Firestore:', uErr);
-            });
-          }
+        try {
+          await setDoc(docRef, {
+            role: 'super_admin',
+            status: 'approved',
+            email: currentUser.email,
+            fullName: profile.fullName || 'Super Admin',
+          }, { merge: true });
+        } catch (uErr) {
+          console.warn('Could not sync sole super admin role to Firestore:', uErr);
         }
       } else {
         // Any other account is strictly barred from super_admin role
@@ -356,6 +365,14 @@ function AppContent() {
 
         setUserProfile(profile);
 
+        // Super Admin Mandatory Two-Step OTP Verification Check
+        if (profile && OTP_REQUIRED_ROLES.includes(profile.role as any)) {
+          const otpStatus = await checkSuperAdminOtpStatus(currentUser, profile.role);
+          setIsSuperAdminOtpPending(!otpStatus.isVerified);
+        } else {
+          setIsSuperAdminOtpPending(false);
+        }
+
         if (profile && profile.status === 'approved') {
           checkVersionPopup(profile);
 
@@ -387,6 +404,7 @@ function AppContent() {
         }
       } else {
         setUserProfile(null);
+        setIsSuperAdminOtpPending(false);
       }
       setAuthLoading(false);
     });
@@ -427,7 +445,16 @@ function AppContent() {
   const handleLogout = async () => {
     if (userProfile) {
       sessionStorage.removeItem(`sky_app_unlocked_${userProfile.uid}`);
+      if (OTP_REQUIRED_ROLES.includes(userProfile.role as any)) {
+        clearSuperAdminOtpSessionCall(userProfile.email).catch((e) => console.warn(e));
+        try {
+          await deleteDoc(doc(db, 'adminSessions', userProfile.uid));
+        } catch (e) {
+          console.warn('Could not clear adminSessions on logout:', e);
+        }
+      }
     }
+    setIsSuperAdminOtpPending(false);
     localStorage.removeItem('appBackgroundedAt');
     setShowLockScreen(false);
     await signOut(auth);
@@ -507,6 +534,10 @@ function AppContent() {
               if (auth.currentUser) {
                 const profile = await fetchOrCreateUserProfile(auth.currentUser);
                 setUserProfile(profile);
+                if (profile && OTP_REQUIRED_ROLES.includes(profile.role as any)) {
+                  const otpStatus = await checkSuperAdminOtpStatus(auth.currentUser, profile.role);
+                  setIsSuperAdminOtpPending(!otpStatus.isVerified);
+                }
               }
             }}
           />
@@ -515,24 +546,48 @@ function AppContent() {
     );
   }
 
-  // Logged in but status checks
-  if (userProfile.status === 'pending') {
+  // 🛡️ Mandatory Two-Step OTP Verification for Super Admin (and configured roles)
+  if (isSuperAdminOtpPending && userProfile) {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 relative">
-        <TopBannerIndicator />
-        <div className="flex-1">
-          <PendingApprovalScreen user={userProfile} onLogout={handleLogout} />
-        </div>
-      </div>
+      <SuperAdminOtpScreen
+        user={userProfile}
+        onVerified={async () => {
+          if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+          }
+          setIsSuperAdminOtpPending(false);
+        }}
+        onCancelSignOut={handleLogout}
+      />
     );
   }
 
+  // Status checks: Rejected and Suspended accounts are restricted with StatusOverlay
   if (userProfile.status === 'rejected') {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50 relative">
-        <TopBannerIndicator />
+      <div className="min-h-screen flex flex-col bg-[#050B1A] relative">
+        <NoInternetOverlay />
         <div className="flex-1">
-          <RejectedScreen user={userProfile} onLogout={handleLogout} />
+          {isEditingResubmit ? (
+            <RegisterForm
+              initialProfile={userProfile}
+              isResubmit={true}
+              onSwitchToLogin={() => setIsEditingResubmit(false)}
+              onRegistered={async () => {
+                setIsEditingResubmit(false);
+                if (auth.currentUser) {
+                  const profile = await fetchOrCreateUserProfile(auth.currentUser);
+                  setUserProfile(profile);
+                }
+              }}
+            />
+          ) : (
+            <StatusOverlay
+              user={userProfile}
+              onLogout={handleLogout}
+              onResubmit={() => setIsEditingResubmit(true)}
+            />
+          )}
         </div>
       </div>
     );
@@ -540,10 +595,22 @@ function AppContent() {
 
   if (userProfile.status === 'suspended') {
     return (
+      <div className="min-h-screen flex flex-col bg-[#050B1A] relative">
+        <NoInternetOverlay />
+        <div className="flex-1">
+          <StatusOverlay user={userProfile} onLogout={handleLogout} />
+        </div>
+      </div>
+    );
+  }
+
+  // Pending admins/super admins if any
+  if (userProfile.status === 'pending' && userProfile.role !== 'reseller') {
+    return (
       <div className="min-h-screen flex flex-col bg-slate-50 relative">
         <TopBannerIndicator />
         <div className="flex-1">
-          <SuspendedScreen user={userProfile} onLogout={handleLogout} />
+          <PendingApprovalScreen user={userProfile} onLogout={handleLogout} />
         </div>
       </div>
     );

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Product, UserProfile } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Package, ShieldCheck, Tag, Layers, CheckCircle2, Star, MessageSquare, Info, Share2, Sparkles } from 'lucide-react';
+import { X, Package, ShieldCheck, Tag, Layers, CheckCircle2, Star, MessageSquare, Info, Share2, Sparkles, Lock } from 'lucide-react';
 import { ProductReviewsList } from '../reviews/ProductReviewsList';
 import { ProductReviewForm } from '../reviews/ProductReviewForm';
 import { SocialShareModal } from './SocialShareModal';
@@ -13,6 +13,7 @@ interface ProductDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   user?: UserProfile;
+  canAccessFullApp?: boolean;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -20,6 +21,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isOpen,
   onClose,
   user,
+  canAccessFullApp = true,
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'reviews'>('details');
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
@@ -189,16 +191,32 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </div>
 
                   {/* Pricing Cards */}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Retail Price</span>
-                      <span className="text-base font-extrabold text-slate-900">৳{product.retailPrice}</span>
+                  {!canAccessFullApp ? (
+                    <div className="bg-amber-500/10 border border-amber-500/30 p-3.5 rounded-xl flex items-center gap-3 text-amber-900">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-600 shrink-0">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-black uppercase tracking-wider block text-amber-900">
+                          Price visible after approval
+                        </span>
+                        <span className="text-[10px] text-amber-700/80 block mt-0.5">
+                          Reseller cost, retail price & profit margins unlock upon admin verification
+                        </span>
+                      </div>
                     </div>
-                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
-                      <span className="text-[10px] text-blue-600 font-semibold block uppercase">Reseller Price</span>
-                      <span className="text-base font-extrabold text-blue-700">৳{product.resellerPrice}</span>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 font-semibold block uppercase">Retail Price</span>
+                        <span className="text-base font-extrabold text-slate-900">৳{product.retailPrice}</span>
+                      </div>
+                      <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                        <span className="text-[10px] text-blue-600 font-semibold block uppercase">Reseller Price</span>
+                        <span className="text-base font-extrabold text-blue-700">৳{product.resellerPrice}</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Stock Status */}
                   <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
@@ -208,7 +226,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         ? 'bg-rose-100 text-rose-700'
                         : 'bg-emerald-100 text-emerald-700'
                     }`}>
-                      {product.stock || 0} Units In Stock
+                      {canAccessFullApp
+                        ? `${product.stock || 0} Units In Stock`
+                        : ((product.stock || 0) > 0 ? 'In Stock' : 'Out of Stock')}
                     </span>
                   </div>
 

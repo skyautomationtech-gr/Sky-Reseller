@@ -325,6 +325,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
       }
 
       await addDoc(collection(db, 'payoutChangeRequests'), {
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: user.fullName,
         shopName: user.shopName || '',

@@ -27,6 +27,8 @@ interface ResellerAccountHubProps {
   onLogout: () => void;
   unreadChatCount?: number;
   unreadNotificationsCount?: number;
+  canAccessFullApp?: boolean;
+  onOpenLockedModal?: (featureName?: string) => void;
 }
 
 export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
@@ -36,6 +38,8 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
   onLogout,
   unreadChatCount = 0,
   unreadNotificationsCount = 0,
+  canAccessFullApp = true,
+  onOpenLockedModal,
 }) => {
   const [currentView, setCurrentView] = useState<string>(activeSubTab === 'more' ? 'menu' : activeSubTab);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -146,7 +150,7 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                 <img src={user.profilePhotoUrl} alt={user.fullName} className="w-full h-full object-cover rounded-2xl" />
               ) : (
                 <div className="w-full h-full bg-blue-600 text-white flex items-center justify-center font-bold text-xl uppercase rounded-2xl">
-                  {user.fullName.charAt(0)}
+                  {(user.fullName || 'U').charAt(0)}
                 </div>
               )}
             </div>
@@ -252,36 +256,86 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
         </div>
 
         {/* Quick Hub Grid */}
+        {/* Quick Help & Support Direct Contacts (Prominent for Pending users) */}
+        {!canAccessFullApp && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-center space-y-3">
+            <div className="flex items-center justify-center gap-1.5 text-amber-800 font-bold text-xs uppercase tracking-wider">
+              <Phone className="w-3.5 h-3.5 text-amber-600" />
+              <span>Direct Support & Inquiries</span>
+            </div>
+            <p className="text-xs text-amber-900/80 leading-snug">
+              Need immediate assistance or verification help? Contact our support team directly:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href="https://wa.me/8801700000000?text=Hello%20ReSellBD%2C%20I%20have%20a%20question%20about%20my%20reseller%20account."
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => triggerHaptic('light')}
+                className="py-2.5 px-3 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition"
+              >
+                <MessagesSquare className="w-3.5 h-3.5" /> WhatsApp
+              </a>
+              <a
+                href="tel:+8801700000000"
+                onClick={() => triggerHaptic('light')}
+                className="py-2.5 px-3 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition"
+              >
+                <Phone className="w-3.5 h-3.5" /> Call Us
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Hub Grid */}
         <div className="grid grid-cols-2 gap-2.5">
           <button
             onClick={() => {
               triggerHaptic('light');
+              if (!canAccessFullApp) {
+                if (onOpenLockedModal) onOpenLockedModal('My Wallet');
+                return;
+              }
               onNavigateTab('wallet');
             }}
-            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer select-none"
+            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer select-none relative"
           >
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
               <span className="font-bold text-base">৳</span>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">My Wallet</div>
-              <div className="text-sm font-extrabold text-slate-900 truncate">Withdraw & Balance</div>
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <span>My Wallet</span>
+                {!canAccessFullApp && <Lock className="w-3 h-3 text-amber-500" />}
+              </div>
+              <div className="text-sm font-extrabold text-slate-900 truncate">
+                {canAccessFullApp ? 'Withdraw & Balance' : 'Locked'}
+              </div>
             </div>
           </button>
 
           <button
             onClick={() => {
               triggerHaptic('light');
+              if (!canAccessFullApp) {
+                if (onOpenLockedModal) onOpenLockedModal('Orders Tracking');
+                return;
+              }
               onNavigateTab('orders');
             }}
-            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer select-none"
+            className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3 text-left hover:border-blue-400 active:scale-98 transition-all cursor-pointer select-none relative"
           >
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
               <span className="font-bold text-base">📦</span>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Orders</div>
-              <div className="text-sm font-extrabold text-slate-900 truncate">Track Parcels</div>
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <span>Orders</span>
+                {!canAccessFullApp && <Lock className="w-3 h-3 text-amber-500" />}
+              </div>
+              <div className="text-sm font-extrabold text-slate-900 truncate">
+                {canAccessFullApp ? 'Track Parcels' : 'Locked'}
+              </div>
             </div>
           </button>
         </div>
@@ -297,6 +351,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
             <button
               onClick={() => {
                 triggerHaptic('light');
+                if (!canAccessFullApp) {
+                  if (onOpenLockedModal) onOpenLockedModal('Live Chat Support');
+                  return;
+                }
                 setCurrentView('chat');
               }}
               className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
@@ -306,8 +364,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                   <MessagesSquare className="w-4.5 h-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-900">Live Chat with Admin</div>
-                  <div className="text-xs text-slate-500">Instant support & query resolution</div>
+                  <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Live Chat with Admin</span>
+                    {!canAccessFullApp && <Lock className="w-3 h-3 text-amber-500" />}
+                  </div>
+                  <div className="text-xs text-slate-500">{canAccessFullApp ? 'Instant support & query resolution' : 'Unlocks after account approval'}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -324,6 +385,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
             <button
               onClick={() => {
                 triggerHaptic('light');
+                if (!canAccessFullApp) {
+                  if (onOpenLockedModal) onOpenLockedModal('Commission & Performance');
+                  return;
+                }
                 setCurrentView('commission');
               }}
               className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
@@ -333,7 +398,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                   <Percent className="w-4.5 h-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-900">Commission & Performance</div>
+                  <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Commission & Performance</span>
+                    {!canAccessFullApp && <Lock className="w-3 h-3 text-amber-500" />}
+                  </div>
                   <div className="text-xs text-slate-500">Tier rates, earnings breakdown</div>
                 </div>
               </div>
@@ -371,6 +439,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
             <button
               onClick={() => {
                 triggerHaptic('light');
+                if (!canAccessFullApp) {
+                  if (onOpenLockedModal) onOpenLockedModal('Support Tickets');
+                  return;
+                }
                 setCurrentView('support');
               }}
               className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
@@ -380,7 +452,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                   <LifeBuoy className="w-4.5 h-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-900">Helpdesk & Support Tickets</div>
+                  <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Helpdesk & Support Tickets</span>
+                    {!canAccessFullApp && <Lock className="w-3 h-3 text-amber-500" />}
+                  </div>
                   <div className="text-xs text-slate-500">Raise issues or order inquiries</div>
                 </div>
               </div>
@@ -400,6 +475,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
             <button
               onClick={() => {
                 triggerHaptic('light');
+                if (!canAccessFullApp) {
+                  if (onOpenLockedModal) onOpenLockedModal('Product Reviews');
+                  return;
+                }
                 setCurrentView('reviews');
               }}
               className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
@@ -409,7 +488,10 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                   <Star className="w-4.5 h-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-900">Product Reviews</div>
+                  <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Product Reviews</span>
+                    {!canAccessFullApp && <Lock className="w-3 h-3 text-amber-500" />}
+                  </div>
                   <div className="text-xs text-slate-500">Rate accessories & share experience</div>
                 </div>
               </div>

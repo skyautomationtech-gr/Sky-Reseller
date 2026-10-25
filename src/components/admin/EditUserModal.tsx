@@ -6,8 +6,10 @@ import { formatResellerId } from '../../lib/resellerIdHelper';
 import { 
   X, Shield, User, Store, Phone, Mail, MapPin, CreditCard, 
   Percent, FileText, CheckCircle2, AlertCircle, Eye, EyeOff, Key, Lock,
-  Building2, Landmark, Smartphone, Save, MessageCircle, Tag
+  Building2, Landmark, Smartphone, Save, MessageCircle, Tag, Loader2
 } from 'lucide-react';
+import { checkShopNameAvailability, updateShopNameAtomic } from '../../lib/shopNameService';
+import { normalizeShopName } from '../../utils/shopName';
 
 import { fetchUserLoginHistory, LoginHistoryItem } from '../../lib/deviceSecurity';
 
@@ -62,6 +64,41 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   const [userLogins, setUserLogins] = useState<LoginHistoryItem[]>([]);
   const [loadingLogins, setLoadingLogins] = useState(false);
 
+  // Live shop name check state
+  const [shopNameCheck, setShopNameCheck] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'taken';
+    message: string;
+  }>({ status: 'idle', message: '' });
+
+  useEffect(() => {
+    const raw = (formData.shopName || '').trim();
+    if (!raw || raw.length < 2 || !targetUser) {
+      setShopNameCheck({ status: 'idle', message: '' });
+      return;
+    }
+    // If same as target user's current shop name, allow
+    if (normalizeShopName(raw) === normalizeShopName(targetUser.shopName || '')) {
+      setShopNameCheck({ status: 'available', message: 'Current name' });
+      return;
+    }
+
+    setShopNameCheck({ status: 'checking', message: 'Checking...' });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkShopNameAvailability(raw, targetUser.uid);
+        if (res.available) {
+          setShopNameCheck({ status: 'available', message: 'Shop name is available' });
+        } else {
+          setShopNameCheck({ status: 'taken', message: 'This shop name is already taken. Please choose a different name.' });
+        }
+      } catch (_e) {
+        setShopNameCheck({ status: 'idle', message: '' });
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [formData.shopName, targetUser]);
+
   useEffect(() => {
     if (targetUser && activeTab === 'security') {
       setLoadingLogins(true);
@@ -113,34 +150,58 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
       return;
     }
 
+    if (shopNameCheck.status === 'taken') {
+      setErrorMsg('This shop name is already taken. Please choose a different name.');
+      return;
+    }
+
     setSaving(true);
     setSuccessMsg('');
     setErrorMsg('');
 
     try {
+      const cleanShopName = formData.shopName.trim();
+      const newKey = normalizeShopName(cleanShopName);
+      const oldKey = targetUser.shopNameKey || normalizeShopName(targetUser.shopName || '');
+
+      // If shop name changed, update reservation atomically in one transaction
+      if (cleanShopName && newKey !== oldKey) {
+        try {
+          await updateShopNameAtomic(cleanShopName, targetUser.uid);
+        } catch (resErr: any) {
+          if (resErr.message?.includes('already taken')) {
+            setErrorMsg('This shop name is already taken. Please choose a different name.');
+            setSaving(false);
+            return;
+          }
+          throw resErr;
+        }
+      }
+
       const updatePayload: Record<string, any> = {
-        fullName: formData.fullName.trim(),
-        shopName: formData.shopName.trim(),
-        mobile: formData.mobile.trim(),
-        whatsappNumber: formData.whatsappNumber.trim(),
-        email: formData.email.trim(),
-        role: formData.role,
-        status: formData.status,
-        rejectReason: formData.status === 'rejected' ? formData.rejectReason.trim() : null,
-        division: formData.division.trim(),
-        district: formData.district.trim(),
-        upazila: formData.upazila.trim(),
-        address: formData.address.trim(),
-        nidNumber: formData.nidNumber.trim(),
-        nidUrl: formData.nidUrl.trim(),
-        profilePhotoUrl: formData.profilePhotoUrl.trim(),
-        shopPhotoUrl: formData.shopPhotoUrl.trim(),
-        bankName: formData.bankName.trim(),
-        accountNumber: formData.accountNumber.trim(),
-        bkashNumber: formData.bkashNumber.trim(),
-        nagadNumber: formData.nagadNumber.trim(),
-        adminNotes: formData.adminNotes.trim(),
-        plainPassword: formData.plainPassword.trim(),
+        fullName: (formData.fullName || '').trim(),
+        shopName: cleanShopName,
+        shopNameKey: newKey,
+        mobile: (formData.mobile || '').trim(),
+        whatsappNumber: (formData.whatsappNumber || '').trim(),
+        email: (formData.email || '').trim(),
+        role: formData.role || 'reseller',
+        status: formData.status || 'approved',
+        rejectReason: formData.status === 'rejected' ? (formData.rejectReason || '').trim() : null,
+        division: (formData.division || '').trim(),
+        district: (formData.district || '').trim(),
+        upazila: (formData.upazila || '').trim(),
+        address: (formData.address || '').trim(),
+        nidNumber: (formData.nidNumber || '').trim(),
+        nidUrl: (formData.nidUrl || '').trim(),
+        profilePhotoUrl: (formData.profilePhotoUrl || '').trim(),
+        shopPhotoUrl: (formData.shopPhotoUrl || '').trim(),
+        bankName: (formData.bankName || '').trim(),
+        accountNumber: (formData.accountNumber || '').trim(),
+        bkashNumber: (formData.bkashNumber || '').trim(),
+        nagadNumber: (formData.nagadNumber || '').trim(),
+        adminNotes: (formData.adminNotes || '').trim(),
+        plainPassword: (formData.plainPassword || '').trim(),
         customCommissionRate: formData.customCommissionRate !== '' ? Number(formData.customCommissionRate) : null,
       };
 
@@ -319,8 +380,18 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Shop / Business Name *
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Shop / Business Name *</span>
+                    {shopNameCheck.status === 'available' && (
+                      <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Available
+                      </span>
+                    )}
+                    {shopNameCheck.status === 'taken' && (
+                      <span className="text-[10px] text-red-600 font-bold flex items-center gap-0.5">
+                        <AlertCircle className="w-3 h-3 text-red-600" /> Taken
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
@@ -328,8 +399,32 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     disabled={!isSuperAdmin}
                     value={formData.shopName}
                     onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs focus:bg-white disabled:opacity-70 disabled:cursor-not-allowed transition-all ${
+                      shopNameCheck.status === 'taken'
+                        ? 'border-red-400 focus:ring-2 focus:ring-red-400'
+                        : shopNameCheck.status === 'available'
+                        ? 'border-emerald-500 focus:ring-2 focus:ring-emerald-400'
+                        : 'border-slate-300 focus:ring-2 focus:ring-blue-600'
+                    }`}
                   />
+                  {shopNameCheck.status === 'checking' && (
+                    <p className="text-[11px] text-amber-600 flex items-center gap-1 font-medium mt-1">
+                      <Loader2 className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
+                      Checking availability...
+                    </p>
+                  )}
+                  {shopNameCheck.status === 'available' && (
+                    <p className="text-[11px] text-emerald-600 flex items-center gap-1 font-medium mt-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                      Shop name is available
+                    </p>
+                  )}
+                  {shopNameCheck.status === 'taken' && (
+                    <p className="text-[11px] text-red-600 flex items-center gap-1 font-medium mt-1">
+                      <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />
+                      This shop name is already taken. Please choose a different name.
+                    </p>
+                  )}
                 </div>
 
                 <div>

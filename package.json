@@ -29,6 +29,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.17.0",
+    "firebase-admin": "^14.5.0",
     "html2canvas": "^1.4.1",
     "html2canvas-pro": "^2.4.0",
     "html5-qrcode": "^2.3.8",

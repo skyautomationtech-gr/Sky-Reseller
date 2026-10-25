@@ -207,6 +207,7 @@ export const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
         productId: selectedProductId,
         productName: selectedOption?.productName || 'Product',
         productImage: selectedOption?.productImage || '',
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: displayName.trim(),
         rating,

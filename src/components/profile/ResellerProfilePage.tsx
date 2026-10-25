@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { updatePassword } from 'firebase/auth';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
@@ -6,6 +6,8 @@ import { UserProfile } from '../../types';
 import { BANGLADESH_GEO } from '../../data/bangladeshGeo';
 import { logAuditAction } from '../../lib/auditLogger';
 import { formatResellerId } from '../../lib/resellerIdHelper';
+import { checkShopNameAvailability, updateShopNameAtomic } from '../../lib/shopNameService';
+import { normalizeShopName } from '../../utils/shopName';
 import { 
   User, Store, Phone, MapPin, Key, Image as ImageIcon, 
   Save, Lock, CheckCircle2, AlertCircle, Loader2, Shield, MessageCircle, Tag
@@ -26,6 +28,41 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
   const [address, setAddress] = useState(user.address || '');
   const [profilePhotoUrl, setProfilePhotoUrl] = useState(user.profilePhotoUrl || '');
   const [shopPhotoUrl, setShopPhotoUrl] = useState(user.shopPhotoUrl || '');
+
+  // Live shop name check state
+  const [shopNameCheck, setShopNameCheck] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'taken';
+    message: string;
+  }>({ status: 'idle', message: '' });
+
+  useEffect(() => {
+    const raw = shopName.trim();
+    if (!raw || raw.length < 2) {
+      setShopNameCheck({ status: 'idle', message: '' });
+      return;
+    }
+    // If it matches their existing name, allow keeping their own existing name
+    if (normalizeShopName(raw) === normalizeShopName(user.shopName || '')) {
+      setShopNameCheck({ status: 'available', message: 'Current shop name' });
+      return;
+    }
+
+    setShopNameCheck({ status: 'checking', message: 'Checking...' });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkShopNameAvailability(raw, user.uid);
+        if (res.available) {
+          setShopNameCheck({ status: 'available', message: 'Shop name is available' });
+        } else {
+          setShopNameCheck({ status: 'taken', message: 'This shop name is already taken. Please choose a different name.' });
+        }
+      } catch (_e) {
+        setShopNameCheck({ status: 'idle', message: '' });
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [shopName, user.shopName, user.uid]);
 
   // Password Form State
   const [newPassword, setNewPassword] = useState('');
@@ -63,14 +100,38 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (shopNameCheck.status === 'taken') {
+      setProfileError('This shop name is already taken. Please choose a different name.');
+      return;
+    }
+
     setSavingProfile(true);
     setProfileSuccess('');
     setProfileError('');
 
     try {
+      const cleanShopName = shopName.trim();
+      const shopNameKey = normalizeShopName(cleanShopName);
+      const oldKey = user.shopNameKey || normalizeShopName(user.shopName || '');
+
+      // If shop name changed, update reservation atomically in one transaction
+      if (shopNameKey !== oldKey) {
+        try {
+          await updateShopNameAtomic(cleanShopName, user.uid);
+        } catch (resErr: any) {
+          if (resErr.message?.includes('already taken')) {
+            setProfileError('This shop name is already taken. Please choose a different name.');
+            setSavingProfile(false);
+            return;
+          }
+          throw resErr;
+        }
+      }
+
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, {
-        shopName,
+        shopName: cleanShopName,
+        shopNameKey,
         mobile,
         whatsappNumber,
         division,
@@ -92,9 +153,9 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
       );
 
       setProfileSuccess('Profile updated successfully!');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating profile:', err);
-      setProfileError('Failed to update profile.');
+      setProfileError(err.message || 'Failed to update profile.');
     } finally {
       setSavingProfile(false);
     }
@@ -185,7 +246,7 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
                   <img src={profilePhotoUrl} alt="Profile" className="w-12 h-12 rounded-xl object-cover border" />
                 ) : (
                   <div className="w-12 h-12 bg-slate-100 text-slate-500 font-bold text-lg rounded-xl flex items-center justify-center border">
-                    {user.fullName.charAt(0)}
+                    {(user.fullName || 'U').charAt(0)}
                   </div>
                 )}
                 <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">
@@ -235,14 +296,50 @@ export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Reseller Shop Name</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>Reseller Shop Name</span>
+                {shopNameCheck.status === 'available' && (
+                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Available
+                  </span>
+                )}
+                {shopNameCheck.status === 'taken' && (
+                  <span className="text-[10px] text-red-600 font-bold flex items-center gap-0.5">
+                    <AlertCircle className="w-3 h-3 text-red-600" /> Taken
+                  </span>
+                )}
+              </label>
               <input
                 type="text"
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                className={`w-full bg-slate-50 border text-slate-900 text-xs rounded-xl px-3.5 py-2.5 outline-none font-semibold transition-all ${
+                  shopNameCheck.status === 'taken'
+                    ? 'border-red-400 focus:ring-2 focus:ring-red-400'
+                    : shopNameCheck.status === 'available'
+                    ? 'border-emerald-500 focus:ring-2 focus:ring-emerald-400'
+                    : 'border-slate-300 focus:ring-2 focus:ring-blue-500'
+                }`}
                 required
               />
+              {shopNameCheck.status === 'checking' && (
+                <p className="text-[11px] text-amber-600 flex items-center gap-1 font-medium mt-1">
+                  <Loader2 className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
+                  Checking availability...
+                </p>
+              )}
+              {shopNameCheck.status === 'available' && (
+                <p className="text-[11px] text-emerald-600 flex items-center gap-1 font-medium mt-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                  Shop name is available
+                </p>
+              )}
+              {shopNameCheck.status === 'taken' && (
+                <p className="text-[11px] text-red-600 flex items-center gap-1 font-medium mt-1">
+                  <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />
+                  This shop name is already taken. Please choose a different name.
+                </p>
+              )}
             </div>
 
             <div>

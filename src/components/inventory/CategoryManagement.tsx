@@ -185,7 +185,7 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ isAdminO
                       <img src={cat.imageUrl} alt={cat.name} className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0" />
                     ) : (
                       <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0 text-base">
-                        {cat.name.charAt(0)}
+                        {(cat.name || 'C').charAt(0)}
                       </div>
                     )}
                     <div>
@@ -259,7 +259,7 @@ export const CategoryManagement: React.FC<CategoryManagementProps> = ({ isAdminO
                           <img src={cat.imageUrl} alt={cat.name} className="w-10 h-10 rounded-xl object-cover border border-slate-200" />
                         ) : (
                           <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                            {cat.name.charAt(0)}
+                            {(cat.name || 'C').charAt(0)}
                           </div>
                         )}
                         <div>

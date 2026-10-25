@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, addDoc, collection, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import resellbdLogo from '../../assets/images/logo.png';
 import { SkyLogo } from '../common/SkyLogo';
@@ -13,8 +13,10 @@ import {
   MapPin, Landmark, Briefcase, Camera, Lock, CheckCircle2, 
   ChevronRight, ChevronLeft, AlertCircle, Sparkles, ShieldCheck, 
   Eye, EyeOff, Upload, FileText, Check, ExternalLink, Globe, 
-  Trash2, Crop, AlertTriangle, FileCheck, ArrowRight, ChevronDown, ChevronUp, Copy, BookOpen
+  Trash2, Crop, AlertTriangle, FileCheck, ArrowRight, ChevronDown, ChevronUp, Copy, BookOpen, Loader2
 } from 'lucide-react';
+import { checkShopNameAvailability, updateShopNameAtomic } from '../../lib/shopNameService';
+import { normalizeShopName } from '../../utils/shopName';
 import { OtpVerificationInput } from './register/OtpVerificationInput';
 import { SearchableSelect, SelectOption } from './register/SearchableSelect';
 import { SquareCropModal } from './register/SquareCropModal';
@@ -28,11 +30,13 @@ import {
   BdDivision, BdDistrict, BdUpazila, BdUnion 
 } from '../../data/bd/geocodeService';
 import { BANGLADESH_BANKS } from '../../data/bangladeshBanks';
-import { PayoutMethod } from '../../types';
+import { PayoutMethod, UserProfile } from '../../types';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
   onRegistered: () => void;
+  initialProfile?: UserProfile | null;
+  isResubmit?: boolean;
 }
 
 // Data-driven 8 steps
@@ -99,7 +103,12 @@ const compressImage = (file: File | Blob, maxWidth = 1024, maxHeight = 1024, qua
   });
 };
 
-export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onRegistered }) => {
+export const RegisterForm: React.FC<RegisterFormProps> = ({ 
+  onSwitchToLogin, 
+  onRegistered,
+  initialProfile,
+  isResubmit = false
+}) => {
   const { isOnline } = useNetwork();
   const [currentStep, setCurrentStep] = useState<number>(1);
 
@@ -195,6 +204,63 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
   // Review card collapsible states
   const [collapsedCards, setCollapsedCards] = useState<{ [key: string]: boolean }>({});
 
+  // Live shop name uniqueness checking state
+  const [shopNameCheck, setShopNameCheck] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'taken' | 'error';
+    message: string;
+    key: string;
+  }>({
+    status: 'idle',
+    message: '',
+    key: '',
+  });
+
+  // Debounced live availability check (600 ms) for Shop Name
+  useEffect(() => {
+    const raw = formData.shopName.trim();
+    if (raw.length < 2) {
+      setShopNameCheck({ status: 'idle', message: '', key: '' });
+      return;
+    }
+
+    setShopNameCheck((prev) => ({
+      ...prev,
+      status: 'checking',
+      message: 'Checking...',
+    }));
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkShopNameAvailability(
+          raw,
+          isResubmit && initialProfile ? initialProfile.uid : undefined
+        );
+        if (res.available) {
+          setShopNameCheck({
+            status: 'available',
+            message: 'Shop name is available',
+            key: res.shopNameKey,
+          });
+        } else {
+          setShopNameCheck({
+            status: 'taken',
+            message: 'This shop name is already taken. Please choose a different name.',
+            key: res.shopNameKey,
+          });
+        }
+      } catch (_err) {
+        // Fail-safe: if the check cannot run (offline/error), show "Could not verify the name, will be checked again on submit"
+        setShopNameCheck({
+          status: 'error',
+          message: 'Could not verify the name, will be checked again on submit',
+          key: '',
+        });
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [formData.shopName, isResubmit, initialProfile]);
+
   // Submitting detailed step progress text
   const [submittingStepText, setSubmittingStepText] = useState('');
 
@@ -216,20 +282,66 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  // Restore Draft from LocalStorage on mount
+  // Restore Draft from LocalStorage on mount or Prefill from initialProfile if resubmitting
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        delete parsed.password;
-        delete parsed.confirmPassword;
-        setFormData((prev) => ({ ...prev, ...parsed }));
+    if (isResubmit && initialProfile) {
+      setFormData((prev) => ({
+        ...prev,
+        fullName: initialProfile.fullName || '',
+        shopName: initialProfile.shopName || '',
+        dob: initialProfile.dob || '',
+        gender: initialProfile.gender || 'male',
+        email: initialProfile.email || '',
+        emailVerified: true,
+        mobile: initialProfile.mobile || '',
+        whatsappNumber: initialProfile.whatsappNumber || initialProfile.whatsapp || '',
+        sameAsMobile: !initialProfile.whatsappNumber || initialProfile.whatsappNumber === initialProfile.mobile,
+        division: initialProfile.division || '',
+        divisionId: initialProfile.divisionId || '',
+        district: initialProfile.district || '',
+        districtId: initialProfile.districtId || '',
+        upazila: initialProfile.upazila || '',
+        upazilaId: initialProfile.upazilaId || '',
+        union: initialProfile.union || '',
+        ward: initialProfile.ward || '',
+        postalCode: initialProfile.postalCode || '',
+        address: initialProfile.address || '',
+        payoutMethod: (initialProfile.payoutMethod as any) || 'bkash',
+        accountHolderName: initialProfile.accountHolderName || '',
+        accountNumber: initialProfile.accountNumber || '',
+        bankName: initialProfile.bankName || '',
+        branchName: initialProfile.branchName || '',
+        routingNumber: initialProfile.routingNumber || '',
+        facebookPage: initialProfile.facebookPage || '',
+        tiktokUrl: initialProfile.tiktokUrl || '',
+        instagramUrl: initialProfile.instagramUrl || '',
+        youtubeUrl: initialProfile.youtubeUrl || '',
+        shopLogoUrl: initialProfile.shopLogoUrl || initialProfile.shopPhotoUrl || '',
+        profilePhotoUrl: initialProfile.profilePhotoUrl || '',
+        shopPhotoUrl: initialProfile.shopPhotoUrl || '',
+        documentType: initialProfile.documentType || 'nid',
+        nidFrontUrl: initialProfile.nidFrontUrl || initialProfile.nidUrl || '',
+        nidBackUrl: initialProfile.nidBackUrl || '',
+        birthCertificateUrl: initialProfile.birthCertificateUrl || '',
+        agreeToTerms: true,
+        agreeToPrivacy: true,
+        hasScrolledTerms: true,
+        hasScrolledPrivacy: true,
+      }));
+    } else {
+      try {
+        const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          delete parsed.password;
+          delete parsed.confirmPassword;
+          setFormData((prev) => ({ ...prev, ...parsed }));
+        }
+      } catch {
+        // Ignore
       }
-    } catch {
-      // Ignore
     }
-  }, []);
+  }, [isResubmit, initialProfile]);
 
   // Auto-save draft on form change (excluding passwords)
   useEffect(() => {
@@ -417,6 +529,19 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         }
         return false;
       }
+
+      // Block advancing if shop name is already taken or still being checked
+      if (shopNameCheck.status === 'taken') {
+        triggerShake(['shopName']);
+        setStepError('This shop name is already taken. Please choose a different name.');
+        return false;
+      }
+      if (shopNameCheck.status === 'checking') {
+        triggerShake(['shopName']);
+        setStepError('Checking shop name availability... Please wait a moment.');
+        return false;
+      }
+
       return true;
     }
 
@@ -434,7 +559,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       if (invalid.length > 0) {
         triggerShake(invalid);
         if (invalid.includes('emailOtp')) {
-          setStepError('Please verify your email address with the 6-digit OTP code before proceeding.');
+          setStepError('অনুগ্রহ করে আপনার ইমেইল ভেরিফাই করুন। "Send OTP" বাটনে ক্লিক করে ইমেইলে পাওয়া ৬-ডিজিট কোডটি প্রবেশ করান (ইনবক্স বা Spam ফোল্ডার চেক করুন)।');
         } else if (invalid.includes('mobile') || invalid.includes('whatsappNumber')) {
           setStepError('Please enter valid 11-digit Bangladesh phone numbers (01[3-9]XXXXXXXX).');
         } else {
@@ -568,6 +693,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
 
     // Step 7: Account Security & Terms
     if (currentStep === 7) {
+      if (isResubmit) {
+        return true;
+      }
       const invalid: string[] = [];
       const pwdEval = evaluatePassword(formData.password);
       if (!pwdEval.isAcceptable) invalid.push('password');
@@ -709,17 +837,138 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
 
     setLoading(true);
     setStepError('');
-    setSubmittingStepText('1/4: Verifying credentials & creating secure account...');
     triggerHaptic('medium');
 
     try {
-      const cleanEmail = formData.email.trim().toLowerCase();
       const cleanMobile = normalizeBdPhone(formData.mobile);
       const cleanWhatsApp = normalizeBdPhone(formData.sameAsMobile ? formData.mobile : formData.whatsappNumber);
 
+      // Handle Resubmission of a previously rejected application
+      if (isResubmit && initialProfile) {
+        setSubmittingStepText('1/3: Checking shop name & updating registration info...');
+
+        const rawShopName = formData.shopName.trim();
+        const shopNameKey = normalizeShopName(rawShopName);
+
+        // Enforce shop name reservation on resubmit atomically
+        try {
+          await updateShopNameAtomic(rawShopName, initialProfile.uid);
+        } catch (resubmitNameErr: any) {
+          if (resubmitNameErr.message?.includes('already taken')) {
+            setShopNameCheck({
+              status: 'taken',
+              message: 'This shop name is already taken. Please choose a different name.',
+              key: shopNameKey,
+            });
+            setCurrentStep(1);
+            setStepError('This shop name is already taken. Please choose a different name.');
+            triggerShake(['shopName']);
+            setLoading(false);
+            return;
+          }
+          console.warn('Shop name update check error on resubmit:', resubmitNameErr);
+        }
+
+        const defaultPayoutMethod: PayoutMethod = {
+          id: 'payout_' + Date.now(),
+          type: formData.payoutMethod === 'bank' ? 'Bank' : formData.payoutMethod === 'bkash' ? 'bKash' : formData.payoutMethod === 'nagad' ? 'Nagad' : formData.payoutMethod === 'rocket' ? 'Rocket' : 'Upay',
+          accountNumber: ((formData.payoutMethod === 'bank' ? formData.accountNumber : formData.accountNumber || cleanMobile) || '').trim(),
+          accountHolderName: (formData.accountHolderName || formData.fullName || '').trim(),
+          bankName: formData.payoutMethod === 'bank' ? ((formData.bankName || formData.customBankName || '').trim() || null) : null,
+          branchName: formData.payoutMethod === 'bank' ? ((formData.branchName || '').trim() || null) : null,
+          routingNumber: formData.payoutMethod === 'bank' ? ((formData.routingNumber || '').trim() || null) : null,
+          isDefault: true,
+          verified: false,
+          addedAt: new Date().toISOString(),
+        };
+
+        setSubmittingStepText('2/3: Archiving previous feedback & submitting for review...');
+        const userRef = doc(db, 'users', initialProfile.uid);
+        const resubmitHistoryEntry = {
+          resubmittedAt: new Date().toISOString(),
+          previousRejectReason: initialProfile.rejectReason || 'No reason provided',
+          previousRejectedSections: initialProfile.rejectedSections || [],
+        };
+
+        await updateDoc(userRef, {
+          fullName: (formData.fullName || '').trim(),
+          shopName: rawShopName,
+          shopNameKey,
+          dob: formData.dob || '',
+          gender: formData.gender || 'male',
+          mobile: cleanMobile,
+          whatsapp: cleanWhatsApp,
+          whatsappNumber: cleanWhatsApp,
+          division: formData.division || formData.customDivision || '',
+          divisionId: formData.divisionId || '',
+          district: formData.district || formData.customDistrict || '',
+          districtId: formData.districtId || '',
+          upazila: formData.upazila || formData.customUpazila || '',
+          upazilaId: formData.upazilaId || '',
+          union: formData.union || '',
+          ward: formData.ward || '',
+          postalCode: (formData.postalCode || '').trim(),
+          address: (formData.address || '').trim(),
+          payoutMethod: formData.payoutMethod || 'bkash',
+          accountHolderName: (formData.accountHolderName || '').trim(),
+          accountNumber: (formData.accountNumber || '').trim(),
+          bankName: formData.bankName || formData.customBankName || '',
+          branchName: formData.branchName || '',
+          routingNumber: formData.routingNumber || '',
+          payoutMethods: [defaultPayoutMethod],
+          facebookPage: formData.facebookPage || '',
+          tiktokUrl: formData.tiktokUrl || '',
+          instagramUrl: formData.instagramUrl || '',
+          youtubeUrl: formData.youtubeUrl || '',
+          shopLogoUrl: formData.shopLogoUrl || '',
+          profilePhotoUrl: formData.profilePhotoUrl || formData.shopLogoUrl || '',
+          shopPhotoUrl: formData.shopPhotoUrl || formData.shopLogoUrl || '',
+          documentType: formData.documentType || 'nid',
+          nidFrontUrl: formData.nidFrontUrl || '',
+          nidBackUrl: formData.nidBackUrl || '',
+          birthCertificateUrl: formData.birthCertificateUrl || '',
+          status: 'pending',
+          rejectReason: null,
+          rejectedSections: [],
+          slaNotified: false,
+          updatedAt: serverTimestamp(),
+          resubmissions: arrayUnion(resubmitHistoryEntry),
+        });
+
+        // Notify Admins about the resubmission
+        try {
+          await addDoc(collection(db, 'notifications'), {
+            title: 'Reseller Resubmitted Registration',
+            message: `${rawShopName || formData.fullName} (${initialProfile.resellerId || initialProfile.uid.slice(0, 8)}) has corrected their details and resubmitted for review.`,
+            type: 'registration_resubmitted',
+            targetRole: 'admin',
+            userId: initialProfile.uid,
+            read: false,
+            createdAt: serverTimestamp(),
+          });
+        } catch (notifErr) {
+          console.warn('Admin notification error:', notifErr);
+        }
+
+        setSubmittingStepText('3/3: Application resubmitted! Loading dashboard...');
+        try {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch {
+          // Ignore
+        }
+        triggerHaptic('heavy');
+        onRegistered();
+        return;
+      }
+
+      setSubmittingStepText('1/4: Verifying credentials & creating secure account...');
+      const cleanEmail = formData.email.trim().toLowerCase();
+
       let uid = '';
+      let createdAuthUser: any = null;
       try {
         const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, formData.password);
+        createdAuthUser = userCredential.user;
         uid = userCredential.user.uid;
       } catch (authErr: any) {
         if (authErr.code === 'auth/email-already-in-use') {
@@ -741,11 +990,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
       const defaultPayoutMethod: PayoutMethod = {
         id: 'payout_' + Date.now(),
         type: formData.payoutMethod === 'bank' ? 'Bank' : formData.payoutMethod === 'bkash' ? 'bKash' : formData.payoutMethod === 'nagad' ? 'Nagad' : formData.payoutMethod === 'rocket' ? 'Rocket' : 'Upay',
-        accountNumber: (formData.payoutMethod === 'bank' ? formData.accountNumber : formData.accountNumber || cleanMobile).trim(),
-        accountHolderName: (formData.accountHolderName || formData.fullName).trim(),
-        bankName: formData.payoutMethod === 'bank' ? (formData.bankName || formData.customBankName).trim() : null,
-        branchName: formData.payoutMethod === 'bank' ? formData.branchName.trim() : null,
-        routingNumber: formData.payoutMethod === 'bank' ? formData.routingNumber.trim() : null,
+        accountNumber: ((formData.payoutMethod === 'bank' ? formData.accountNumber : formData.accountNumber || cleanMobile) || '').trim(),
+        accountHolderName: (formData.accountHolderName || formData.fullName || '').trim(),
+        bankName: formData.payoutMethod === 'bank' ? ((formData.bankName || formData.customBankName || '').trim() || null) : null,
+        branchName: formData.payoutMethod === 'bank' ? ((formData.branchName || '').trim() || null) : null,
+        routingNumber: formData.payoutMethod === 'bank' ? ((formData.routingNumber || '').trim() || null) : null,
         isDefault: true,
         verified: false,
         addedAt: new Date().toISOString(),
@@ -756,16 +1005,41 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
         payoutMethods: [defaultPayoutMethod],
       };
 
-      setSubmittingStepText('3/4: Allocating sequential Reseller ID & locking security rules...');
+      setSubmittingStepText('3/4: Allocating sequential Reseller ID & locking shop name reservation...');
 
-      // Finalize registration via Cloud Function / atomic Firestore transaction on counters/resellerId
-      const finalizeResult = await finalizeResellerRegistration({
-        uid,
-        email: cleanEmail,
-        formData: completeFormData,
-        termsVersion: formData.termsVersion || '1.0',
-        password: formData.password,
-      });
+      // Finalize registration via Cloud Function / atomic Firestore transaction with unique reservation
+      let finalizeResult: any;
+      try {
+        finalizeResult = await finalizeResellerRegistration({
+          uid,
+          email: cleanEmail,
+          formData: completeFormData,
+          termsVersion: formData.termsVersion || '1.0',
+          password: formData.password,
+        });
+      } catch (finalizeErr: any) {
+        // If shop name is already taken, safely delete half-created auth user and send back to Step 1
+        if (finalizeErr.message?.includes('already taken') || finalizeErr.code === 'already-exists') {
+          try {
+            if (createdAuthUser) {
+              await createdAuthUser.delete();
+            }
+          } catch (delErr) {
+            console.warn('Could not delete half-created auth user:', delErr);
+          }
+          setShopNameCheck({
+            status: 'taken',
+            message: 'This shop name is already taken. Please choose a different name.',
+            key: normalizeShopName(formData.shopName),
+          });
+          setCurrentStep(1);
+          setStepError('This shop name is already taken. Please choose a different name.');
+          triggerShake(['shopName']);
+          setLoading(false);
+          return;
+        }
+        throw finalizeErr;
+      }
 
       setSubmittingStepText('4/4: Complete! Launching your reseller dashboard...');
 
@@ -991,9 +1265,14 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                       <span className="flex items-center gap-1.5">
                         <Store className="w-3.5 h-3.5 text-[#0E9AA7]" /> Shop Name / Store Name <span className="text-[#3DD055]">*</span>
                       </span>
-                      {formData.shopName.trim().length >= 2 && (
+                      {shopNameCheck.status === 'available' && (
                         <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Valid
+                          <Check className="w-3 h-3" /> Available
+                        </span>
+                      )}
+                      {shopNameCheck.status === 'taken' && (
+                        <span className="text-[10px] text-red-400 font-bold flex items-center gap-0.5">
+                          <AlertCircle className="w-3 h-3" /> Taken
                         </span>
                       )}
                     </label>
@@ -1004,8 +1283,39 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                       value={formData.shopName}
                       onFocus={handleInputFocus}
                       onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
-                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
+                      className={`w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none transition-all ${
+                        shopNameCheck.status === 'taken'
+                          ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/40'
+                          : shopNameCheck.status === 'available'
+                          ? 'border-[#3DD055]/80 focus:border-[#3DD055] focus:ring-2 focus:ring-[#3DD055]/40'
+                          : 'border-white/20 focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60'
+                      }`}
                     />
+                    {/* Live status indicators below field */}
+                    {shopNameCheck.status === 'checking' && (
+                      <p className="text-xs text-amber-300 flex items-center gap-1.5 font-medium mt-1">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300 shrink-0" />
+                        Checking...
+                      </p>
+                    )}
+                    {shopNameCheck.status === 'available' && (
+                      <p className="text-xs text-[#3DD055] flex items-center gap-1.5 font-semibold mt-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#3DD055] shrink-0" />
+                        Shop name is available
+                      </p>
+                    )}
+                    {shopNameCheck.status === 'taken' && (
+                      <p className="text-xs text-rose-400 flex items-center gap-1.5 font-semibold mt-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        This shop name is already taken. Please choose a different name.
+                      </p>
+                    )}
+                    {shopNameCheck.status === 'error' && (
+                      <p className="text-xs text-amber-300/90 flex items-center gap-1.5 font-medium mt-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                        Could not verify the name, will be checked again on submit
+                      </p>
+                    )}
                   </div>
 
                   <div className={`space-y-1.5 ${shakeFields.has('dob') ? 'animate-shake' : ''}`}>
@@ -1085,19 +1395,25 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                       <span className="flex items-center gap-1.5">
                         <Mail className="w-3.5 h-3.5 text-[#0E9AA7]" /> Email Address <span className="text-[#3DD055]">*</span>
                       </span>
-                      {formData.emailVerified && (
+                      {isResubmit ? (
+                        <span className="text-[10px] text-amber-300 font-bold flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                          <Lock className="w-3 h-3" /> Account Email (Cannot be changed)
+                        </span>
+                      ) : formData.emailVerified ? (
                         <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
                           <CheckCircle2 className="w-3.5 h-3.5 text-[#3DD055]" /> Verified
                         </span>
-                      )}
+                      ) : null}
                     </label>
                     <input
                       type="email"
                       required
+                      disabled={isResubmit}
                       placeholder="e.g. reseller@gmail.com"
                       value={formData.email}
                       onFocus={handleInputFocus}
                       onChange={(e) => {
+                        if (isResubmit) return;
                         const newEmail = e.target.value;
                         setFormData({ 
                           ...formData, 
@@ -1105,19 +1421,25 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                           emailVerified: false 
                         });
                       }}
-                      className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)] transition-all"
+                      className={`w-full min-h-[50px] px-4 py-3 backdrop-blur-[24px] border rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none transition-all ${
+                        isResubmit 
+                          ? 'bg-white/[0.04] border-white/10 opacity-75 cursor-not-allowed text-slate-300' 
+                          : 'bg-white/[0.08] border-white/20 focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)]'
+                      }`}
                     />
                   </div>
 
-                  <div className={`space-y-2 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 ${shakeFields.has('emailOtp') ? 'animate-shake' : ''}`}>
-                    <OtpVerificationInput
-                      email={formData.email}
-                      isVerified={formData.emailVerified}
-                      onVerifiedChange={(verified) => {
-                        setFormData((prev) => ({ ...prev, emailVerified: verified }));
-                      }}
-                    />
-                  </div>
+                  {!isResubmit && (
+                    <div className={`space-y-2 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 ${shakeFields.has('emailOtp') ? 'animate-shake' : ''}`}>
+                      <OtpVerificationInput
+                        email={formData.email}
+                        isVerified={formData.emailVerified}
+                        onVerifiedChange={(verified) => {
+                          setFormData((prev) => ({ ...prev, emailVerified: verified }));
+                        }}
+                      />
+                    </div>
+                  )}
 
                   <div className={`space-y-1.5 ${shakeFields.has('mobile') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
@@ -1950,79 +2272,101 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#0E9AA7]/15 to-[#3DD055]/15 border border-[#3DD055]/30 flex items-start gap-3 text-xs">
                     <Sparkles className="w-5 h-5 text-[#3DD055] shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
-                      <span className="font-bold text-white block">System-Assigned Unique Reseller ID</span>
+                      <span className="font-bold text-white block">
+                        {isResubmit ? 'Reseller ID & Credentials Preserved' : 'System-Assigned Unique Reseller ID'}
+                      </span>
                       <p className="text-slate-300 text-[11px] leading-relaxed">
-                        Your official Reseller ID (e.g. <span className="font-mono font-bold text-[#3DD055]">RSB-000001</span>) will be generated on the server during submission. You can use it as your username to sign in.
+                        {isResubmit ? (
+                          <>
+                            Your Reseller ID <span className="font-mono font-bold text-[#3DD055]">({initialProfile?.resellerId || 'Assigned'})</span> and existing account password remain secure and active.
+                          </>
+                        ) : (
+                          <>
+                            Your official Reseller ID (e.g. <span className="font-mono font-bold text-[#3DD055]">RSB-000001</span>) will be generated on the server during submission. You can use it as your username to sign in.
+                          </>
+                        )}
                       </p>
                     </div>
                   </div>
 
-                  {/* Password Input with Show/Hide Toggle */}
-                  <div className={`space-y-1.5 ${shakeFields.has('password') ? 'animate-shake' : ''}`}>
-                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-[#0E9AA7]" /> Create Password <span className="text-[#3DD055]">*</span>
-                      </span>
-                      {evaluatePassword(formData.password).isAcceptable && (
-                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Minimum Strength Met
-                        </span>
-                      )}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        placeholder="••••••••"
-                        value={formData.password}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 pr-11"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                  {isResubmit ? (
+                    <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-3">
+                      <ShieldCheck className="w-6 h-6 text-[#3DD055] shrink-0" />
+                      <div className="text-xs">
+                        <p className="font-bold text-white">Security & Password Verified</p>
+                        <p className="text-slate-300 text-[11px]">Your login credentials are secure. You may proceed to review and resubmit your updated information.</p>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Password Input with Show/Hide Toggle */}
+                      <div className={`space-y-1.5 ${shakeFields.has('password') ? 'animate-shake' : ''}`}>
+                        <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-[#0E9AA7]" /> Create Password <span className="text-[#3DD055]">*</span>
+                          </span>
+                          {evaluatePassword(formData.password).isAcceptable && (
+                            <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                              <Check className="w-3 h-3" /> Minimum Strength Met
+                            </span>
+                          )}
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            placeholder="••••••••"
+                            value={formData.password}
+                            onFocus={handleInputFocus}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 pr-11"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
 
-                    {/* Password Strength Indicator with Checklist */}
-                    <PasswordStrengthIndicator password={formData.password} />
-                  </div>
+                        {/* Password Strength Indicator with Checklist */}
+                        <PasswordStrengthIndicator password={formData.password} />
+                      </div>
 
-                  {/* Confirm Password Input */}
-                  <div className={`space-y-1.5 ${shakeFields.has('confirmPassword') ? 'animate-shake' : ''}`}>
-                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-[#3DD055]" /> Confirm Password <span className="text-[#3DD055]">*</span>
-                      </span>
-                      {formData.confirmPassword && formData.password === formData.confirmPassword && (
-                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Passwords Match
-                        </span>
-                      )}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showConfirmPassword ? 'text' : 'password'}
-                        required
-                        placeholder="••••••••"
-                        value={formData.confirmPassword}
-                        onFocus={handleInputFocus}
-                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                        className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 pr-11"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
-                      >
-                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
+                      {/* Confirm Password Input */}
+                      <div className={`space-y-1.5 ${shakeFields.has('confirmPassword') ? 'animate-shake' : ''}`}>
+                        <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-[#3DD055]" /> Confirm Password <span className="text-[#3DD055]">*</span>
+                          </span>
+                          {formData.confirmPassword && formData.password === formData.confirmPassword && (
+                            <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
+                              <Check className="w-3 h-3" /> Passwords Match
+                            </span>
+                          )}
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmPassword ? 'text' : 'password'}
+                            required
+                            placeholder="••••••••"
+                            value={formData.confirmPassword}
+                            onFocus={handleInputFocus}
+                            onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                            className="w-full min-h-[50px] px-4 py-3 bg-white/[0.08] backdrop-blur-[24px] border border-white/20 rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 pr-11"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
+                          >
+                            {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {/* Separate Terms & Conditions and Privacy Checkboxes */}
                   <div className="space-y-3 pt-2">
@@ -2499,7 +2843,12 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="flex-1 min-h-[50px] px-6 rounded-2xl bg-gradient-to-r from-[#0E9AA7] via-[#3DD055] to-[#0E9AA7] hover:brightness-110 active:scale-98 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_10px_25px_-5px_rgba(61,208,85,0.4)] border border-white/30 transition-all cursor-pointer select-none relative overflow-hidden group"
+                  disabled={currentStep === 1 && (shopNameCheck.status === 'checking' || shopNameCheck.status === 'taken')}
+                  className={`flex-1 min-h-[50px] px-6 rounded-2xl bg-gradient-to-r from-[#0E9AA7] via-[#3DD055] to-[#0E9AA7] hover:brightness-110 active:scale-98 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_10px_25px_-5px_rgba(61,208,85,0.4)] border border-white/30 transition-all select-none relative overflow-hidden group ${
+                    currentStep === 1 && (shopNameCheck.status === 'checking' || shopNameCheck.status === 'taken')
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'cursor-pointer'
+                  }`}
                 >
                   <div className="absolute inset-0 pointer-events-none overflow-hidden">
                     <div className="absolute -inset-[100%] bg-gradient-to-tr from-transparent via-white/30 to-transparent group-hover:animate-shimmer-sweep" />
@@ -2524,7 +2873,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin, onR
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-white" />
-                      <span>Submit Reseller Registration</span>
+                      <span>{isResubmit ? 'Resubmit Application for Approval' : 'Submit Reseller Registration'}</span>
                     </>
                   )}
                 </button>

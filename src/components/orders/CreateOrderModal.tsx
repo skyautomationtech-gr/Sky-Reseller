@@ -253,6 +253,7 @@ export const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
             const newOrderRef = doc(collection(db, 'orders'));
             transaction.set(newOrderRef, {
               orderNumber: itemOrderNumber,
+              userId: user.uid,
               resellerId: user.uid,
               resellerName: user.fullName,
               resellerShopName: user.shopName || user.fullName,
@@ -292,6 +293,7 @@ export const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
 
           transaction.set(newOrderRef, {
             orderNumber: nextOrderNumber,
+            userId: user.uid,
             resellerId: user.uid,
             resellerName: user.fullName,
             resellerShopName: user.shopName || user.fullName,

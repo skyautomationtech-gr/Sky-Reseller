@@ -175,6 +175,8 @@ export function subscribeToRealtimeNotifications(
         }
       }
     });
+  }, (err) => {
+    console.warn('Realtime notices listener error:', err);
   });
 
   return unsubscribe;

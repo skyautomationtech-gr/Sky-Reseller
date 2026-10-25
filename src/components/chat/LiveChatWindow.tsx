@@ -259,7 +259,7 @@ export const LiveChatWindow: React.FC<LiveChatWindowProps> = ({
               />
             ) : (
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-inner">
-                {isReseller ? <Shield className="w-5 h-5" /> : partnerDisplayName.charAt(0)}
+                {isReseller ? <Shield className="w-5 h-5" /> : (partnerDisplayName || 'U').charAt(0)}
               </div>
             )}
             <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-slate-900" />

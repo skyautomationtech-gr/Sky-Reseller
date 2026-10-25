@@ -191,8 +191,9 @@ export const FeedbackForm: React.FC<FeedbackFormProps> = ({
       const randNum = Math.floor(100000 + Math.random() * 900000);
       const generatedRefId = `FB-${randNum}`;
 
-      const feedbackPayload: Omit<ResellerFeedback, 'id'> = {
+      const feedbackPayload: any = {
         refId: generatedRefId,
+        userId: user.uid,
         resellerId: user.uid,
         resellerName: user.fullName || user.email || 'Reseller',
         resellerShopName: user.shopName || '',

@@ -225,7 +225,7 @@ export const AdminLiveChatHub: React.FC<AdminLiveChatHubProps> = ({
                           <div className={`w-11 h-11 rounded-full flex items-center justify-center font-extrabold text-sm uppercase ${
                             isSelected ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700'
                           }`}>
-                            {conv.resellerName.charAt(0)}
+                            {(conv.resellerName || 'R').charAt(0)}
                           </div>
                         )}
                         <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
@@ -320,7 +320,7 @@ export const AdminLiveChatHub: React.FC<AdminLiveChatHubProps> = ({
                     />
                   ) : (
                     <div className="w-16 h-16 rounded-full bg-blue-600 text-white font-extrabold text-xl flex items-center justify-center mx-auto shadow-md">
-                      {selectedChat.resellerName.charAt(0)}
+                      {(selectedChat.resellerName || 'R').charAt(0)}
                     </div>
                   )}
                   <div>

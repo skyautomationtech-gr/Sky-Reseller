@@ -158,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <img src={user.profilePhotoUrl} alt={user.fullName} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase">
-              {user.fullName.charAt(0)}
+              {(user.fullName || 'U').charAt(0)}
             </div>
           )}
         </button>

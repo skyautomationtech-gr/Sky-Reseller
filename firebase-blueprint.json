@@ -8,6 +8,7 @@
         "uid": { "type": "string" },
         "fullName": { "type": "string", "maxLength": 100 },
         "shopName": { "type": "string", "maxLength": 100 },
+        "shopNameKey": { "type": "string", "maxLength": 100 },
         "mobile": { "type": "string", "maxLength": 20 },
         "email": { "type": "string", "maxLength": 100 },
         "division": { "type": "string" },
@@ -23,12 +24,28 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["uid", "fullName", "shopName", "mobile", "email", "role", "status"]
+    },
+    "ShopNameReservation": {
+      "title": "ShopNameReservation",
+      "description": "Unique shop name reservation entity",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "shopName": { "type": "string" },
+        "shopNameKey": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "shopName", "shopNameKey", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles collection"
+    },
+    "/shopNames/{shopNameKey}": {
+      "schema": "ShopNameReservation",
+      "description": "Unique shop name reservations collection, Cloud Functions / server only"
     }
   }
 }
