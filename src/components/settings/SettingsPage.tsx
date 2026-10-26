@@ -5,6 +5,7 @@ import { UserProfile, CompanySettings } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
 import { SkyLogo, isObsoleteLogo } from '../common/SkyLogo';
 import { VersionManagerForm } from '../version/VersionManagerForm';
+import { Curved3DBanner } from '../home/Curved3DBanner';
 import { 
   Settings, Building2, Phone, Mail, MapPin, DollarSign, 
   Percent, Truck, Image as ImageIcon, Save, ArrowRight, Loader2, CheckCircle2, Shield, LogOut,
@@ -286,25 +287,68 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
             </div>
 
             {(!settings.bannerImages || settings.bannerImages.length === 0) ? (
-              <p className="text-xs text-slate-400 bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200">
-                No custom banner images uploaded. The reseller storefront is using default brand hero banner.
-              </p>
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400 bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200">
+                  No custom banner images uploaded. The reseller storefront is using the default curved 3D brand hero banner.
+                </p>
+                <div className="max-w-md mx-auto">
+                  <Curved3DBanner bannerImages={[]} />
+                </div>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {settings.bannerImages.map((imgUrl, idx) => (
-                  <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-[21/9]">
-                    <img src={imgUrl} alt={`Banner ${idx + 1}`} className="w-full h-full object-cover" />
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveBanner(idx)}
-                        className="absolute top-2 right-2 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded-md opacity-90 hover:opacity-100 shadow-md"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div className="space-y-4">
+                {/* Live Carousel Storefront Preview */}
+                <div className="max-w-xl mx-auto p-4 bg-slate-100/70 rounded-3xl border border-slate-200/80">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2 block text-center">
+                    Live Storefront 3D Curved Banner Preview
+                  </span>
+                  <Curved3DBanner bannerImages={settings.bannerImages} />
+                </div>
+
+                {/* Individual Uploaded Banner Thumbnails */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
+                  {settings.bannerImages.map((imgUrl, idx) => (
+                    <div
+                      key={idx}
+                      className="relative group rounded-[22px] overflow-hidden aspect-[2.2/1] bg-slate-950 border border-white/20 shadow-[0_12px_24px_-8px_rgba(11,22,48,0.22)]"
+                    >
+                      <img src={imgUrl} alt={`Banner ${idx + 1}`} className="w-full h-full object-cover rounded-[22px]" />
+
+                      {/* Curved glass inner shadow & sheen */}
+                      <div
+                        className="absolute inset-0 pointer-events-none rounded-[22px]"
+                        style={{
+                          background:
+                            'radial-gradient(130% 120% at 50% 50%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.3) 100%)',
+                          boxShadow:
+                            'inset 0 0 16px rgba(0,0,0,0.35), inset 1.5px 1.5px 0px rgba(255,255,255,0.45), inset -1.5px -1.5px 1px rgba(0,0,0,0.35)',
+                        }}
+                      />
+                      <div
+                        className="absolute inset-0 pointer-events-none rounded-[22px]"
+                        style={{
+                          background:
+                            'linear-gradient(130deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 26%, rgba(255,255,255,0) 58%)',
+                        }}
+                      />
+
+                      {/* Slide badge */}
+                      <span className="absolute bottom-2 left-2.5 bg-black/60 backdrop-blur-md text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border border-white/10">
+                        Slide {idx + 1}
+                      </span>
+
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveBanner(idx)}
+                          className="absolute top-2 right-2 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-xl opacity-90 hover:opacity-100 shadow-md transition-all cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

@@ -13,6 +13,7 @@ import { SkyLogo } from '../common/SkyLogo';
 import resellbdLogo from '../../assets/images/logo.png';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { FluidGlassSearchEngine } from './FluidGlassSearchEngine';
+import { Curved3DBanner } from './Curved3DBanner';
 import { formatResellerId } from '../../lib/resellerIdHelper';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { 
@@ -395,83 +396,11 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({
         onOpenLockedModal={onOpenLockedModal}
       />
 
-      {/* 2. TOP BANNER / HERO SECTION (Glassmorphic Luxury Dark Theme, Mobile-Optimized) */}
-      <div className="relative rounded-3xl overflow-hidden shadow-xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 border border-slate-800/80 text-white p-4.5 sm:p-5.5 backdrop-blur-xl">
-        {/* Subtle Ambient Glowing Mesh */}
-        <div className="absolute -top-10 -right-10 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-        <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-
-        {bannerImages.length > 0 ? (
-          /* Recommended Banner Aspect Ratio: 3:1 (e.g., 1200x400px on PC, 800x266px on Mobile) */
-          <div className="relative aspect-[3/1] sm:aspect-[24/8] max-h-48 rounded-2xl overflow-hidden shadow-inner border border-white/10">
-            <img 
-              src={bannerImages[currentBannerIndex]} 
-              alt="Promo Banner" 
-              className="w-full h-full object-cover"
-            />
-            {bannerImages.length > 1 && (
-              <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
-                {bannerImages.map((_, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => setCurrentBannerIndex(idx)}
-                    className={`h-1.5 rounded-full transition-all duration-300 ${
-                      currentBannerIndex === idx ? 'w-5 bg-white shadow-sm' : 'w-1.5 bg-white/50'
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="relative z-10 space-y-3.5">
-            {/* Top Row: Shop Name & Reseller ID */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-white/20 backdrop-blur-md flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
-                  <img src={resellbdLogo || '/resellbd-logo.png'} alt="ReSellBD" className="w-full h-full object-contain" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-xs sm:text-sm font-bold text-white truncate flex items-center gap-1">
-                    <span>{user.shopName || user.fullName}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  </h3>
-                </div>
-              </div>
-
-              <div className="shrink-0 flex items-center gap-1.5 bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-xs">
-                <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">Reseller ID:</span>
-                <span className="font-mono text-[11px] font-extrabold text-amber-300 tracking-wider">
-                  {formatResellerId(user)}
-                </span>
-              </div>
-            </div>
-
-            {/* Middle: Clean Punchy Tagline */}
-            <div>
-              <p className="text-xs sm:text-sm font-bold text-slate-100 leading-tight">
-                ReSellBD Wholesale Gadgets & Reselling Portal
-              </p>
-              <p className="text-[11px] sm:text-xs text-slate-300/80 leading-relaxed mt-0.5">
-                Wholesale prices, verified warranty & automated wallet payouts.
-              </p>
-            </div>
-
-            {/* Bottom Row: Feature Pills */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-white/10 text-[10px] text-slate-200 font-medium">
-              <span className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs">
-                <Sparkles className="w-2.5 h-2.5 text-amber-300" /> 100% Genuine
-              </span>
-              <span className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs">
-                <TrendingUp className="w-2.5 h-2.5 text-emerald-400" /> High Margins
-              </span>
-              <span className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs">
-                <ShieldCheck className="w-2.5 h-2.5 text-blue-300" /> Fast Delivery
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* 2. CURVED 3D HOME BANNER (Zero Bezel, 28px Radius, Bulging Curved Glass & Tilt) */}
+      <Curved3DBanner
+        bannerImages={bannerImages}
+        user={user}
+      />
 
       {/* PWA In-App Install Banner (Auto-suppresses if already installed) */}
       <PWAInstallButton variant="banner" />
