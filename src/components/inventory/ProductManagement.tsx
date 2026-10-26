@@ -3,6 +3,7 @@ import { db, storage } from '../../lib/firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { normalizeProduct } from '../../lib/productHelper';
+import { compressImageFile } from '../../lib/imageCompressor';
 import { Product, Category, Brand, UserProfile, ProductMedia, ProductVideoMedia, ProductVariant } from '../../types';
 import { VariantManager } from './VariantManager';
 import { SocialShareModal } from './SocialShareModal';
@@ -243,41 +244,17 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ user }) =>
         if (isVideo) {
           fileUrl = URL.createObjectURL(file);
         } else {
-          fileUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              const img = new Image();
-              img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 700;
-                const MAX_HEIGHT = 700;
-                let width = img.width;
-                let height = img.height;
-                if (width > height) {
-                  if (width > MAX_WIDTH) {
-                    height *= MAX_WIDTH / width;
-                    width = MAX_WIDTH;
-                  }
-                } else {
-                  if (height > MAX_HEIGHT) {
-                    width *= MAX_HEIGHT / height;
-                    height = MAX_HEIGHT;
-                  }
-                }
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx?.drawImage(img, 0, 0, width, height);
-                // Compressed to ensure small size (< 80KB) to prevent Firestore 1MB document limit error
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                resolve(dataUrl);
-              };
-              img.onerror = () => resolve(event.target?.result as string || '');
-              img.src = event.target?.result as string;
-            };
-            reader.onerror = () => resolve('');
-            reader.readAsDataURL(file);
-          });
+          try {
+            fileUrl = await compressImageFile(file, 800, 800, 0.75);
+          } catch (compErr) {
+            console.warn('Image compression failed, fallback:', compErr);
+            fileUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve(e.target?.result as string || '');
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(file);
+            });
+          }
         }
 
         setUploadingFiles(prev => prev.map(f => f.name === file.name ? { ...f, progress: 100 } : f));

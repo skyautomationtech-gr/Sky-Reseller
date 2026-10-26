@@ -6,6 +6,7 @@ import { logAuditAction } from '../../lib/auditLogger';
 import { SkyLogo, isObsoleteLogo } from '../common/SkyLogo';
 import { VersionManagerForm } from '../version/VersionManagerForm';
 import { Curved3DBanner } from '../home/Curved3DBanner';
+import { compressImageFile } from '../../lib/imageCompressor';
 import { 
   Settings, Building2, Phone, Mail, MapPin, DollarSign, 
   Percent, Truck, Image as ImageIcon, Save, ArrowRight, Loader2, CheckCircle2, Shield, LogOut,
@@ -118,37 +119,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
     }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert('Logo image size must be under 2MB.');
-        return;
+      setError('');
+      try {
+        const compressed = await compressImageFile(file, 400, 400, 0.82);
+        setSettings((prev) => ({ ...prev, logoUrl: compressed }));
+        setSuccess('Logo updated! Click "Save Company Settings" below to persist.');
+      } catch (err: any) {
+        console.error('Logo upload error:', err);
+        setError('Could not process logo: ' + (err.message || err));
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSettings((prev) => ({ ...prev, logoUrl: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
     }
   };
 
-  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 3 * 1024 * 1024) {
-        alert('Banner image size must be under 3MB.');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const newUrl = reader.result as string;
+      setError('');
+      try {
+        const compressed = await compressImageFile(file, 1200, 550, 0.75);
         setSettings((prev) => ({
           ...prev,
-          bannerImages: [...(prev.bannerImages || []), newUrl],
+          bannerImages: [...(prev.bannerImages || []), compressed],
         }));
-      };
-      reader.readAsDataURL(file);
+        setSuccess('✓ Banner image added! Click "Save Company Settings" below to save changes.');
+      } catch (err: any) {
+        console.error('Banner upload error:', err);
+        setError('Could not process banner image: ' + (err.message || err));
+      }
     }
   };
 
@@ -157,11 +157,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
       ...prev,
       bannerImages: (prev.bannerImages || []).filter((_, i) => i !== index),
     }));
+    setSuccess('Banner image removed. Click "Save Company Settings" below to apply.');
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isSuperAdmin) return;
+    if (!isAdmin && !isSuperAdmin) return;
 
     setSaving(true);
     setSuccess('');
@@ -180,13 +181,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, onNavigateComm
         user.role,
         'UPDATE_COMPANY_SETTINGS',
         'settings/general',
-        `Updated company settings for ${settings.companyName}`
+        `Updated company settings and banner carousel`
       );
 
-      setSuccess('Company settings saved successfully!');
-    } catch (err) {
+      setSuccess('✓ Company settings & banner images saved successfully!');
+    } catch (err: any) {
       console.error('Error saving settings:', err);
-      setError('Failed to save settings.');
+      setError('Failed to save settings: ' + (err.message || err));
     } finally {
       setSaving(false);
     }
