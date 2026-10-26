@@ -649,6 +649,7 @@ function AppContent() {
       {showLockScreen && userProfile && (
         <AppLockScreen
           user={userProfile}
+          appVersion={currentAppVersion || '1.0.0'}
           onUnlock={handleUnlockPin}
           onLogout={handleLogout}
         />

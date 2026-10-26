@@ -15,6 +15,7 @@ import { SupportSystem } from '../support/SupportSystem';
 import { FeedbackForm } from '../feedback/FeedbackForm';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
+import { NeumorphicPinKeypad } from '../common/NeumorphicPinKeypad';
 import { 
   User, CreditCard, Shield, Lock, Bell, Palette, Smartphone, FileText, 
   HelpCircle, LogOut, ChevronRight, ArrowLeft, Key, Mail, Phone, MapPin,
@@ -1695,56 +1696,170 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
             </div>
           </div>
 
-          {/* PIN Setup Modal */}
+          {/* Neumorphic PIN Setup / Confirm Modal */}
           {showPinModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full p-6 space-y-4">
-                <div className="text-center space-y-1">
-                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mx-auto">
-                    <Lock className="w-5 h-5" />
-                  </div>
-                  <h3 className="font-bold text-base text-slate-900">
-                    {pinStep === 1 ? 'Set App Security PIN' : 'Confirm Security PIN'}
+            <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-[#0B1630]/65 backdrop-blur-xs select-none">
+              <div
+                className="bg-[#EEF2F7] rounded-[36px] max-w-sm w-full overflow-hidden shadow-2xl flex flex-col border border-white/60 animate-in fade-in zoom-in-95 duration-200"
+                style={{
+                  boxShadow:
+                    '14px 14px 32px rgba(166, 180, 200, 0.75), -14px -14px 32px rgba(255, 255, 255, 0.95)',
+                }}
+              >
+                {/* 1. Header with Sky-Blue Gradient */}
+                <div
+                  className="pt-6 pb-6 px-6 text-center flex flex-col items-center justify-center relative"
+                  style={{
+                    background: 'linear-gradient(180deg, #BFE3FF 0%, #8EC9FF 100%)',
+                  }}
+                >
+                  <p className="text-[11px] font-black tracking-[0.25em] text-[#0B1630]/70 uppercase">
+                    {pinStep === 1 ? 'CREATE PIN' : 'CONFIRM PIN'}
+                  </p>
+                  <h3 className="text-xl sm:text-2xl font-black text-[#0B1630] tracking-tight mt-1">
+                    {pinStep === 1 ? 'Create Your PIN' : 'Confirm Your PIN'}
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    {pinStep === 1 ? 'Enter a 4 to 6 digit numeric passcode' : 'Re-enter your PIN to confirm setup'}
+                  <p className="text-xs text-[#0B1630]/60 font-semibold mt-0.5">
+                    {pinStep === 1
+                      ? 'Choose a 4 to 6 digit security passcode'
+                      : 'Re-enter your PIN to verify and activate'}
                   </p>
+
+                  {/* Neumorphic Dots Row */}
+                  <div className="flex items-center justify-center gap-3 pt-3.5">
+                    {Array.from({
+                      length: pinStep === 1 ? Math.max(4, inputPin.length) : inputPin.length || 4,
+                    }).map((_, idx) => {
+                      const curVal = pinStep === 1 ? inputPin : confirmPin;
+                      const isFilled = idx < curVal.length;
+
+                      return (
+                        <div
+                          key={idx}
+                          className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center relative transition-all"
+                          style={{
+                            background: '#EEF2F7',
+                            boxShadow: pinError
+                              ? '0 0 10px rgba(239, 68, 68, 0.5)'
+                              : '3px 3px 8px rgba(166, 180, 200, 0.65), -3px -3px 8px rgba(255, 255, 255, 0.95)',
+                          }}
+                        >
+                          {isFilled ? (
+                            <div
+                              className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full animate-in zoom-in-75 duration-150"
+                              style={{
+                                background: pinError
+                                  ? '#EF4444'
+                                  : 'linear-gradient(135deg, #0E9AA7 0%, #3DD055 100%)',
+                                boxShadow: pinError
+                                  ? '0 0 6px rgba(239, 68, 68, 0.8)'
+                                  : '0 0 6px rgba(14, 154, 167, 0.6)',
+                              }}
+                            />
+                          ) : (
+                            <span className="font-black text-xs text-[#0B1630]/35 select-none">-</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Error Notification */}
+                  {pinError && (
+                    <div className="mt-2.5 px-3 py-1 bg-rose-500/15 border border-rose-500/30 text-rose-700 font-bold text-xs rounded-full">
+                      {pinError}
+                    </div>
+                  )}
                 </div>
 
-                {pinError && (
-                  <p className="text-xs font-bold text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200 text-center">
-                    {pinError}
-                  </p>
-                )}
-
-                <div>
-                  <input
-                    type="password"
-                    maxLength={6}
-                    placeholder="• • • •"
-                    value={pinStep === 1 ? inputPin : confirmPin}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '');
-                      if (pinStep === 1) setInputPin(val);
-                      else setConfirmPin(val);
+                {/* 2. Neumorphic Keypad Sheet */}
+                <div className="p-4 sm:p-5 bg-[#EEF2F7] flex flex-col items-center">
+                  <NeumorphicPinKeypad
+                    pin={pinStep === 1 ? inputPin : confirmPin}
+                    maxPinLength={pinStep === 1 ? 6 : inputPin.length || 6}
+                    onDigitPress={(digit) => {
+                      setPinError('');
+                      if (pinStep === 1) {
+                        if (inputPin.length < 6) {
+                          const next = inputPin + digit;
+                          setInputPin(next);
+                        }
+                      } else {
+                        if (confirmPin.length < inputPin.length) {
+                          const next = confirmPin + digit;
+                          setConfirmPin(next);
+                          if (next.length === inputPin.length) {
+                            if (next === inputPin) {
+                              // Match! Save automatically
+                              const hashedPin = bcrypt.hashSync(inputPin, 10);
+                              const pinLen = inputPin.length;
+                              localStorage.setItem(`sky_app_pin_enabled_${user.uid}`, 'true');
+                              localStorage.setItem(`sky_app_pin_hash_${user.uid}`, hashedPin);
+                              localStorage.setItem(`sky_app_pin_length_${user.uid}`, pinLen.toString());
+                              updateDoc(doc(db, 'users', user.uid), {
+                                appLockEnabled: true,
+                                appLockPinHash: hashedPin,
+                                appLockPinLength: pinLen,
+                              }).catch((err) => console.warn('Could not sync PIN hash to Firestore:', err));
+                              setPinEnabled(true);
+                              setShowPinModal(false);
+                              showToast('✓ App Lock PIN created successfully!', 'success');
+                            } else {
+                              setPinError('PINs do not match. Please try again.');
+                              setTimeout(() => setConfirmPin(''), 500);
+                            }
+                          }
+                        }
+                      }
                     }}
-                    className="w-full text-center text-2xl font-mono tracking-widest bg-slate-50 border border-slate-300 rounded-2xl py-3 outline-none focus:ring-2 focus:ring-indigo-500"
+                    onBackspace={() => {
+                      setPinError('');
+                      if (pinStep === 1) {
+                        setInputPin((prev) => prev.slice(0, -1));
+                      } else {
+                        setConfirmPin((prev) => prev.slice(0, -1));
+                      }
+                    }}
                   />
-                </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setShowPinModal(false)}
-                    className="w-full py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition-colors cursor-pointer min-h-[44px]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSavePin}
-                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer min-h-[44px]"
-                  >
-                    {pinStep === 1 ? 'Next →' : 'Save PIN'}
-                  </button>
+                  {/* Bottom Action Controls */}
+                  <div className="w-full flex items-center justify-between gap-2.5 pt-2 max-w-[280px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (pinStep === 2) {
+                          setPinStep(1);
+                          setConfirmPin('');
+                          setPinError('');
+                        } else {
+                          setShowPinModal(false);
+                        }
+                      }}
+                      className="flex-1 py-2.5 px-3 text-[#0B1630]/70 hover:text-[#0B1630] font-bold text-xs rounded-xl hover:bg-black/5 transition-colors cursor-pointer text-center"
+                    >
+                      {pinStep === 2 ? '← Back' : 'Cancel'}
+                    </button>
+
+                    {pinStep === 1 ? (
+                      <button
+                        type="button"
+                        disabled={inputPin.length < 4}
+                        onClick={handleSavePin}
+                        className="flex-1 py-2.5 px-4 bg-gradient-to-r from-[#0E9AA7] to-[#0A808C] disabled:opacity-40 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer active:scale-95 disabled:cursor-not-allowed"
+                      >
+                        Next →
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={confirmPin.length < inputPin.length}
+                        onClick={handleSavePin}
+                        className="flex-1 py-2.5 px-4 bg-gradient-to-r from-[#0E9AA7] to-[#0A808C] disabled:opacity-40 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer active:scale-95 disabled:cursor-not-allowed"
+                      >
+                        Save PIN
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
