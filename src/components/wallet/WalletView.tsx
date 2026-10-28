@@ -10,8 +10,12 @@ import { AdminWithdrawalManager } from './AdminWithdrawalManager';
 import { 
   Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
   XCircle, AlertCircle, Loader2, DollarSign, Building2, Smartphone, Plus,
-  Users, Check, X, ShieldCheck, CreditCard, Edit3, RotateCw, Copy
+  Users, Check, X, ShieldCheck, CreditCard, Edit3, RotateCw, Copy,
+  ChevronRight, HelpCircle, FileText, Filter, Calendar
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { AnimatedCounter } from '../common/AnimatedCounter';
+import { triggerHaptic } from '../../lib/nativeFeedback';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 
 interface WalletViewProps {
@@ -64,6 +68,12 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
   const [editBranchName, setEditBranchName] = useState(user.branchName || '');
   const [payoutModalError, setPayoutModalError] = useState('');
   const [submittingPayout, setSubmittingPayout] = useState(false);
+
+  // Additional UX States for Redesigned Wallet
+  const [selectedTxDetail, setSelectedTxDetail] = useState<WalletTransaction | null>(null);
+  const [txFilter, setTxFilter] = useState<'all' | 'commission' | 'deposit' | 'withdrawal' | 'adjustment'>('all');
+  const [copiedId, setCopiedId] = useState(false);
+  const [copiedPayoutNum, setCopiedPayoutNum] = useState(false);
 
   const { isRefreshing, showToast, refreshCurrentPage } = useRefresh();
 
@@ -495,201 +505,415 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
 
   return (
     <div className="space-y-6">
-      {/* Page Title & Refresh Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+      {/* (1) Page Header: Title 20px, Subtitle & Round Glass Refresh Button */}
+      <div className="flex items-center justify-between gap-3 border-b border-white/60 pb-3.5">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Wallet & Payouts</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h2 className="text-[20px] font-black text-[#04203F] tracking-tight">Wallet & Payouts</h2>
+          <p className="text-[12px] font-medium text-slate-500 mt-0.5">
             {isAdminOrSuperAdmin 
               ? 'Manage reseller deposits, withdrawals, and monitor global transaction ledgers'
-              : 'Monitor your reseller wallet balance, track payout transactions, and top up funds'}
+              : 'Monitor your earnings, withdraw funds to mobile wallet, and track payouts'}
           </p>
         </div>
 
+        {/* 36px Round Glass Refresh Button */}
         <button
-          onClick={() => refreshCurrentPage()}
+          onClick={() => {
+            triggerHaptic('medium');
+            handleRefresh();
+          }}
           disabled={isRefreshing || loading}
-          className="bg-white border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-600 text-xs font-semibold px-3.5 py-2 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer self-start sm:self-center"
+          className="w-9 h-9 rounded-full bg-white/75 hover:bg-white/95 backdrop-blur-md border border-white/80 shadow-xs flex items-center justify-center text-slate-600 hover:text-[#04203F] transition-all cursor-pointer active:scale-95 disabled:opacity-50 shrink-0"
           title="Refresh Wallet Data"
         >
-          <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline">Refresh Wallet</span>
+          <RotateCw className={`w-4 h-4 text-slate-600 ${isRefreshing || loading ? 'animate-spin text-[#0E9AA7]' : ''}`} />
         </button>
       </div>
 
-      {/* Reseller Header & Wallet Summary */}
+      {/* Reseller Glass Experience */}
       {!isAdminOrSuperAdmin && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Prominent Balance Card */}
-          <div className="md:col-span-2 bg-gradient-to-r from-slate-900 to-blue-950 p-6 rounded-2xl text-white shadow-xl border border-slate-800 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                  <WalletIcon className="w-4 h-4" /> Available Wallet Balance
-                </span>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2.5 py-1 rounded-full border border-emerald-500/30">
-                  Ready for Payout
-                </span>
-              </div>
-              <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
-                ৳{(wallet?.balance || 0).toLocaleString()}
-              </div>
-            </div>
+        <div className="space-y-4">
+          {/* (2) HERO BALANCE CARD: Glass over navy-to-teal gradient (#04203F to #0E9AA7) */}
+          <div 
+            className="rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-white/20 relative overflow-hidden transition-all select-none"
+            style={{
+              background: 'linear-gradient(135deg, #04203F 0%, #083358 50%, #0E9AA7 100%)',
+              boxShadow: '0 16px 36px -8px rgba(4, 32, 63, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.25)',
+            }}
+          >
+            {/* Ambient inner glass glow highlights */}
+            <div className="absolute -top-16 -right-16 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-12 -left-12 w-48 h-48 bg-[#3DD055]/15 rounded-full blur-2xl pointer-events-none" />
 
-            <div className="pt-6 mt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <p className="text-xs text-slate-400">
-                Reseller ID: <span className="text-white font-mono font-bold bg-white/10 px-2 py-0.5 rounded border border-white/20">{formatResellerId(user)}</span>
-              </p>
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={() => {
-                    setDepositError('');
-                    setIsDepositModalOpen(true);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-emerald-600/30 flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Request Deposit</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setWithdrawError('');
-                    setIsWithdrawModalOpen(true);
-                  }}
-                  disabled={(wallet?.balance || 0) <= 0}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50"
-                >
-                  <ArrowUpRight className="w-4 h-4" />
-                  <span>Request Withdraw</span>
-                </button>
+            <div className="relative z-10 flex flex-col justify-between h-full gap-4">
+              {/* Top row: Label & Status Chip */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-teal-200 flex items-center gap-1.5">
+                  <WalletIcon className="w-4 h-4 text-[#3DD055]" />
+                  <span>Available Balance</span>
+                </span>
+                <span className="text-[11px] bg-emerald-500/20 text-emerald-300 font-extrabold px-3 py-1 rounded-full border border-emerald-500/30 backdrop-blur-md flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3DD055] animate-pulse" />
+                  <span>Ready for Payout</span>
+                </span>
+              </div>
+
+              {/* Amount Display with Animated Counter */}
+              <div>
+                <div className="text-3xl sm:text-4xl font-black tracking-tight text-white flex items-baseline gap-1">
+                  <span className="text-2xl sm:text-3xl font-extrabold text-teal-200">৳</span>
+                  <AnimatedCounter 
+                    value={wallet?.balance || 0} 
+                    className="tabular-nums" 
+                  />
+                </div>
+              </div>
+
+              {/* Bottom Row: Reseller ID & 3 Action Buttons */}
+              <div className="pt-3 border-t border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Reseller ID with Copy Button */}
+                <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                  <span className="text-[11px] text-teal-100 font-medium">Reseller ID:</span>
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      const idText = formatResellerId(user);
+                      navigator.clipboard.writeText(idText);
+                      setCopiedId(true);
+                      showToast('✓ Reseller ID copied', 'success');
+                      setTimeout(() => setCopiedId(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white font-mono font-bold text-xs px-2.5 py-1 rounded-lg border border-white/20 transition-all cursor-pointer backdrop-blur-xs"
+                    title="Click to copy Reseller ID"
+                  >
+                    <span>{formatResellerId(user)}</span>
+                    {copiedId ? (
+                      <Check className="w-3 h-3 text-[#3DD055]" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-white/80" />
+                    )}
+                  </button>
+                </div>
+
+                {/* 3 Quick Action Buttons: Deposit, Withdraw, History */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Request Deposit */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setDepositError('');
+                      setIsDepositModalOpen(true);
+                    }}
+                    className="bg-white/15 hover:bg-white/25 active:scale-97 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all border border-white/25 backdrop-blur-md shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#3DD055]" />
+                    <span>Deposit</span>
+                  </button>
+
+                  {/* Request Withdraw (Dimmed if balance <= 0 or pending request exists) */}
+                  {(() => {
+                    const hasPendingWithdraw = transactions.some((t) => t.type === 'withdrawal' && t.status === 'pending');
+                    const isWithdrawDisabled = (wallet?.balance || 0) <= 0 || hasPendingWithdraw;
+                    const withdrawDisabledReason = (wallet?.balance || 0) <= 0 
+                      ? 'Balance must be greater than ৳0 to withdraw' 
+                      : hasPendingWithdraw 
+                      ? 'You already have a withdrawal request pending approval' 
+                      : '';
+
+                    return (
+                      <button
+                        onClick={() => {
+                          if (isWithdrawDisabled) {
+                            showToast(withdrawDisabledReason, 'info');
+                            return;
+                          }
+                          triggerHaptic('light');
+                          setWithdrawError('');
+                          setIsWithdrawModalOpen(true);
+                        }}
+                        disabled={isWithdrawDisabled}
+                        title={withdrawDisabledReason || 'Request payout to your account'}
+                        className={`font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
+                          isWithdrawDisabled 
+                            ? 'bg-white/10 text-white/40 border border-white/10 cursor-not-allowed opacity-60' 
+                            : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/25 border border-emerald-400 active:scale-97'
+                        }`}
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span>Withdraw</span>
+                      </button>
+                    );
+                  })()}
+
+                  {/* History Scroll Button */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      document.getElementById('tx-history')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="bg-white/10 hover:bg-white/20 active:scale-97 text-white font-medium text-xs px-3 py-2 rounded-xl transition-all border border-white/15 backdrop-blur-md flex items-center gap-1.5 cursor-pointer"
+                    title="View Transaction History"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-teal-200" />
+                    <span>History</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Quick Metrics */}
-          <div className="space-y-3">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-              <div>
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Lifetime Earned</span>
-                <span className="text-xl font-bold text-emerald-600">৳{(wallet?.totalEarned || 0).toLocaleString()}</span>
-              </div>
-              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-                <ArrowDownLeft className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-              <div>
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Withdrawn</span>
-                <span className="text-xl font-bold text-slate-800">৳{(wallet?.totalWithdrawn || 0).toLocaleString()}</span>
-              </div>
-              <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center">
-                <ArrowUpRight className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Registered Payout Method Card & Pending Approval Banner (Reseller) */}
-      {!isAdminOrSuperAdmin && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
-                <CreditCard className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Registered Payout Account</h3>
-                <p className="text-xs text-slate-500">Your approved account details where earnings are sent upon withdrawal</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setEditPayoutMethod(user.payoutMethod || 'bkash');
-                setEditBkash(user.bkashNumber || '');
-                setEditNagad(user.nagadNumber || '');
-                setEditRocket(user.rocketNumber || '');
-                setEditBankName(user.bankName || '');
-                setEditAccountHolder(user.accountHolderName || '');
-                setEditAccountNumber(user.accountNumber || '');
-                setEditBranchName(user.branchName || '');
-                setPayoutModalError('');
-                setIsPayoutModalOpen(true);
+          {/* (3) STATS ROW: Two compact glass cards side-by-side */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            {/* Total Lifetime Earned */}
+            <div 
+              className="p-4 rounded-2xl border transition-all select-none"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.72)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                borderColor: 'rgba(255, 255, 255, 0.8)',
+                boxShadow: '0 8px 24px -4px rgba(4, 32, 63, 0.05)',
               }}
-              className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs"
             >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>Edit Payout Method</span>
-            </button>
-          </div>
-
-          {/* Pending Payout Request Alert */}
-          {pendingPayoutRequest && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex items-start gap-3">
-              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-xs space-y-1">
-                <p className="font-bold text-amber-900">Payout Account Change Request PENDING APPROVAL</p>
-                <p className="text-amber-800">
-                  You submitted a request to update your payout account to <strong className="uppercase">{pendingPayoutRequest.payoutMethod}</strong>.
-                  An Admin or Super Admin must review and approve this change before it takes effect.
-                </p>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Lifetime Earned
+                </span>
+                <div className="w-7 h-7 rounded-xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
+                  <ArrowDownLeft className="w-4 h-4 text-[#3DD055]" />
+                </div>
+              </div>
+              <div className="text-lg sm:text-xl font-black text-emerald-600 tracking-tight flex items-baseline gap-0.5">
+                <span className="text-sm font-bold">৳</span>
+                <AnimatedCounter value={wallet?.totalEarned || 0} />
               </div>
             </div>
-          )}
 
-          {/* Current Active Details Display */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 text-xs">
-            {user.payoutMethod === 'bank' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Bank Name</span>
-                  <span className="font-semibold text-slate-900">{user.bankName || 'Not configured'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Account Holder</span>
-                  <span className="font-semibold text-slate-900">{user.accountHolderName || 'Not configured'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Account Number</span>
-                  <span className="font-mono font-bold text-blue-700">{user.accountNumber || 'Not configured'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Branch Name</span>
-                  <span className="font-semibold text-slate-900">{user.branchName || 'Not configured'}</span>
+            {/* Total Withdrawn */}
+            <div 
+              className="p-4 rounded-2xl border transition-all select-none"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.72)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                borderColor: 'rgba(255, 255, 255, 0.8)',
+                boxShadow: '0 8px 24px -4px rgba(4, 32, 63, 0.05)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Total Withdrawn
+                </span>
+                <div className="w-7 h-7 rounded-xl bg-[#04203F]/10 text-[#04203F] flex items-center justify-center shrink-0">
+                  <ArrowUpRight className="w-4 h-4 text-[#04203F]" />
                 </div>
               </div>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Default Payout Method</span>
-                  <span className="font-bold text-slate-900 uppercase">{user.payoutMethod || 'Mobile Wallet'}</span>
+              <div className="text-lg sm:text-xl font-black text-[#04203F] tracking-tight flex items-baseline gap-0.5">
+                <span className="text-sm font-bold">৳</span>
+                <AnimatedCounter value={wallet?.totalWithdrawn || 0} />
+              </div>
+            </div>
+          </div>
+
+          {/* (4) PENDING REQUESTS STRIP: Displays if any deposit or withdrawal is pending */}
+          {(() => {
+            const pendingList = transactions.filter((t) => t.status === 'pending');
+            if (pendingList.length === 0) return null;
+
+            return (
+              <div className="space-y-2">
+                {pendingList.map((tx) => (
+                  <div
+                    key={tx.id}
+                    className="p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-xs"
+                    style={{
+                      backgroundColor: tx.type === 'deposit' ? 'rgba(236, 253, 245, 0.8)' : 'rgba(254, 243, 199, 0.8)',
+                      backdropFilter: 'blur(16px)',
+                      borderColor: tx.type === 'deposit' ? 'rgba(167, 243, 208, 0.9)' : 'rgba(253, 230, 138, 0.9)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        tx.type === 'deposit' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
+                      }`}>
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">
+                          Pending {tx.type === 'deposit' ? 'Deposit' : 'Withdrawal'}: ৳{tx.amount}
+                        </p>
+                        <p className="text-[11px] text-slate-600 truncate">
+                          Via {tx.paymentMethod?.toUpperCase()} {tx.accountNumber ? `(${tx.accountNumber})` : ''} • Under Review
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/80 text-amber-800 border border-amber-300 shrink-0">
+                      Pending
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* (5) PAYOUT ACCOUNTS: Glass card with provider badge, masked number, default badge, edit button */}
+          <div 
+            className="rounded-2xl border p-4 sm:p-5 shadow-xs space-y-3"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.72)',
+              backdropFilter: 'blur(20px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              borderColor: 'rgba(255, 255, 255, 0.8)',
+              boxShadow: '0 8px 24px -4px rgba(4, 32, 63, 0.05)',
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-[#04203F] flex items-center justify-center">
+                  <CreditCard className="w-4 h-4 text-[#0E9AA7]" />
                 </div>
-                {user.bkashNumber && (
-                  <div>
-                    <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider block">bKash Number</span>
-                    <span className="font-mono font-bold text-slate-900">{user.bkashNumber}</span>
-                  </div>
-                )}
-                {user.nagadNumber && (
-                  <div>
-                    <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider block">Nagad Number</span>
-                    <span className="font-mono font-bold text-slate-900">{user.nagadNumber}</span>
-                  </div>
-                )}
-                {user.rocketNumber && (
-                  <div>
-                    <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wider block">Rocket Number</span>
-                    <span className="font-mono font-bold text-slate-900">{user.rocketNumber}</span>
-                  </div>
-                )}
-                {(!user.bkashNumber && !user.nagadNumber && !user.rocketNumber && !user.bankName) && (
-                  <span className="text-slate-400 italic">No account numbers added yet. Click "Edit Payout Method" above.</span>
-                )}
+                <div>
+                  <h3 className="text-sm font-bold text-[#04203F]">Registered Payout Account</h3>
+                  <p className="text-[11px] text-slate-500">Destination for your approved earnings</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEditPayoutMethod(user.payoutMethod || 'bkash');
+                  setEditBkash(user.bkashNumber || '');
+                  setEditNagad(user.nagadNumber || '');
+                  setEditRocket(user.rocketNumber || '');
+                  setEditBankName(user.bankName || '');
+                  setEditAccountHolder(user.accountHolderName || '');
+                  setEditAccountNumber(user.accountNumber || '');
+                  setEditBranchName(user.branchName || '');
+                  setPayoutModalError('');
+                  setIsPayoutModalOpen(true);
+                }}
+                className="bg-white/80 hover:bg-white text-[#04203F] border border-slate-200/80 font-bold text-xs px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-[#0E9AA7]" />
+                <span>Edit Method</span>
+              </button>
+            </div>
+
+            {/* Pending Payout Request Alert if any */}
+            {pendingPayoutRequest && (
+              <div className="bg-amber-500/10 border border-amber-300 text-amber-900 rounded-xl p-3 flex items-start gap-2.5 text-xs">
+                <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Payout account change request pending review</span>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Requested change to <span className="uppercase font-bold">{pendingPayoutRequest.payoutMethod}</span> is awaiting administrator approval.
+                  </p>
+                </div>
               </div>
             )}
+
+            {/* Active Payout Details Card */}
+            {(() => {
+              const hasMethod = user.payoutMethod === 'bank' 
+                ? (user.bankName && user.accountNumber) 
+                : (user.bkashNumber || user.nagadNumber || user.rocketNumber);
+
+              if (!hasMethod) {
+                return (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center space-y-2 bg-slate-50/50">
+                    <p className="text-xs text-slate-500">No payout account linked yet.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setIsPayoutModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0E9AA7] hover:underline cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Payout Method</span>
+                    </button>
+                  </div>
+                );
+              }
+
+              const method = user.payoutMethod || 'bkash';
+              const rawNumber = method === 'bkash' 
+                ? user.bkashNumber 
+                : method === 'nagad' 
+                ? user.nagadNumber 
+                : method === 'rocket' 
+                ? user.rocketNumber 
+                : user.accountNumber;
+              const masked = rawNumber && rawNumber.length > 4 
+                ? `•••• •••• ${rawNumber.slice(-4)}` 
+                : (rawNumber || 'Not configured');
+
+              const providerColor = method === 'bkash' 
+                ? 'bg-[#E2136E]/10 text-[#E2136E] border-[#E2136E]/30' 
+                : method === 'nagad' 
+                ? 'bg-[#F7941D]/10 text-[#F7941D] border-[#F7941D]/30' 
+                : method === 'rocket' 
+                ? 'bg-[#8C3494]/10 text-[#8C3494] border-[#8C3494]/30' 
+                : 'bg-blue-500/10 text-blue-700 border-blue-500/30';
+
+              return (
+                <div className="bg-white/90 rounded-xl p-3.5 border border-slate-200/70 shadow-2xs space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[11px] font-black uppercase px-2.5 py-0.5 rounded-lg border ${providerColor}`}>
+                        {method}
+                      </span>
+                      <span className="text-xs font-bold text-slate-800">
+                        {user.accountHolderName || user.fullName}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                      <span>Default</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Account Number</span>
+                    <button
+                      onClick={() => {
+                        if (rawNumber) {
+                          triggerHaptic('light');
+                          navigator.clipboard.writeText(rawNumber);
+                          setCopiedPayoutNum(true);
+                          showToast('✓ Account number copied', 'success');
+                          setTimeout(() => setCopiedPayoutNum(false), 2000);
+                        }
+                      }}
+                      className="font-mono font-bold text-slate-900 hover:text-[#0E9AA7] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Click to copy account number"
+                    >
+                      <span>{masked}</span>
+                      {copiedPayoutNum ? (
+                        <Check className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3 h-3 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
+
+                  {method === 'bank' && (
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                      <div>
+                        <span className="text-slate-400 font-bold block">Bank</span>
+                        <span className="font-semibold text-slate-800">{user.bankName || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-bold block">Branch</span>
+                        <span className="font-semibold text-slate-800">{user.branchName || 'N/A'}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -914,196 +1138,322 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
         </div>
       )}
 
-      {/* Transaction History Section */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-emerald-600" />
-          <span>Transaction History</span>
-        </h3>
+      {/* (6) TRANSACTION HISTORY SECTION */}
+      {!isAdminOrSuperAdmin ? (
+        <div 
+          id="tx-history" 
+          className="rounded-3xl border p-4 sm:p-5 shadow-xs space-y-4"
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.72)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            borderColor: 'rgba(255, 255, 255, 0.8)',
+            boxShadow: '0 8px 24px -4px rgba(4, 32, 63, 0.05)',
+          }}
+        >
+          {/* Header with Results Count */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                <DollarSign className="w-4 h-4 text-[#3DD055]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#04203F]">Transaction History</h3>
+                <p className="text-[11px] text-slate-500">Earnings, withdrawals & deposits ledger</p>
+              </div>
+            </div>
 
-        {transactions.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
-            No wallet transactions recorded yet.
+            <span className="text-[11px] font-bold text-slate-600 bg-white/80 px-2.5 py-1 rounded-full border border-slate-200 shadow-2xs">
+              {transactions.length} Records
+            </span>
           </div>
-        ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                    <th className="px-4 py-3">Type</th>
-                    {isAdminOrSuperAdmin && <th className="px-4 py-3">Reseller</th>}
-                    <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Details / Reference</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {transactions.map((tx) => {
-                    const isComm = tx.type === 'commission';
-                    const isWith = tx.type === 'withdrawal';
 
-                    return (
-                      <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                        {/* Type */}
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${
-                              isComm
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : isWith
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-slate-100 text-slate-700 border-slate-300'
-                            }`}
+          {/* Filter Chips: All / Earned / Deposit / Withdraw / Adjustment */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'commission', label: 'Earned' },
+              { id: 'deposit', label: 'Deposit' },
+              { id: 'withdrawal', label: 'Withdraw' },
+              { id: 'adjustment', label: 'Adjustment' },
+            ].map((f) => {
+              const isActive = txFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setTxFilter(f.id as any);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                    isActive
+                      ? 'bg-[#04203F] text-white shadow-xs'
+                      : 'bg-white/80 hover:bg-white text-slate-600 border border-slate-200/70'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Transactions Grouped by Date */}
+          {(() => {
+            const filtered = transactions.filter((tx) => {
+              if (txFilter === 'all') return true;
+              return tx.type === txFilter;
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-2xl bg-white/40 space-y-1">
+                  <p className="font-semibold text-slate-600">No transactions found</p>
+                  <p className="text-[11px]">There are no records matching the selected filter.</p>
+                </div>
+              );
+            }
+
+            // Group by date
+            const grouped: { [key: string]: WalletTransaction[] } = {};
+            filtered.forEach((tx) => {
+              let groupKey = 'Past';
+              if (tx.createdAt) {
+                const d = tx.createdAt.toDate ? tx.createdAt.toDate() : new Date(tx.createdAt);
+                const now = new Date();
+                if (d.toDateString() === now.toDateString()) {
+                  groupKey = 'Today';
+                } else {
+                  const y = new Date();
+                  y.setDate(now.getDate() - 1);
+                  if (d.toDateString() === y.toDateString()) {
+                    groupKey = 'Yesterday';
+                  } else {
+                    groupKey = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                  }
+                }
+              }
+              if (!grouped[groupKey]) grouped[groupKey] = [];
+              grouped[groupKey].push(tx);
+            });
+
+            return (
+              <div className="space-y-4">
+                {Object.entries(grouped).map(([dateLabel, items]) => (
+                  <div key={dateLabel} className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                      {dateLabel}
+                    </span>
+
+                    <div className="space-y-1.5">
+                      {items.map((tx) => {
+                        const isCredit = tx.type === 'commission' || tx.type === 'deposit';
+                        const timeStr = tx.createdAt?.toDate 
+                          ? tx.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : '';
+
+                        const title = tx.type === 'commission'
+                          ? `Commission: Order ${tx.orderNumber || ''}`
+                          : tx.type === 'deposit'
+                          ? `Wallet Deposit (${tx.paymentMethod?.toUpperCase() || ''})`
+                          : tx.type === 'withdrawal'
+                          ? `Withdrawal to ${tx.paymentMethod?.toUpperCase() || 'Account'}`
+                          : 'Wallet Adjustment';
+
+                        const statusBg = tx.status === 'approved'
+                          ? 'bg-emerald-500/15 text-emerald-700 border-emerald-300'
+                          : tx.status === 'pending'
+                          ? 'bg-amber-500/15 text-amber-800 border-amber-300'
+                          : 'bg-rose-500/15 text-rose-700 border-rose-300';
+
+                        return (
+                          <div
+                            key={tx.id}
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setSelectedTxDetail(tx);
+                            }}
+                            className="p-3 rounded-2xl bg-white/85 hover:bg-white border border-slate-200/70 shadow-2xs flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-98 group"
                           >
-                            {isComm ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
-                            <span>{tx.type}</span>
-                          </span>
-                        </td>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                                isCredit 
+                                  ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                                  : 'bg-slate-100 text-[#04203F] border-slate-200'
+                              }`}>
+                                {isCredit ? <ArrowDownLeft className="w-4 h-4 text-[#3DD055]" /> : <ArrowUpRight className="w-4 h-4 text-[#04203F]" />}
+                              </div>
 
-                        {/* Reseller (Admin view) */}
-                        {isAdminOrSuperAdmin && (
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-900 truncate group-hover:text-[#0E9AA7] transition-colors">
+                                  {title}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {timeStr && <span className="text-[11px] text-slate-400">{timeStr}</span>}
+                                  <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-md border ${statusBg}`}>
+                                    {tx.status}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`text-sm font-black tabular-nums ${
+                                isCredit ? 'text-emerald-600' : 'text-[#04203F]'
+                              }`}>
+                                {isCredit ? '+' : '-'}৳{tx.amount?.toLocaleString()}
+                              </span>
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* (7) FOOTER HELP NOTE: Link to Support */}
+          <div 
+            className="rounded-2xl p-3.5 border flex items-center justify-between gap-3 mt-4"
+            style={{
+              backgroundColor: 'rgba(240, 249, 255, 0.75)',
+              borderColor: 'rgba(186, 230, 253, 0.8)',
+            }}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <HelpCircle className="w-4 h-4 text-[#0E9AA7] shrink-0" />
+              <p className="text-[11px] text-slate-600 truncate">
+                Questions regarding payouts or transactions?
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                window.location.hash = '#support';
+                showToast('Contact support from the Account tab', 'info');
+              }}
+              className="text-[11px] font-bold text-[#0E9AA7] hover:underline shrink-0 cursor-pointer"
+            >
+              Get Help
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Admin View: Transaction History Table */
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-emerald-600" />
+            <span>Transaction History</span>
+          </h3>
+
+          {transactions.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
+              No wallet transactions recorded yet.
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Reseller</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Details / Reference</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {transactions.map((tx) => {
+                      const isComm = tx.type === 'commission';
+                      const isWith = tx.type === 'withdrawal';
+
+                      return (
+                        <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${
+                                isComm
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : isWith
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-slate-100 text-slate-700 border-slate-300'
+                              }`}
+                            >
+                              {isComm ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
+                              <span>{tx.type}</span>
+                            </span>
+                          </td>
                           <td className="px-4 py-3 font-semibold text-slate-800">
                             {tx.resellerShopName || tx.resellerName || 'Reseller'}
                           </td>
-                        )}
-
-                        {/* Amount */}
-                        <td
-                          className={`px-4 py-3 text-right font-extrabold text-sm ${
-                            isComm || tx.type === 'deposit' ? 'text-emerald-600' : 'text-slate-900'
-                          }`}
-                        >
-                          {isComm || tx.type === 'deposit' ? '+' : '-'}৳{tx.amount}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
-                              tx.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : tx.status === 'pending'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-rose-100 text-rose-800'
+                          <td
+                            className={`px-4 py-3 text-right font-extrabold text-sm ${
+                              isComm || tx.type === 'deposit' ? 'text-emerald-600' : 'text-slate-900'
                             }`}
                           >
-                            {tx.status}
-                          </span>
-                        </td>
-
-                        {/* Details */}
-                        <td className="px-4 py-3 text-slate-600 font-medium">
-                          {tx.orderNumber && (
-                            <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mr-2">
-                              Order {tx.orderNumber}
+                            {isComm || tx.type === 'deposit' ? '+' : '-'}৳{tx.amount}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
+                                tx.status === 'approved'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : tx.status === 'pending'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {tx.status}
                             </span>
-                          )}
-                          {tx.paymentMethod && (
-                            <span className="uppercase font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 mr-2">
-                              {tx.paymentMethod} ({tx.accountNumber})
-                            </span>
-                          )}
-                          {tx.transactionId && (
-                            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mr-2">
-                              TxID: {tx.transactionId}
-                            </span>
-                          )}
-                          {tx.rejectReason && (
-                            <p className="text-[10px] text-rose-600 font-medium mt-1">Reason: {tx.rejectReason}</p>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600 font-medium">
+                            {tx.orderNumber && (
+                              <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mr-2">
+                                Order {tx.orderNumber}
+                              </span>
+                            )}
+                            {tx.paymentMethod && (
+                              <span className="uppercase font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 mr-2">
+                                {tx.paymentMethod} ({tx.accountNumber})
+                              </span>
+                            )}
+                            {tx.transactionId && (
+                              <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mr-2">
+                                TxID: {tx.transactionId}
+                              </span>
+                            )}
+                            {tx.rejectReason && (
+                              <p className="text-[10px] text-rose-600 font-medium mt-1">Reason: {tx.rejectReason}</p>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-            {/* Mobile Card Layout Fallback */}
-            <div className="md:hidden space-y-4">
-              {transactions.map((tx) => {
-                const isComm = tx.type === 'commission';
-                const isWith = tx.type === 'withdrawal';
-
-                return (
-                  <div key={tx.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase border ${
-                          isComm
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : isWith
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : 'bg-slate-100 text-slate-700 border-slate-300'
-                        }`}
-                      >
-                        {isComm ? <ArrowDownLeft className="w-2.5 h-2.5" /> : <ArrowUpRight className="w-2.5 h-2.5" />}
-                        <span>{tx.type}</span>
-                      </span>
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold capitalize ${
-                          tx.status === 'approved'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : tx.status === 'pending'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        {tx.status}
-                      </span>
+              {/* Mobile Card Layout Fallback for Admin */}
+              <div className="md:hidden space-y-3">
+                {transactions.map((tx) => (
+                  <div key={tx.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800 uppercase">{tx.type}</span>
+                      <span className="font-extrabold text-slate-900">৳{tx.amount}</span>
                     </div>
-
-                    <div className="flex justify-between items-center text-xs">
-                      {isAdminOrSuperAdmin && (
-                        <div>
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Reseller</span>
-                          <span className="font-semibold text-slate-800">{tx.resellerShopName || tx.resellerName || 'Reseller'}</span>
-                        </div>
-                      )}
-                      <div className="ml-auto text-right">
-                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Amount</span>
-                        <span
-                          className={`font-black text-sm ${
-                            isComm || tx.type === 'deposit' ? 'text-emerald-600' : 'text-slate-900'
-                          }`}
-                        >
-                          {isComm || tx.type === 'deposit' ? '+' : '-'}৳{tx.amount}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-[11px] bg-white p-2.5 rounded-xl border border-slate-200/50 space-y-1.5">
-                      <span className="text-[9px] text-slate-400 font-bold block uppercase">Reference details</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {tx.orderNumber && (
-                          <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                            Order {tx.orderNumber}
-                          </span>
-                        )}
-                        {tx.paymentMethod && (
-                          <span className="uppercase font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            {tx.paymentMethod} ({tx.accountNumber})
-                          </span>
-                        )}
-                        {tx.transactionId && (
-                          <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                            TxID: {tx.transactionId}
-                          </span>
-                        )}
-                      </div>
-                      {tx.rejectReason && (
-                        <p className="text-[10px] text-rose-600 font-medium mt-1">Reason: {tx.rejectReason}</p>
-                      )}
-                    </div>
+                    <p className="text-[11px] text-slate-500">{tx.resellerShopName || tx.resellerName}</p>
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Modal: Request Withdraw (Reseller) */}
       {isWithdrawModalOpen && (
@@ -1554,6 +1904,146 @@ export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
           </div>
         </div>
       )}
+
+      {/* (6.B) Glass Bottom Sheet Modal: Transaction Details on Tap */}
+      <AnimatePresence>
+        {selectedTxDetail && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs select-none">
+            {/* Backdrop Dismiss */}
+            <div 
+              className="absolute inset-0"
+              onClick={() => setSelectedTxDetail(null)}
+            />
+
+            <motion.div
+              initial={{ opacity: 0, y: 80, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 80, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+              className="relative w-full max-w-md rounded-t-3xl sm:rounded-3xl border border-white/80 shadow-2xl overflow-hidden z-10 flex flex-col max-h-[85vh]"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.92)',
+                backdropFilter: 'blur(24px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+              }}
+            >
+              {/* Grab Bar on Mobile */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mt-3 sm:hidden" />
+
+              {/* Header */}
+              <div className="px-5 py-3.5 flex items-center justify-between border-b border-slate-200/60">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-[#04203F] flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-[#0E9AA7]" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#04203F]">Transaction Details</h3>
+                </div>
+                <button
+                  onClick={() => setSelectedTxDetail(null)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4 overflow-y-auto">
+                {/* Hero Amount & Status */}
+                <div className="text-center p-4 rounded-2xl bg-white/80 border border-slate-200/60 space-y-1.5 shadow-2xs">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    {selectedTxDetail.type} Amount
+                  </span>
+                  <div className={`text-2xl sm:text-3xl font-black tabular-nums ${
+                    selectedTxDetail.type === 'commission' || selectedTxDetail.type === 'deposit'
+                      ? 'text-emerald-600'
+                      : 'text-[#04203F]'
+                  }`}>
+                    {selectedTxDetail.type === 'commission' || selectedTxDetail.type === 'deposit' ? '+' : '-'}৳{selectedTxDetail.amount?.toLocaleString()}
+                  </div>
+                  <div>
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                      selectedTxDetail.status === 'approved'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : selectedTxDetail.status === 'pending'
+                        ? 'bg-amber-50 text-amber-800 border-amber-300'
+                        : 'bg-rose-50 text-rose-700 border-rose-300'
+                    }`}>
+                      {selectedTxDetail.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Details Grid */}
+                <div className="space-y-2.5 text-xs">
+                  {/* Transaction ID */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/60">
+                    <span className="text-slate-500 font-medium">Transaction ID</span>
+                    <button
+                      onClick={() => {
+                        const idStr = selectedTxDetail.transactionId || selectedTxDetail.id;
+                        navigator.clipboard.writeText(idStr);
+                        showToast('✓ Transaction ID copied', 'success');
+                      }}
+                      className="font-mono font-bold text-[#04203F] hover:text-[#0E9AA7] transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="truncate max-w-[180px]">{selectedTxDetail.transactionId || selectedTxDetail.id}</span>
+                      <Copy className="w-3 h-3 text-slate-400" />
+                    </button>
+                  </div>
+
+                  {/* Date & Time */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/60">
+                    <span className="text-slate-500 font-medium">Date & Time</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedTxDetail.createdAt?.toDate 
+                        ? selectedTxDetail.createdAt.toDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+                        : 'Recent'}
+                    </span>
+                  </div>
+
+                  {/* Payment Method / Account */}
+                  {selectedTxDetail.paymentMethod && (
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Payment Method</span>
+                      <span className="font-bold text-slate-900 uppercase">
+                        {selectedTxDetail.paymentMethod} {selectedTxDetail.accountNumber ? `(${selectedTxDetail.accountNumber})` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Order Number (if commission) */}
+                  {selectedTxDetail.orderNumber && (
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Linked Order</span>
+                      <span className="font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200">
+                        #{selectedTxDetail.orderNumber}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Rejection Reason (if rejected) */}
+                  {selectedTxDetail.rejectReason && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 space-y-1">
+                      <span className="font-bold text-[11px] uppercase tracking-wider block text-rose-700">Rejection Reason</span>
+                      <p className="text-xs">{selectedTxDetail.rejectReason}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-200/60 bg-white/80 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]">
+                <button
+                  onClick={() => setSelectedTxDetail(null)}
+                  className="w-full py-2.5 rounded-xl bg-[#04203F] hover:bg-[#083358] text-white font-bold text-xs transition-colors cursor-pointer shadow-xs active:scale-98"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

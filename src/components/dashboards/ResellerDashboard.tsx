@@ -18,6 +18,7 @@ import { triggerHaptic } from '../../lib/nativeFeedback';
 import { useAccess } from '../../hooks/useAccess';
 import { PendingHomeBanner } from '../auth/PendingHomeBanner';
 import { AccessLockedModal } from '../auth/AccessLockedModal';
+import { AnimatedCounter } from '../common/AnimatedCounter';
 
 interface ResellerDashboardProps {
   user: UserProfile;
@@ -300,22 +301,33 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
       {/* Mobile-First App Container (Full width on phone/tablet, sleek centered app shell on wide desktop) */}
       <div className="w-full max-w-2xl min-h-screen bg-slate-50 flex flex-col relative shadow-2xl md:border-x border-slate-200/80 overflow-hidden">
         
-        {/* Subtle Ambient Background Gradients for Glassmorphism Depth */}
-        <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-bl from-blue-400/10 via-indigo-400/5 to-transparent rounded-full blur-3xl pointer-events-none -z-0" />
-        <div className="absolute top-80 -left-20 w-80 h-80 bg-gradient-to-tr from-amber-400/10 via-orange-400/5 to-transparent rounded-full blur-3xl pointer-events-none -z-0" />
+        {/* Soft Ambient Background Gradient Blobs for Glassmorphism Depth (low opacity, drifting) */}
+        <div 
+          aria-hidden="true" 
+          className="absolute -top-12 -right-12 w-80 h-80 bg-gradient-to-br from-[#0E9AA7]/12 to-[#04203F]/8 rounded-full blur-3xl pointer-events-none -z-0 animate-[pulse_8s_ease-in-out_infinite]" 
+        />
+        <div 
+          aria-hidden="true" 
+          className="absolute top-96 -left-20 w-80 h-80 bg-gradient-to-tr from-[#3DD055]/10 via-[#0E9AA7]/8 to-transparent rounded-full blur-3xl pointer-events-none -z-0 animate-[pulse_10s_ease-in-out_infinite]" 
+        />
+        <div 
+          aria-hidden="true" 
+          className="absolute bottom-40 right-0 w-72 h-72 bg-gradient-to-tl from-[#04203F]/8 to-transparent rounded-full blur-3xl pointer-events-none -z-0" 
+        />
 
-        {/* Native Mobile App Header (Transparent Sticky Top Bar) */}
-        <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-md border-b border-slate-200/40 px-3.5 py-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] flex items-center justify-between transition-colors">
+        {/* (A) Native Mobile Glass Header (Sticky Safe-Area Top Bar, ~64px height) */}
+        <header className="sticky top-0 z-30 bg-white/75 backdrop-blur-xl saturate-150 border-b border-white/70 px-3.5 py-2 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] h-[64px] flex items-center justify-between transition-all shadow-[0_4px_24px_rgba(15,23,42,0.03)]">
+          {/* Left: Shop Logo & Name */}
           <div 
             onClick={() => {
               triggerHaptic('light');
               setActiveTab('home');
             }}
-            className="flex items-center gap-2 cursor-pointer select-none fluid-spring max-w-[55%]"
+            className="flex items-center gap-2.5 cursor-pointer select-none fluid-spring max-w-[58%] group"
           >
             {/* Account Holder's Shop Logo / Photo */}
             {(user.shopPhotoUrl || user.profilePhotoUrl) && !shopImgError ? (
-              <div className="w-8.5 h-8.5 rounded-xl overflow-hidden border border-slate-200/80 bg-white/70 shadow-2xs flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl overflow-hidden border border-white/80 bg-white/80 shadow-xs flex items-center justify-center shrink-0 group-hover:scale-102 transition-transform">
                 <img
                   src={user.shopPhotoUrl || user.profilePhotoUrl}
                   alt={user.shopName || user.fullName}
@@ -324,17 +336,17 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
                 />
               </div>
             ) : (
-              <div className="w-8.5 h-8.5 rounded-xl border border-blue-500/20 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-2xs shrink-0">
-                <Store className="w-4 h-4 text-white" />
+              <div className="w-10 h-10 rounded-2xl border border-white/80 bg-gradient-to-tr from-[#04203F] to-[#0E9AA7] text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-102 transition-transform">
+                <Store className="w-5 h-5 text-white" />
               </div>
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-1">
-                <span className="text-sm font-black text-slate-900 tracking-tight leading-none truncate">
+                <span className="text-[15px] font-bold text-[#04203F] tracking-tight leading-snug truncate">
                   {user.shopName || user.fullName}
                 </span>
               </div>
-              <p className="text-[11px] font-medium text-slate-500 truncate leading-tight mt-0.5">
+              <p className="text-[12px] font-medium text-slate-500 truncate leading-tight mt-0.5">
                 {user.shopName && user.fullName && user.shopName !== user.fullName
                   ? user.fullName
                   : (user.resellerCode ? `ID: ${user.resellerCode}` : (isPending ? 'Pending Approval' : 'Verified Reseller'))}
@@ -342,8 +354,9 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Live Wallet Balance Glass Pill */}
+          {/* Right: Glass Wallet Balance Chip & Round Glass Refresh Button (No Chat/Bell as requested) */}
+          <div className="flex items-center gap-2">
+            {/* Live Wallet Balance Glass Chip */}
             <button
               onClick={() => {
                 triggerHaptic('light');
@@ -353,13 +366,15 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
                 }
                 setActiveTab('wallet');
               }}
-              className="bg-emerald-500/10 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/25 text-emerald-800 px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all fluid-spring cursor-pointer shadow-2xs"
+              className="bg-white/70 hover:bg-white/95 backdrop-blur-md border border-emerald-500/25 text-[#04203F] px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all fluid-spring cursor-pointer shadow-xs active:scale-97 group"
               title={canAccessFullApp ? "Wallet Balance - Click to View" : "Wallet Locked until Approval"}
             >
               {canAccessFullApp ? (
                 <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-extrabold tracking-tight tabular-nums">৳{walletBalance.toLocaleString()}</span>
+                  <span className="w-2 h-2 rounded-full bg-[#3DD055] animate-pulse" />
+                  <span className="text-[13px] font-extrabold tracking-tight tabular-nums text-[#04203F]">
+                    ৳<AnimatedCounter value={walletBalance} />
+                  </span>
                 </>
               ) : (
                 <>
@@ -369,17 +384,17 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
               )}
             </button>
 
-            {/* Quick Refresh Icon */}
+            {/* 36px Round Glass Refresh Icon Button */}
             <button
               onClick={() => {
                 triggerHaptic('medium');
                 refreshCurrentPage();
               }}
               disabled={isRefreshing}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-900/5 backdrop-blur-md rounded-xl transition-all min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer fluid-spring border border-slate-200/60 bg-transparent"
+              className="w-9 h-9 rounded-full bg-white/70 hover:bg-white/95 backdrop-blur-md border border-white/80 shadow-xs flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               title="Refresh"
             >
-              <RotateCw className={`w-4 h-4 text-slate-600 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+              <RotateCw className={`w-4 h-4 text-slate-600 ${isRefreshing ? 'animate-spin text-[#0E9AA7]' : ''}`} />
             </button>
           </div>
         </header>
@@ -392,8 +407,8 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
           />
         )}
 
-        {/* Main Content Area */}
-        <main className="flex-1 pb-24 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
+        {/* Main Content Area (pb-28 so floating bottom navigation doesn't overlap content) */}
+        <main className="flex-1 pb-28 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
           {renderContent()}
         </main>
 
