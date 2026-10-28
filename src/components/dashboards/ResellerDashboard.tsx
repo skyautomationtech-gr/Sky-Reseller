@@ -11,9 +11,8 @@ import { CreateOrderModal } from '../orders/CreateOrderModal';
 import { ResellerHomePage } from '../home/ResellerHomePage';
 import { ResellerAccountHub } from '../profile/ResellerAccountHub';
 import { BottomNavigation } from '../common/BottomNavigation';
-import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
-import { RotateCw, MessagesSquare, Store, Lock } from 'lucide-react';
+import { RotateCw, Store, Lock } from 'lucide-react';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { useAccess } from '../../hooks/useAccess';
@@ -369,36 +368,6 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
                 </>
               )}
             </button>
-
-            {/* Live Chat Direct Button */}
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                if (!canAccessFullApp) {
-                  handleOpenLocked('Live Chat');
-                  return;
-                }
-                setActiveTab('chat');
-              }}
-              className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-slate-900/5 backdrop-blur-md rounded-xl transition-all min-w-[38px] min-h-[38px] flex items-center justify-center cursor-pointer fluid-spring border border-slate-200/60 bg-transparent"
-              title="Support"
-            >
-              <MessagesSquare className="w-5 h-5 text-slate-700 hover:text-blue-600" />
-              {unreadChatCount > 0 && (
-                <span className="absolute top-1 right-1 bg-rose-500 text-white font-black text-[10px] w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-white animate-bounce shadow-xs">
-                  {unreadChatCount > 9 ? '9+' : unreadChatCount}
-                </span>
-              )}
-            </button>
-
-            {/* Realtime Notification Bell */}
-            <NotificationBellDropdown
-              user={user}
-              onNavigateNotifications={() => {
-                triggerHaptic('light');
-                setActiveTab('notifications');
-              }}
-            />
 
             {/* Quick Refresh Icon */}
             <button

@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../../types';
 import { GlobalSearchBar } from './GlobalSearchBar';
 import { QrScannerModal } from './QrScannerModal';
-import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { subscribeToTotalUnreadChatCount } from '../../lib/chatService';
 import { SkyLogo } from './SkyLogo';
-import { LogOut, Menu, Store, QrCode, RotateCw, Search, ArrowLeft, MessagesSquare } from 'lucide-react';
+import { LogOut, Menu, Store, QrCode, RotateCw, Search, ArrowLeft } from 'lucide-react';
 import { useRefresh } from '../../context/RefreshContext';
 
 interface NavbarProps {
@@ -123,26 +122,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="text-slate-300">|</span>
           <span className="capitalize text-slate-500 font-medium">{user.role.replace('_', ' ')}</span>
         </div>
-
-        {/* Live Chat Direct Shortcut Button */}
-        <button
-          onClick={() => onNavigateTab && onNavigateTab('chat')}
-          className="relative p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
-          title="Open Live Chat"
-        >
-          <MessagesSquare className="w-5 h-5 text-slate-700 hover:text-blue-600" />
-          {unreadChatCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 bg-rose-500 text-white font-black text-[10px] w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-white animate-bounce">
-              {unreadChatCount > 9 ? '9+' : unreadChatCount}
-            </span>
-          )}
-        </button>
-
-        {/* Realtime Notification Bell with Badge & Dropdown */}
-        <NotificationBellDropdown
-          user={user}
-          onNavigateNotifications={() => onNavigateTab && onNavigateTab('notifications')}
-        />
 
         {/* User Profile Avatar / Icon on the right */}
         <button

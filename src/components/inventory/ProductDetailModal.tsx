@@ -145,13 +145,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               {/* Top Section: Media + Key Details */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {/* Gallery */}
-                <div className="space-y-3">
-                  <div className="relative aspect-square rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 flex items-center justify-center">
+                <div className="space-y-2.5">
+                  <div className="relative aspect-square max-h-[40vh] rounded-xl bg-slate-100 overflow-hidden border border-slate-200 flex items-center justify-center mx-auto">
                     {activeMedia ? (
                       <img
                         src={activeMedia.url}
                         alt={product.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover max-h-[40vh]"
                       />
                     ) : (
                       <div className="text-center text-slate-400 text-xs font-semibold">
