@@ -53,6 +53,8 @@ export const FluidGlassSearchEngine: React.FC<FluidGlassSearchEngineProps> = ({
   onAddToCart,
   selectedCategory,
   setSelectedCategory,
+  canAccessFullApp = true,
+  onOpenLockedModal,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
