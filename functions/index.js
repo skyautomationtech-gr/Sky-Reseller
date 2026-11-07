@@ -4,6 +4,35 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 
 /**
+ * Checks whether the current time falls within user's configured quiet hours.
+ */
+function isWithinQuietHours(notifPref) {
+  if (!notifPref || !notifPref.quietHoursEnabled) return false;
+  try {
+    const start = notifPref.quietHoursStart || '22:00';
+    const end = notifPref.quietHoursEnd || '07:00';
+    const now = new Date();
+    // UTC to Bangladesh time (UTC+6)
+    const bdHours = (now.getUTCHours() + 6) % 24;
+    const currentMinutes = bdHours * 60 + now.getUTCMinutes();
+
+    const [sH, sM] = start.split(':').map(Number);
+    const startMinutes = (sH || 0) * 60 + (sM || 0);
+
+    const [eH, eM] = end.split(':').map(Number);
+    const endMinutes = (eH || 0) * 60 + (eM || 0);
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * 1. New Order Notification (to Admin/Super Admin)
  */
 exports.sendNewOrderNotification = functions.firestore
@@ -26,7 +55,8 @@ exports.sendNewOrderNotification = functions.firestore
     usersSnap.forEach((doc) => {
       const userData = doc.data();
       const notifPref = userData.notificationPreferences || {};
-      if (notifPref.newOrder !== false && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
+      const orderAllowed = notifPref.orderUpdates !== false && notifPref.newOrder !== false;
+      if (orderAllowed && !isWithinQuietHours(notifPref) && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
         tokens.push(...userData.fcmTokens);
       }
     });
@@ -78,7 +108,15 @@ exports.sendOrderStatusNotification = functions.firestore
 
     const userData = userDoc.data();
     const notifPref = userData.notificationPreferences || {};
-    if (notifPref.orderStatus === false || !Array.isArray(userData.fcmTokens) || userData.fcmTokens.length === 0) {
+    
+    // Check both orderUpdates and orderStatus keys
+    const orderAllowed = notifPref.orderUpdates !== false && notifPref.orderStatus !== false;
+    if (!orderAllowed || !Array.isArray(userData.fcmTokens) || userData.fcmTokens.length === 0) {
+      return null;
+    }
+
+    if (isWithinQuietHours(notifPref)) {
+      console.log(`Silent/Quiet hours active for reseller ${resellerId}. Non-urgent order update skipped.`);
       return null;
     }
 
@@ -89,6 +127,7 @@ exports.sendOrderStatusNotification = functions.firestore
       notification: {
         title: 'Order Status Updated',
         body: `Your order #${orderNumber} is now ${status}`,
+        sound: notifPref.sound !== false ? 'default' : undefined,
       },
       data: {
         type: 'order_status',
@@ -107,7 +146,7 @@ exports.sendOrderStatusNotification = functions.firestore
   });
 
 /**
- * 3. Commission/Payout Notification (to Reseller)
+ * 3. Commission/Payout/Wallet Notification (to Reseller)
  */
 exports.sendCommissionPayoutNotification = functions.firestore
   .document('transactions/{txId}')
@@ -122,24 +161,35 @@ exports.sendCommissionPayoutNotification = functions.firestore
     const notifPref = userData.notificationPreferences || {};
     if (!Array.isArray(userData.fcmTokens) || userData.fcmTokens.length === 0) return null;
 
+    if (isWithinQuietHours(notifPref)) {
+      console.log(`Quiet hours active for user ${tx.userId}. Wallet update push muted.`);
+      return null;
+    }
+
     let title = 'Wallet Update';
     let body = `৳${tx.amount || 0} wallet update recorded.`;
     let sendNotif = true;
 
     if (tx.type === 'commission' || tx.type === 'credit') {
-      if (notifPref.commission === false) sendNotif = false;
+      if (notifPref.commissionCredited === false || notifPref.commission === false) sendNotif = false;
       title = 'Commission Credited';
       body = `৳${tx.amount || 0} added to your wallet!`;
     } else if (tx.type === 'withdrawal' || tx.type === 'payout') {
-      if (notifPref.payout === false) sendNotif = false;
+      if (notifPref.payoutUpdates === false || notifPref.payout === false) sendNotif = false;
       title = 'Withdrawal Update';
       body = `Your withdrawal request of ৳${tx.amount || 0} is ${tx.status || 'processed'}`;
+    } else {
+      if (notifPref.walletActivity === false) sendNotif = false;
     }
 
     if (!sendNotif) return null;
 
     const payload = {
-      notification: { title, body },
+      notification: { 
+        title, 
+        body,
+        sound: notifPref.sound !== false ? 'default' : undefined,
+      },
       data: {
         type: 'payout',
         txId: context.params.txId,
@@ -172,7 +222,8 @@ exports.sendImportantNoticeNotification = functions.firestore
     usersSnap.forEach((doc) => {
       const userData = doc.data();
       const notifPref = userData.notificationPreferences || {};
-      if (notifPref.importantNotice !== false && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
+      const noticeAllowed = notifPref.importantNotices !== false && notifPref.importantNotice !== false;
+      if (noticeAllowed && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
         tokens.push(...userData.fcmTokens);
       }
     });
@@ -215,7 +266,8 @@ exports.sendAppUpdateNotification = functions.firestore
     usersSnap.forEach((doc) => {
       const userData = doc.data();
       const notifPref = userData.notificationPreferences || {};
-      if (notifPref.appUpdate !== false && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
+      const appUpdateAllowed = notifPref.appUpdates !== false && notifPref.appUpdate !== false;
+      if (appUpdateAllowed && !isWithinQuietHours(notifPref) && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
         tokens.push(...userData.fcmTokens);
       }
     });
@@ -241,6 +293,46 @@ exports.sendAppUpdateNotification = functions.firestore
     }
     return null;
   });
+
+/**
+ * 6. Callable: Send Test Push Notification
+ */
+exports.sendTestPushNotification = functions.https.onCall(async (data, context) => {
+  const uid = context.auth ? context.auth.uid : data.userId;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User authentication required.');
+  }
+
+  const userDoc = await admin.firestore().collection('users').doc(uid).get();
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'User profile not found.');
+  }
+
+  const userData = userDoc.data();
+  const tokens = Array.isArray(userData.fcmTokens) ? userData.fcmTokens : [];
+  if (tokens.length === 0) {
+    return { success: false, reason: 'no_tokens', message: 'No registered push devices found.' };
+  }
+
+  const payload = {
+    notification: {
+      title: data.title || '🔔 ReSellBD Test Alert',
+      body: data.body || 'Push notifications are successfully configured!',
+    },
+    data: {
+      type: 'test_notification',
+      timestamp: String(Date.now()),
+    },
+  };
+
+  try {
+    const res = await admin.messaging().sendToDevice(tokens, payload);
+    return { success: true, count: res.successCount };
+  } catch (err) {
+    console.error('Test notification failed:', err);
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});
 
 /**
  * 6. Reseller Registration - Send Email OTP

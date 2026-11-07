@@ -16,14 +16,27 @@ export interface PayoutMethod {
 }
 
 export interface NotificationPreferences {
-  newOrder: boolean;
-  payout: boolean;
-  commission: boolean;
-  importantNotice: boolean;
-  appUpdate: boolean;
-  promotional: boolean;
-  sound: boolean;
-  vibration: boolean;
+  newOrder?: boolean;
+  payout?: boolean;
+  commission?: boolean;
+  importantNotice?: boolean;
+  appUpdate?: boolean;
+  promotional?: boolean;
+  sound?: boolean;
+  vibration?: boolean;
+  // Specific keys requested in Section 4:
+  orderUpdates?: boolean;
+  walletActivity?: boolean;
+  payoutUpdates?: boolean;
+  commissionCredited?: boolean;
+  newProducts?: boolean;
+  importantNotices?: boolean;
+  appUpdates?: boolean;
+  promotions?: boolean;
+  securityAlerts?: boolean;
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
 }
 
 export interface UserProfile {
@@ -97,6 +110,9 @@ export interface UserProfile {
   appLockPinLength?: number;
   notificationPreferences?: NotificationPreferences;
   fcmTokens?: string[];
+  displayDensity?: 'compact' | 'comfortable';
+  defaultHomeView?: 'home' | 'catalog';
+  reduceMotion?: boolean;
   createdAt: any; // Firestore Timestamp or Date
 }
 
@@ -438,6 +454,11 @@ export interface AppVersionConfig {
   version: string;
   releasedAt: any;
   releaseNotes?: string;
+  versionCode?: number;
+  minRequiredVersion?: string;
+  isMandatory?: boolean;
+  apkUrl?: string;
+  storeUrl?: string;
 }
 
 export interface CartItem {

@@ -575,6 +575,26 @@ async function startServer() {
     }
   });
 
+  // Test Push Notification Dispatch Endpoint
+  app.post('/api/notifications/test', async (req, res) => {
+    try {
+      const { userId, title, body } = req.body;
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+      }
+
+      console.log(`[Notifications] Test notification requested for user ${userId}: ${title}`);
+      return res.json({
+        success: true,
+        message: 'Test notification triggered successfully',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('[Notifications] Test push error:', err);
+      res.status(500).json({ error: err.message || 'Failed to dispatch test notification' });
+    }
+  });
+
   // AI Marketing Copywriting & Caption Generation API
   app.post('/api/ai/generate-copy', async (req, res) => {
     try {

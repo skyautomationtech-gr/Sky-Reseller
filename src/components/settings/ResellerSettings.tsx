@@ -30,6 +30,9 @@ import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
 import { AccountProfileSection } from './AccountProfileSection';
 import { PayoutSettingsSection } from './PayoutSettingsSection';
 import { SecuritySection } from './SecuritySection';
+import { NotificationSettingsSection } from './NotificationSettingsSection';
+import { AppPreferencesSection } from './AppPreferencesSection';
+import { AppVersionSection } from './AppVersionSection';
 import { SectionPlaceholder } from './SectionPlaceholder';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 
@@ -1664,629 +1667,67 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
       {/* ==========================================
           SECTION 4: NOTIFICATION SETTINGS
          ========================================== */}
-      {activeSection === 'notifications' && (
-        <SectionPlaceholder
-          title="Notification Settings"
-          description="Control real-time push alerts, order sound chimes, and system broadcast notices."
-          icon={Bell}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <Bell className="w-5 h-5 text-amber-600" />
-                <span>Notification Preferences</span>
-              </h3>
-              <span className="text-xs text-slate-400 font-medium">Saves automatically on change</span>
-            </div>
-
-            {/* Notification Types Group */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1">
-                Notification Types
-              </h4>
-
-              <div className="bg-slate-50/70 border border-slate-200 rounded-2xl divide-y divide-slate-200/80 overflow-hidden">
-                {/* New Order */}
-                <div
-                  onClick={() => handleToggleNotif('newOrder')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                      <Bell className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">New Order Notifications</span>
-                      <p className="text-[11px] text-slate-500">Alerts when customers or downlines place new orders.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.newOrder ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.newOrder ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Payout */}
-                <div
-                  onClick={() => handleToggleNotif('payout')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                      <CreditCard className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">Payout Notifications</span>
-                      <p className="text-[11px] text-slate-500">Updates regarding payout approvals and wallet disbursements.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.payout ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.payout ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Commission */}
-                <div
-                  onClick={() => handleToggleNotif('commission')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">Commission Earnings</span>
-                      <p className="text-[11px] text-slate-500">Instant alerts when new commissions are credited to your wallet.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.commission ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.commission ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Important Notice */}
-                <div
-                  onClick={() => handleToggleNotif('importantNotice')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                      <Megaphone className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">Important Notices</span>
-                      <p className="text-[11px] text-slate-500">System broadcasts and urgent administrative announcements.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.importantNotice ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.importantNotice ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* App Update */}
-                <div
-                  onClick={() => handleToggleNotif('appUpdate')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
-                      <Smartphone className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">App Updates & Patches</span>
-                      <p className="text-[11px] text-slate-500">Notifications when new feature releases or updates are ready.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.appUpdate ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.appUpdate ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Promotional */}
-                <div
-                  onClick={() => handleToggleNotif('promotional')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                      <Tag className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">Promotional Offers</span>
-                      <p className="text-[11px] text-slate-500">Marketing campaigns, seasonal product deals, and bonus offers.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.promotional ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.promotional ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Sound & Vibration Group */}
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1">
-                Sound & Feedback
-              </h4>
-
-              <div className="bg-slate-50/70 border border-slate-200 rounded-2xl divide-y divide-slate-200/80 overflow-hidden">
-                {/* Sound */}
-                <div
-                  onClick={() => handleToggleNotif('sound')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
-                      {notifPrefs.sound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">In-App Notification Sounds</span>
-                      <p className="text-[11px] text-slate-500">Play chime audio when receiving in-app notifications.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.sound ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.sound ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Vibration */}
-                <div
-                  onClick={() => handleToggleNotif('vibration')}
-                  className="p-4 flex items-center justify-between gap-4 hover:bg-slate-100/60 transition-colors cursor-pointer min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
-                      <SmartphoneNfc className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-xs text-slate-900 block">Haptic Vibration</span>
-                      <p className="text-[11px] text-slate-500">Vibrate mobile device on incoming priority events.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={`w-12 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                      notifPrefs.vibration ? 'bg-amber-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs ${
-                      notifPrefs.vibration ? 'left-6' : 'left-0.5'
-                    }`} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* FCM Push Notification System Group */}
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1">
-                Lock Screen & Push Alerts (FCM)
-              </h4>
-
-              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-indigo-700/50 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 flex items-center justify-center shrink-0">
-                      <Bell className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h5 className="font-bold text-sm text-white flex items-center gap-2">
-                        <span>Push Notifications</span>
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          pushPermStatus === 'granted'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : pushPermStatus === 'denied'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        }`}>
-                          {pushPermStatus === 'granted' ? 'Active & Registered' : pushPermStatus === 'denied' ? 'Permission Denied' : 'Not Registered'}
-                        </span>
-                      </h5>
-                      <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
-                        Receive real-time alerts on your phone lock screen & tray for new orders, payouts, and urgent notices.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/80 rounded-xl p-3.5 border border-slate-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="text-[11px] font-semibold text-slate-300 block">Device FCM Tokens</span>
-                    <p className="text-xs text-slate-400">
-                      {user.fcmTokens?.length || 0} device token(s) registered on your profile.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleRegisterPush}
-                    disabled={loadingPushRegister}
-                    className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {loadingPushRegister ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Registering Device...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Smartphone className="w-4 h-4" />
-                        <span>{pushPermStatus === 'granted' ? 'Re-sync FCM Device Token' : 'Enable Push Notifications'}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded-xl p-3">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Enable notifications in your phone settings to receive alerts.</span>
-                </div>
-              </div>
-            </div>
-          </div>
-            </div>
-          }
+      {activeSection === "notifications" && (
+        <NotificationSettingsSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          onOpenLockedModal={onOpenLockedModal}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, "users", user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn("Error refreshing profile:", err);
+            }
+          }}
+          onBack={() => setActiveSection("menu")}
         />
       )}
 
       {/* ==========================================
           SECTION 5: APP PREFERENCES
          ========================================== */}
-      {activeSection === 'preferences' && (
-        <SectionPlaceholder
-          title="App Preferences"
-          description="Configure UI language, interface contrast theme, and default product catalog density."
-          icon={Palette}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                  <Palette className="w-5 h-5 text-pink-600" />
-                  <span>Display & App Preferences</span>
-                </h3>
-                <span className="bg-pink-100 text-pink-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-pink-200 uppercase">
-                  Coming Soon
-                </span>
-              </div>
-              <span className="text-xs text-slate-400">Read-Only Preview</span>
-            </div>
-
-            <div className="space-y-3">
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl divide-y divide-slate-200/80 overflow-hidden">
-                {/* Light / Dark Mode */}
-                <div
-                  onClick={() => showToast('This feature is coming soon!', 'info')}
-                  className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/50 transition-colors min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                      <Sun className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900">Color Theme (Light / Dark)</span>
-                        <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                          Coming Soon
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">Switch between light mode and dark OLED slate palette.</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-500">Light Mode</span>
-                    <button disabled className="w-12 h-6 rounded-full bg-slate-300 relative cursor-not-allowed">
-                      <span className="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 shadow-xs" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Language */}
-                <div
-                  onClick={() => showToast('This feature is coming soon!', 'info')}
-                  className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/50 transition-colors min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                      <Globe className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900">App Language</span>
-                        <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                          Coming Soon
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">Select portal language (English & Bangla localization).</p>
-                    </div>
-                  </div>
-                  <select
-                    disabled
-                    value="en"
-                    className="bg-white border border-slate-300 text-slate-600 text-xs font-bold rounded-xl px-3 py-1.5 cursor-not-allowed outline-none"
-                  >
-                    <option value="en">English (US)</option>
-                    <option value="bn">বাংলা (Bengali)</option>
-                  </select>
-                </div>
-
-                {/* Currency */}
-                <div
-                  onClick={() => showToast('This feature is coming soon!', 'info')}
-                  className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/50 transition-colors min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                      <DollarSign className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900">Display Currency</span>
-                        <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                          Coming Soon
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">Default pricing unit across product catalog and wallet.</p>
-                    </div>
-                  </div>
-                  <select
-                    disabled
-                    value="BDT"
-                    className="bg-white border border-slate-300 text-slate-600 text-xs font-bold rounded-xl px-3 py-1.5 cursor-not-allowed outline-none"
-                  >
-                    <option value="BDT">BDT (৳)</option>
-                    <option value="USD">USD ($)</option>
-                  </select>
-                </div>
-
-                {/* Notification Sound */}
-                <div
-                  onClick={() => showToast('This feature is coming soon!', 'info')}
-                  className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/50 transition-colors min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                      <Volume2 className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900">Notification Alert Sound</span>
-                        <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                          Coming Soon
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">Custom alert sound tone for high-priority order events.</p>
-                    </div>
-                  </div>
-                  <select
-                    disabled
-                    value="default"
-                    className="bg-white border border-slate-300 text-slate-600 text-xs font-bold rounded-xl px-3 py-1.5 cursor-not-allowed outline-none"
-                  >
-                    <option value="default">Default Sky Chime</option>
-                    <option value="cash">Cash Register</option>
-                  </select>
-                </div>
-
-                {/* Compact / Comfortable View */}
-                <div
-                  onClick={() => showToast('This feature is coming soon!', 'info')}
-                  className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/50 transition-colors min-h-[56px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                      <Smartphone className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900">Compact Table Layout</span>
-                        <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                          Coming Soon
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">Reduce card padding for high-density screen viewing.</p>
-                    </div>
-                  </div>
-                  <button disabled className="w-12 h-6 rounded-full bg-slate-300 relative cursor-not-allowed">
-                    <span className="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 shadow-xs" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-            </div>
-          }
+      {activeSection === "preferences" && (
+        <AppPreferencesSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          onOpenLockedModal={onOpenLockedModal}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, "users", user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn("Error refreshing profile:", err);
+            }
+          }}
+          onBack={() => setActiveSection("menu")}
         />
       )}
 
       {/* ==========================================
           SECTION 6: APP & VERSION
          ========================================== */}
-      {activeSection === 'version' && (
-        <SectionPlaceholder
-          title="App & Version"
-          description="Check for new feature releases, system build details, and release notes."
-          icon={Smartphone}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <Smartphone className="w-5 h-5 text-sky-600" />
-                <span>System Build & Version Info</span>
-              </h3>
-              <button
-                onClick={handleCheckForUpdate}
-                disabled={checkingUpdate}
-                className="px-3.5 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer min-h-[38px]"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin' : ''}`} />
-                <span>{checkingUpdate ? 'Checking...' : 'Check for Updates'}</span>
-              </button>
-            </div>
-
-            {/* Current Version Banner */}
-            <div className="bg-gradient-to-r from-sky-900 via-indigo-900 to-slate-900 p-6 rounded-2xl text-white shadow-md space-y-3 relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-mono font-extrabold text-sky-300">
-                      v{appVersionInfo?.version || '1.0.0'}
-                    </span>
-                    {appVersionInfo?.version && profile.lastSeenVersion !== appVersionInfo.version ? (
-                      <span className="bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                        <span className="w-2 h-2 rounded-full bg-white" />
-                        UPDATE AVAILABLE
-                      </span>
-                    ) : (
-                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        YOU'RE UP TO DATE
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-sky-200">
-                    ReSellBD Enterprise Portal • Production Mobile Release
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={handleOpenWhatsNewModal}
-                    className="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-2 min-h-[44px] cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>What's New</span>
-                  </button>
-                  <button
-                    onClick={() => setShowChangelogModal(true)}
-                    className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 transition-colors flex items-center gap-2 min-h-[44px] cursor-pointer"
-                  >
-                    <History className="w-4 h-4" />
-                    <span>Changelog</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Version Detail Rows */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1">
-                Version Details
-              </h4>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl divide-y divide-slate-200/80 overflow-hidden text-xs">
-                {/* Installed Version */}
-                <div className="p-4 flex items-center justify-between gap-2">
-                  <span className="font-bold text-slate-700">Installed App Version</span>
-                  <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                    v{appVersionInfo?.version || '1.0.0'}
-                  </span>
-                </div>
-
-                {/* What's New Release Notes */}
-                <div className="p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700">Latest Release Notes</span>
-                    <button
-                      onClick={handleOpenWhatsNewModal}
-                      className="text-sky-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>View Full Popup</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-slate-600 text-xs leading-relaxed">
-                    {latestChangelog?.description || appVersionInfo?.releaseNotes || 'Initial release of ReSellBD portal.'}
-                  </div>
-                </div>
-
-                {/* Release Date */}
-                <div className="p-4 flex items-center justify-between gap-2">
-                  <span className="font-bold text-slate-700">Published Date</span>
-                  <span className="font-medium text-slate-600">
-                    {formatDate(appVersionInfo?.releasedAt)}
-                  </span>
-                </div>
-
-                {/* Build Target */}
-                <div className="p-4 flex items-center justify-between gap-2">
-                  <span className="font-bold text-slate-700">Build Environment</span>
-                  <span className="font-mono text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                    Mobile Web (PWA/Cloud Run)
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-            </div>
-          }
+      {activeSection === "version" && (
+        <AppVersionSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, "users", user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn("Error refreshing profile:", err);
+            }
+          }}
+          onBack={() => setActiveSection("menu")}
         />
       )}
-
-      {/* Version Modals */}
-      <WhatsNewModal
-        isOpen={showWhatsNewModal}
-        onClose={() => setShowWhatsNewModal(false)}
-        changelog={latestChangelog}
-        currentVersion={appVersionInfo?.version || '1.0.0'}
-      />
-
-      <ChangelogModal
-        isOpen={showChangelogModal}
-        onClose={() => setShowChangelogModal(false)}
-        currentVersion={appVersionInfo?.version || '1.0.0'}
-      />
 
       {/* ==========================================
           SECTION 7: ACCOUNT INFORMATION
