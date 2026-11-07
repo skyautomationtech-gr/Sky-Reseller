@@ -9,6 +9,8 @@ import {
 
 interface SupportTicketFormProps {
   user: UserProfile;
+  initialSubject?: string;
+  initialCategory?: TicketCategory;
   onSuccess?: (ticketId: string) => void;
   onCancel?: () => void;
 }
@@ -64,6 +66,8 @@ const PRIORITY_OPTIONS: {
 
 export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
   user,
+  initialSubject = '',
+  initialCategory,
   onSuccess,
   onCancel,
 }) => {
@@ -72,8 +76,8 @@ export const SupportTicketForm: React.FC<SupportTicketFormProps> = ({
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   // Form Fields
-  const [category, setCategory] = useState<TicketCategory | ''>('Order Issue');
-  const [subject, setSubject] = useState('');
+  const [category, setCategory] = useState<TicketCategory | ''>(initialCategory || 'Order Issue');
+  const [subject, setSubject] = useState(initialSubject);
   const [description, setDescription] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [priority, setPriority] = useState<TicketPriority>('medium');

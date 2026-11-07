@@ -23,17 +23,35 @@ import {
   SmartphoneNfc, Laptop, Eye, EyeOff, ShieldCheck, Copy, Sparkles, Building,
   Volume2, VolumeX, Moon, Sun, Globe, DollarSign, Tag, Calendar, History,
   Megaphone, Info, CheckSquare, PhoneCall, MessageCircle, Users, ChevronDown,
-  ChevronUp, Bug, UserX, ShieldAlert, MessageSquare, Bot
+  ChevronUp, Bug, UserX, ShieldAlert, MessageSquare, Bot, Search, X, CheckCheck
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { AccountProfileSection } from './AccountProfileSection';
+import { SectionPlaceholder } from './SectionPlaceholder';
+import { triggerHaptic } from '../../lib/nativeFeedback';
 
-interface ResellerSettingsProps {
+export interface ResellerSettingsProps {
   user: UserProfile;
   onLogout: () => void;
+  canAccessFullApp?: boolean;
+  onOpenLockedModal?: (featureName?: string) => void;
+  initialSection?: 'menu' | 'account' | 'payout' | 'security' | 'notifications' | 'preferences' | 'version' | 'info' | 'support' | 'privacy';
+  onNavigateTab?: (tab: string) => void;
 }
 
-export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogout }) => {
-  const [activeSection, setActiveSection] = useState<'menu' | 'account' | 'payout' | 'security' | 'notifications' | 'preferences' | 'version' | 'info' | 'support' | 'privacy' | 'actions'>('menu');
+export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ 
+  user, 
+  onLogout,
+  canAccessFullApp = true,
+  onOpenLockedModal,
+  initialSection = 'menu',
+  onNavigateTab,
+}) => {
+  const [activeSection, setActiveSection] = useState<'menu' | 'account' | 'payout' | 'security' | 'notifications' | 'preferences' | 'version' | 'info' | 'support' | 'privacy' | 'actions'>(initialSection);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [copiedResellerId, setCopiedResellerId] = useState(false);
 
   // Logout Modal
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -887,64 +905,12 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 p-6 rounded-2xl text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {activeSection !== 'menu' && (
-            <button
-              onClick={() => {
-                if (activeSection === 'info' && selectedPolicyKey !== null) {
-                  setSelectedPolicyKey(null);
-                } else if (activeSection === 'support' && supportView !== 'menu') {
-                  setSupportView('menu');
-                } else {
-                  setActiveSection('menu');
-                }
-              }}
-              className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
-              title="Back to Settings Menu"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="bg-blue-500/20 text-blue-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase border border-blue-400/30">
-                Reseller Portal Settings
-              </span>
-            </div>
-            <h2 className="text-lg sm:text-xl font-extrabold text-white mt-1">
-              {activeSection === 'menu' && 'Settings & Preferences'}
-              {activeSection === 'account' && 'Account & Profile Settings'}
-              {activeSection === 'payout' && 'Payout Accounts & Methods'}
-              {activeSection === 'security' && 'Security & Login Controls'}
-              {activeSection === 'notifications' && 'Notification Settings'}
-              {activeSection === 'preferences' && 'App Preferences'}
-              {activeSection === 'version' && 'App & System Version'}
-              {activeSection === 'info' && 'Account Information & Policies'}
-              {activeSection === 'support' && 'Help & Customer Support'}
-              {activeSection === 'privacy' && 'Privacy & Data Protection'}
-              {activeSection === 'actions' && 'Account Actions & Session'}
-            </h2>
-            <p className="text-xs text-slate-300 mt-0.5">
-              {activeSection === 'menu' && 'Configure personal information, payout accounts, app security, and preferences.'}
-              {activeSection === 'account' && 'Update your profile photo, business details, and contact information.'}
-              {activeSection === 'payout' && 'Add and manage bKash, Nagad, and Bank transfer accounts for commission payouts.'}
-              {activeSection === 'security' && 'Manage login password, PIN lock, recent activity, and active device sessions.'}
-              {activeSection === 'notifications' && 'Configure notification toggles, sound, and vibration preferences.'}
-              {activeSection === 'preferences' && 'Customization options for language, theme, and display preferences.'}
-              {activeSection === 'version' && 'View current app version, release notes, changelog history, and update status.'}
-              {activeSection === 'info' && 'Read terms & conditions, reseller rules, payout policies, and commission rules.'}
-              {activeSection === 'support' && 'Contact support, submit tickets, view FAQs, or report app bugs.'}
-              {activeSection === 'privacy' && 'Manage privacy settings, visibility, and data control options.'}
-              {activeSection === 'actions' && 'Sign out from your active session or manage account status.'}
-            </p>
-          </div>
-        </div>
-
-        {activeSection !== 'menu' && (
+      {/* Sticky Header Bar for Drill-Down Sections */}
+      {activeSection !== 'menu' && (
+        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-white/80 px-3 py-2.5 flex items-center gap-2.5 shadow-2xs -mx-1 sm:mx-0 sm:rounded-2xl mb-3.5">
           <button
             onClick={() => {
+              triggerHaptic('light');
               if (activeSection === 'info' && selectedPolicyKey !== null) {
                 setSelectedPolicyKey(null);
               } else if (activeSection === 'support' && supportView !== 'menu') {
@@ -953,273 +919,711 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
                 setActiveSection('menu');
               }
             }}
-            className="self-start sm:self-auto px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-colors border border-white/20 shrink-0 min-h-[44px] cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-white hover:bg-slate-50 text-[#04203F] border border-slate-200/80 shadow-2xs flex items-center justify-center transition-all cursor-pointer active:scale-95 shrink-0 min-h-[36px]"
+            title="Back to Settings"
           >
-            ← Back to Menu
+            <ArrowLeft className="w-4 h-4" />
           </button>
-        )}
-      </div>
-
-      {/* ==========================================
-          MAIN SETTINGS MENU LIST (ALL 10 SECTIONS)
-         ========================================== */}
-      {activeSection === 'menu' && (
-        <div className="space-y-3">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden divide-y divide-slate-100">
-            {sectionsList.map((sec, idx) => {
-              const IconComp = sec.icon;
-              return (
-                <button
-                  key={sec.id}
-                  onClick={() => {
-                    if (sec.id === 'account') setActiveSection('account');
-                    else if (sec.id === 'aimarketing') setShowAiModal(true);
-                    else if (sec.id === 'payout') setActiveSection('payout');
-                    else if (sec.id === 'security') setActiveSection('security');
-                    else if (sec.id === 'notifications') setActiveSection('notifications');
-                    else if (sec.id === 'preferences') setActiveSection('preferences');
-                    else if (sec.id === 'version') setActiveSection('version');
-                    else if (sec.id === 'info') {
-                      setSelectedPolicyKey(null);
-                      setActiveSection('info');
-                    }
-                    else if (sec.id === 'support') {
-                      setSupportView('menu');
-                      setActiveSection('support');
-                    }
-                    else if (sec.id === 'privacy') setActiveSection('privacy');
-                    else if (sec.id === 'actions') setActiveSection('actions');
-                  }}
-                  className="w-full p-4 flex items-center justify-between hover:bg-slate-50/80 transition-colors cursor-pointer text-left group min-h-[64px]"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0 transition-transform group-hover:scale-105 ${sec.color}`}>
-                      <IconComp className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-slate-900">{sec.title}</span>
-                        {!sec.isReady && (
-                          <span className="bg-slate-100 text-slate-500 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-slate-200">
-                            Coming Soon
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">{sec.subtitle}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-all" />
-                  </div>
-                </button>
-              );
-            })}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[16px] font-bold text-[#04203F] leading-tight truncate">
+              {activeSection === 'account' && 'Account & Profile'}
+              {activeSection === 'payout' && 'Payout Settings'}
+              {activeSection === 'security' && 'Security'}
+              {activeSection === 'notifications' && 'Notifications'}
+              {activeSection === 'preferences' && 'App Preferences'}
+              {activeSection === 'version' && 'App & Version'}
+              {activeSection === 'info' && 'Account Information'}
+              {activeSection === 'support' && 'Help & Support'}
+              {activeSection === 'privacy' && 'Privacy & Data'}
+              {activeSection === 'actions' && 'Account Actions'}
+            </h2>
+            <p className="text-[11px] font-medium text-slate-500 truncate leading-tight mt-0.5">
+              {activeSection === 'account' && 'Personal information, shop profile, and contact details'}
+              {activeSection === 'payout' && 'bKash, Nagad, and Bank payout methods'}
+              {activeSection === 'security' && 'Login password, 4-digit PIN lock, and security history'}
+              {activeSection === 'notifications' && 'Order alerts, announcements, sound, and push preferences'}
+              {activeSection === 'preferences' && 'UI language, dark/light appearance, and display'}
+              {activeSection === 'version' && 'Release updates, system build, and changelog'}
+              {activeSection === 'info' && 'Terms of service, reseller code of conduct, and policies'}
+              {activeSection === 'support' && 'Live chat, helpdesk tickets, and FAQs'}
+              {activeSection === 'privacy' && 'Data storage, privacy permissions, and session logs'}
+              {activeSection === 'actions' && 'Session sign out and account lifecycle'}
+            </p>
           </div>
         </div>
       )}
 
       {/* ==========================================
-          SECTION 1: ACCOUNT & PROFILE
+          SETTINGS HOME (THE ROOT SCREEN)
          ========================================== */}
-      {activeSection === 'account' && (
-        <div className="space-y-6">
-          {/* AI Marketing & Smart Assist Card (Moved into Account) */}
-          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-5 sm:p-6 rounded-2xl border border-indigo-500/20 text-white shadow-md relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="relative z-10 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-amber-300">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm sm:text-base text-white">AI Marketing & Smart Tools</h3>
-                    <p className="text-[11px] text-slate-300">Generate high-converting Facebook captions, TikTok scripts & product posters</p>
-                  </div>
-                </div>
-                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase">
-                  SAT AI
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowAiModal(true)}
-                  className="p-3.5 bg-blue-600/90 hover:bg-blue-600 rounded-xl border border-blue-400/30 text-left transition-all hover:scale-[1.02] active:scale-98 cursor-pointer flex items-center gap-3 group shadow-sm"
-                >
-                  <div className="w-9 h-9 rounded-full bg-blue-700/80 text-amber-300 flex items-center justify-center border border-white/20 shrink-0 shadow-inner group-hover:rotate-12 transition-transform">
-                    <Bot className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                      <span>AI Caption & Copywriter</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-200" />
-                    </div>
-                    <p className="text-[10px] text-blue-100/80 mt-0.5">Auto Bengali & English captions for posts</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    let prodToUse = selectedPosterProduct;
-                    if (!prodToUse && allProductsList.length > 0) {
-                      prodToUse = allProductsList[0];
-                      setSelectedPosterProduct(prodToUse);
-                    }
-                    if (!prodToUse) {
-                      prodToUse = DEFAULT_DEMO_PRODUCT;
-                      setSelectedPosterProduct(prodToUse);
-                    }
-                    setShowPosterModal(true);
-                  }}
-                  className="p-3.5 bg-slate-900/90 hover:bg-slate-800 rounded-xl border border-slate-700 text-left transition-all hover:scale-[1.02] active:scale-98 cursor-pointer flex items-center gap-3 group shadow-sm"
-                >
-                  <div className="w-9 h-9 rounded-full bg-slate-800 text-amber-300 flex items-center justify-center border border-white/20 shrink-0 shadow-inner group-hover:rotate-12 transition-transform">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                      <span>Smart Poster Studio</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-amber-200" />
-                    </div>
-                    <p className="text-[10px] text-slate-300 mt-0.5">Watermarked photos & marketing graphics</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <form onSubmit={handleSaveAccountProfile} className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <User className="w-5 h-5 text-blue-600" />
-                <span>Personal & Account Details</span>
-              </h3>
-              <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                Reseller ID: {formatResellerId(user)}
-              </span>
-            </div>
-
-            {/* Profile Photo */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-5 p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-              <div className="relative shrink-0">
-                {profilePhotoUrl ? (
-                  <img src={profilePhotoUrl} alt="Profile" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
+      {activeSection === 'menu' && (
+        <div className="space-y-3">
+          {/* 1. Top Profile Strip (~72px) */}
+          <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-[14px] p-3 shadow-[0_2px_12px_rgba(4,32,63,0.03)] flex items-center justify-between gap-3 min-h-[72px]">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Shop Logo (44px, rounded 12px) */}
+              <div className="w-[44px] h-[44px] rounded-[12px] bg-[#04203F] text-white flex items-center justify-center font-bold text-base overflow-hidden border border-slate-200/80 shadow-2xs shrink-0">
+                {profile.shopPhotoUrl || profile.shopLogoUrl || profile.profilePhotoUrl ? (
+                  <img
+                    src={profile.shopPhotoUrl || profile.shopLogoUrl || profile.profilePhotoUrl}
+                    alt={profile.shopName || profile.fullName}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <div className="w-20 h-20 rounded-full bg-slate-900 text-white font-extrabold text-2xl flex items-center justify-center border-2 border-white shadow-md">
-                    {fullName.charAt(0) || 'R'}
-                  </div>
+                  <span>{(profile.shopName || profile.fullName || 'R').charAt(0).toUpperCase()}</span>
                 )}
               </div>
 
-              <div className="space-y-1">
-                <h4 className="font-bold text-sm text-slate-900">Profile Photo</h4>
-                <p className="text-xs text-slate-500">Upload a clear photo to personalize your reseller profile.</p>
-                <div className="pt-1">
-                  <label className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-xs transition-colors min-h-[44px]">
-                    <Plus className="w-4 h-4" />
-                    <span>Upload New Photo</span>
-                    <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-                  </label>
+              {/* Shop Name & Owner Name */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-[14px] font-bold text-[#04203F] truncate leading-tight">
+                    {profile.shopName || profile.fullName || 'Reseller Shop'}
+                  </h3>
+                </div>
+                <p className="text-[11px] font-medium text-slate-500 truncate leading-tight mt-0.5">
+                  {profile.fullName || 'Shop Owner'}
+                </p>
+
+                {/* Reseller ID Chip with copy button */}
+                <div className="flex items-center gap-1.5 mt-1">
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      const idText = formatResellerId(profile);
+                      navigator.clipboard?.writeText(idText);
+                      setCopiedResellerId(true);
+                      setTimeout(() => setCopiedResellerId(false), 2000);
+                      showToast(`Copied Reseller ID: ${idText}`, 'info');
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-[#04203F] text-[10px] font-mono font-bold transition-colors cursor-pointer select-none"
+                    title="Copy Reseller ID"
+                  >
+                    <span>{formatResellerId(profile)}</span>
+                    {copiedResellerId ? (
+                      <CheckCheck className="w-2.5 h-2.5 text-[#3DD055]" />
+                    ) : (
+                      <Copy className="w-2.5 h-2.5 text-slate-400" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Read-Only Account Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Reseller ID</span>
-                <span className="text-xs font-mono font-bold text-slate-800 break-all">{user.uid}</span>
-              </div>
-
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Account Status</span>
-                <span className={`inline-block px-2 py-0.5 text-[10px] font-extrabold rounded-md mt-0.5 uppercase ${
-                  user.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
-                  user.status === 'suspended' ? 'bg-rose-100 text-rose-800' :
-                  'bg-amber-100 text-amber-800'
-                }`}>
-                  {user.status}
+            {/* Account Status Chip */}
+            <div className="shrink-0 self-center">
+              {profile.status === 'approved' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3DD055]" />
+                  Active
                 </span>
-              </div>
-
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Joined Date</span>
-                <span className="text-xs font-semibold text-slate-800 mt-0.5 block">{formatDate(user.createdAt)}</span>
-              </div>
+              ) : profile.status === 'pending' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  Pending
+                </span>
+              ) : profile.status === 'suspended' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  Suspended
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                  {profile.status || 'Registered'}
+                </span>
+              )}
             </div>
+          </div>
 
-            {/* Editable Information Fields */}
-            <div className="space-y-4 pt-2">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name *</label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  required
-                />
-              </div>
+          {/* 2. Account Completion Strip (Shows ONLY if < 100%) */}
+          {(() => {
+            const hasPayout = payoutMethods.length > 0;
+            const hasEmailVerified = Boolean(profile.emailVerified);
+            const hasDocs = Boolean(profile.nidFrontUrl || profile.birthCertificateUrl || profile.documentsSubmitted);
+            const hasLogo = Boolean(profile.shopPhotoUrl || profile.shopLogoUrl || profile.profilePhotoUrl);
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mobile Phone Number *</label>
-                  <input
-                    type="text"
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                    required
+            const checks = [
+              { key: 'payout', label: 'Add a payout method', section: 'payout' as const, done: hasPayout },
+              { key: 'logo', label: 'Upload shop logo', section: 'account' as const, done: hasLogo },
+              { key: 'docs', label: 'Submit documents', section: 'account' as const, done: hasDocs },
+              { key: 'email', label: 'Verify your email', section: 'account' as const, done: hasEmailVerified },
+            ];
+
+            const completed = checks.filter(c => c.done).length;
+            const pct = Math.round((completed / checks.length) * 100);
+            const nextAction = checks.find(c => !c.done);
+
+            if (pct >= 100 || !nextAction) return null;
+
+            return (
+              <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-[14px] p-3 shadow-[0_2px_12px_rgba(4,32,63,0.03)] space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#04203F]">Profile completion: {pct}%</span>
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (nextAction.section === 'payout' && (!canAccessFullApp || profile.status === 'pending')) {
+                        onOpenLockedModal?.('Payout Settings');
+                        return;
+                      }
+                      setActiveSection(nextAction.section);
+                    }}
+                    className="text-[11px] font-bold text-[#0E9AA7] hover:underline cursor-pointer flex items-center gap-0.5"
+                  >
+                    <span>{nextAction.label}</span>
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                {/* Thin 4px progress line */}
+                <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#0E9AA7] to-[#3DD055] rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%` }}
                   />
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Email Address *</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                    required
-                  />
-                </div>
               </div>
+            );
+          })()}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Address</label>
-                <textarea
-                  rows={3}
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Enter full street / shop address"
-                  className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-slate-100">
+          {/* 3. Search Field "Search settings" (36px high glass input) */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search settings (e.g. bkash, password, rules)..."
+              className="w-full h-[36px] pl-9 pr-9 text-[12px] font-medium bg-white/70 backdrop-blur-xl border border-white/80 rounded-xl outline-none focus:border-[#0E9AA7] focus:bg-white text-[#04203F] placeholder:text-slate-400 shadow-[0_2px_8px_rgba(4,32,63,0.02)] transition-all"
+            />
+            {searchQuery && (
               <button
-                type="submit"
-                disabled={savingAccount}
-                className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 min-h-[44px] cursor-pointer"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-300 transition-colors"
               >
-                {savingAccount ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                <span>Save Changes</span>
+                <X className="w-3 h-3" />
               </button>
+            )}
+          </div>
+
+          {/* Search Results Filter View */}
+          {searchQuery.trim() !== '' ? (
+            <div className="space-y-1.5">
+              <span className={DT.settingsGroupLabel}>Search Results</span>
+              {(() => {
+                const q = searchQuery.toLowerCase().trim();
+                const searchItems = [
+                  {
+                    id: 'account' as const,
+                    title: 'Account & Profile',
+                    helper: 'Personal info, shop name & address',
+                    keywords: ['profile', 'name', 'phone', 'mobile', 'address', 'nid', 'photo', 'logo', 'facebook', 'social', 'email', 'division', 'district', 'shop'],
+                    icon: User,
+                    iconBg: 'bg-blue-50 text-blue-600 border-blue-200/60',
+                    isLocked: false,
+                  },
+                  {
+                    id: 'payout' as const,
+                    title: 'Payout Settings',
+                    helper: 'bKash, Nagad, and Bank accounts',
+                    keywords: ['payout', 'bkash', 'nagad', 'rocket', 'bank', 'withdraw', 'account number', 'payment', 'money'],
+                    icon: CreditCard,
+                    iconBg: 'bg-emerald-50 text-emerald-600 border-emerald-200/60',
+                    isLocked: !canAccessFullApp || profile.status === 'pending',
+                  },
+                  {
+                    id: 'security' as const,
+                    title: 'Security',
+                    helper: 'Password, PIN lock & login history',
+                    keywords: ['security', 'password', 'pin', 'lock', 'login history', 'devices', 'auth', 'passcode'],
+                    icon: Shield,
+                    iconBg: 'bg-purple-50 text-purple-600 border-purple-200/60',
+                    isLocked: !canAccessFullApp || profile.status === 'pending',
+                  },
+                  {
+                    id: 'privacy' as const,
+                    title: 'Privacy & Data',
+                    helper: 'Data controls & account state',
+                    keywords: ['privacy', 'data', 'delete', 'deactivate', 'visibility', 'permissions'],
+                    icon: ShieldCheck,
+                    iconBg: 'bg-rose-50 text-rose-600 border-rose-200/60',
+                    isLocked: !canAccessFullApp || profile.status === 'pending',
+                  },
+                  {
+                    id: 'notifications' as const,
+                    title: 'Notifications',
+                    helper: 'Order alerts & push preferences',
+                    keywords: ['notifications', 'alerts', 'sound', 'push', 'vibration', 'order update', 'bell', 'messages'],
+                    icon: Bell,
+                    iconBg: 'bg-amber-50 text-amber-600 border-amber-200/60',
+                    isLocked: !canAccessFullApp || profile.status === 'pending',
+                  },
+                  {
+                    id: 'preferences' as const,
+                    title: 'App Preferences',
+                    helper: 'Language & display settings',
+                    keywords: ['preferences', 'language', 'theme', 'dark mode', 'light', 'font', 'display'],
+                    icon: Palette,
+                    iconBg: 'bg-pink-50 text-pink-600 border-pink-200/60',
+                    isLocked: !canAccessFullApp || profile.status === 'pending',
+                  },
+                  {
+                    id: 'version' as const,
+                    title: 'App & Version',
+                    helper: `v${appVersionInfo?.version || '1.0.8'} • Check for updates`,
+                    keywords: ['version', 'update', 'changelog', 'release notes', 'build', 'app'],
+                    icon: Smartphone,
+                    iconBg: 'bg-sky-50 text-sky-600 border-sky-200/60',
+                    isLocked: false,
+                  },
+                  {
+                    id: 'info' as const,
+                    title: 'Account Information',
+                    helper: 'Terms, rules & policies',
+                    keywords: ['terms', 'conditions', 'policy', 'rules', 'commission policy', 'faq', 'information', 'about'],
+                    icon: FileText,
+                    iconBg: 'bg-indigo-50 text-indigo-600 border-indigo-200/60',
+                    isLocked: !canAccessFullApp || profile.status === 'pending',
+                  },
+                  {
+                    id: 'support' as const,
+                    title: 'Help & Support',
+                    helper: 'Live chat, tickets & direct contacts',
+                    keywords: ['help', 'support', 'ticket', 'faq', 'contact', 'call', 'whatsapp', 'problem', 'bug'],
+                    icon: HelpCircle,
+                    iconBg: 'bg-teal-50 text-teal-600 border-teal-200/60',
+                    isLocked: false,
+                  },
+                ];
+
+                const matches = searchItems.filter(item => 
+                  item.title.toLowerCase().includes(q) ||
+                  item.helper.toLowerCase().includes(q) ||
+                  item.keywords.some(k => k.toLowerCase().includes(q))
+                );
+
+                if (matches.length === 0) {
+                  return (
+                    <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-[14px] p-6 text-center space-y-2">
+                      <p className="text-[12px] font-semibold text-slate-600">No settings found matching &quot;{searchQuery}&quot;</p>
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="text-[11px] font-bold text-[#0E9AA7] hover:underline"
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className={DT.settingsGroupCard}>
+                    {matches.map((item) => {
+                      const IconComp = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            triggerHaptic('light');
+                            if (item.isLocked) {
+                              onOpenLockedModal?.(item.title);
+                              return;
+                            }
+                            setActiveSection(item.id);
+                          }}
+                          className={DT.settingsRow}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`${DT.iconTile} ${item.iconBg}`}>
+                              <IconComp className={DT.iconSize} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={DT.settingsRowTitle}>{item.title}</span>
+                                {item.isLocked && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
+                              </div>
+                              <p className={DT.settingsRowHelper}>{item.helper}</p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
-          </form>
+          ) : (
+            /* 4. Grouped List (iOS/fintech system-settings style) */
+            <div className="space-y-3">
+              {/* GROUP: ACCOUNT */}
+              <div className="space-y-1">
+                <span className={DT.settingsGroupLabel}>ACCOUNT</span>
+                <div className={DT.settingsGroupCard}>
+                  {/* Account & Profile (Section 1) */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setActiveSection('account');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-blue-50 text-blue-600 border-blue-200/60`}>
+                        <User className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className={DT.settingsRowTitle}>Account & Profile</span>
+                        <p className={DT.settingsRowHelper}>Personal info, shop profile & address</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={`${DT.settingsRowValue} max-w-[120px]`}>
+                        {profile.fullName || 'View profile'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+
+                  {/* Payout Settings */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (!canAccessFullApp || profile.status === 'pending') {
+                        onOpenLockedModal?.('Payout Settings');
+                        return;
+                      }
+                      setActiveSection('payout');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-emerald-50 text-emerald-600 border-emerald-200/60`}>
+                        <CreditCard className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={DT.settingsRowTitle}>Payout Settings</span>
+                          {(!canAccessFullApp || profile.status === 'pending') && (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className={DT.settingsRowHelper}>Manage bKash, Nagad, and Bank accounts</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>
+                        {payoutMethods.length > 0
+                          ? `${payoutMethods[0].type} • ${payoutMethods[0].accountNumber.slice(-4)}`
+                          : 'Not added'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* GROUP: SECURITY & PRIVACY */}
+              <div className="space-y-1">
+                <span className={DT.settingsGroupLabel}>SECURITY & PRIVACY</span>
+                <div className={DT.settingsGroupCard}>
+                  {/* Security */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (!canAccessFullApp || profile.status === 'pending') {
+                        onOpenLockedModal?.('Security Settings');
+                        return;
+                      }
+                      setActiveSection('security');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-purple-50 text-purple-600 border-purple-200/60`}>
+                        <Shield className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={DT.settingsRowTitle}>Security</span>
+                          {(!canAccessFullApp || profile.status === 'pending') && (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className={DT.settingsRowHelper}>Password, PIN lock & login history</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>
+                        {pinEnabled ? 'PIN enabled' : 'Password set'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+
+                  {/* Privacy & Data */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (!canAccessFullApp || profile.status === 'pending') {
+                        onOpenLockedModal?.('Privacy & Data');
+                        return;
+                      }
+                      setActiveSection('privacy');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-rose-50 text-rose-600 border-rose-200/60`}>
+                        <ShieldCheck className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={DT.settingsRowTitle}>Privacy & Data</span>
+                          {(!canAccessFullApp || profile.status === 'pending') && (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className={DT.settingsRowHelper}>Data controls & account permissions</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>Standard</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* GROUP: PREFERENCES */}
+              <div className="space-y-1">
+                <span className={DT.settingsGroupLabel}>PREFERENCES</span>
+                <div className={DT.settingsGroupCard}>
+                  {/* Notifications */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (!canAccessFullApp || profile.status === 'pending') {
+                        onOpenLockedModal?.('Notification Settings');
+                        return;
+                      }
+                      setActiveSection('notifications');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-amber-50 text-amber-600 border-amber-200/60`}>
+                        <Bell className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={DT.settingsRowTitle}>Notifications</span>
+                          {(!canAccessFullApp || profile.status === 'pending') && (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className={DT.settingsRowHelper}>Order alerts & push preferences</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>
+                        {notifPrefs.newOrder && notifPrefs.payout ? 'All on' : 'Orders only'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+
+                  {/* App Preferences */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (!canAccessFullApp || profile.status === 'pending') {
+                        onOpenLockedModal?.('App Preferences');
+                        return;
+                      }
+                      setActiveSection('preferences');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-pink-50 text-pink-600 border-pink-200/60`}>
+                        <Palette className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={DT.settingsRowTitle}>App Preferences</span>
+                          {(!canAccessFullApp || profile.status === 'pending') && (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className={DT.settingsRowHelper}>Language & interface theme</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>English • Auto</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* GROUP: ABOUT */}
+              <div className="space-y-1">
+                <span className={DT.settingsGroupLabel}>ABOUT</span>
+                <div className={DT.settingsGroupCard}>
+                  {/* App & Version (Always open, even for pending) */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setActiveSection('version');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-sky-50 text-sky-600 border-sky-200/60`}>
+                        <Smartphone className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className={DT.settingsRowTitle}>App & Version</span>
+                        <p className={DT.settingsRowHelper}>Check updates & release changelog</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>
+                        v{appVersionInfo?.version || '1.0.8'} • Up to date
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+
+                  {/* Account Information (Policies & FAQ) */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (!canAccessFullApp || profile.status === 'pending') {
+                        onOpenLockedModal?.('Account Policies & FAQ');
+                        return;
+                      }
+                      setSelectedPolicyKey(null);
+                      setActiveSection('info');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-indigo-50 text-indigo-600 border-indigo-200/60`}>
+                        <FileText className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={DT.settingsRowTitle}>Account Information</span>
+                          {(!canAccessFullApp || profile.status === 'pending') && (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className={DT.settingsRowHelper}>Terms of service & reseller rules</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>Policies & FAQ</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* GROUP: HELP */}
+              <div className="space-y-1">
+                <span className={DT.settingsGroupLabel}>HELP</span>
+                <div className={DT.settingsGroupCard}>
+                  {/* Help & Support (Always open, contact buttons work) */}
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setSupportView('menu');
+                      setActiveSection('support');
+                    }}
+                    className={DT.settingsRow}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`${DT.iconTile} bg-teal-50 text-teal-600 border-teal-200/60`}>
+                        <HelpCircle className={DT.iconSize} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className={DT.settingsRowTitle}>Help & Support</span>
+                        <p className={DT.settingsRowHelper}>Live chat, support tickets & contacts</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className={DT.settingsRowValue}>Live chat & tickets</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Full-width "Log out" row at bottom */}
+              <div className="pt-1">
+                <button
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowLogoutModal(true);
+                  }}
+                  className="w-full min-h-[48px] px-3.5 py-2.5 rounded-[14px] bg-white/70 backdrop-blur-xl border border-white/80 hover:bg-rose-50/60 active:bg-rose-100/60 text-[#E11D48] transition-colors flex items-center justify-between cursor-pointer select-none shadow-[0_2px_12px_rgba(4,32,63,0.03)]"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className={`${DT.iconTile} bg-rose-50 text-[#E11D48] border-rose-200/60`}>
+                      <LogOut className={DT.iconSize} />
+                    </div>
+                    <span className="text-[13px] font-bold text-[#E11D48]">Log out</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-rose-300" />
+                </button>
+              </div>
+
+              {/* 5. Footer: "ReSellBD v<version>" and company name */}
+              <div className="text-center pt-2 pb-6">
+                <p className="text-[10px] font-semibold text-slate-400">
+                  ReSellBD v{appVersionInfo?.version || '1.0.8'}
+                </p>
+                <p className="text-[10px] font-medium text-slate-400 mt-0.5">
+                  Sky Automation Technologies Ltd.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* ==========================================
+          SECTION 1: ACCOUNT & PROFILE (FULLY BUILT NOW)
+         ========================================== */}
+      {activeSection === 'account' && (
+        <AccountProfileSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          onOpenLockedModal={onOpenLockedModal}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, 'users', user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn('Error refreshing profile:', err);
+            }
+          }}
+        />
       )}
 
       {/* ==========================================
           SECTION 2: PAYOUT SETTINGS
          ========================================== */}
       {activeSection === 'payout' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Payout Settings"
+          description="Add and manage bKash, Nagad, and Bank accounts for receiving commission withdrawals."
+          icon={CreditCard}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div>
@@ -1447,13 +1851,20 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
             </div>
           )}
         </div>
-      )}
+      }
+    />
+  )}
 
       {/* ==========================================
           SECTION 3: SECURITY
          ========================================== */}
       {activeSection === 'security' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Security"
+          description="Manage login password, 4-digit PIN lock, active sessions, and security history."
+          icon={Shield}
+          existingComponent={
+            <div className="space-y-6">
           {/* Change Password Card */}
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
@@ -1970,14 +2381,21 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               )}
             </div>
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* ==========================================
           SECTION 4: NOTIFICATION SETTINGS
          ========================================== */}
       {activeSection === 'notifications' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Notification Settings"
+          description="Control real-time push alerts, order sound chimes, and system broadcast notices."
+          icon={Bell}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
@@ -2280,14 +2698,21 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             </div>
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* ==========================================
           SECTION 5: APP PREFERENCES
          ========================================== */}
       {activeSection === 'preferences' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="App Preferences"
+          description="Configure UI language, interface contrast theme, and default product catalog density."
+          icon={Palette}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -2444,14 +2869,21 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             </div>
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* ==========================================
           SECTION 6: APP & VERSION
          ========================================== */}
       {activeSection === 'version' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="App & Version"
+          description="Check for new feature releases, system build details, and release notes."
+          icon={Smartphone}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
@@ -2562,7 +2994,9 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             </div>
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* Version Modals */}
@@ -2583,7 +3017,12 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
           SECTION 7: ACCOUNT INFORMATION
          ========================================== */}
       {activeSection === 'info' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Account Information & Policies"
+          description="Read platform terms of service, reseller code of conduct, payout policies, and commission rules."
+          icon={FileText}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
@@ -2675,14 +3114,21 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             )}
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* ==========================================
           SECTION 8: HELP & SUPPORT
          ========================================== */}
       {activeSection === 'support' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Help & Support"
+          description="Reach out to dedicated reseller support staff via live chat, submit inquiries, or view FAQs."
+          icon={HelpCircle}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
@@ -2898,14 +3344,21 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             )}
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* ==========================================
-          SECTION 9: PRIVACY (COMING SOON)
+          SECTION 9: PRIVACY
          ========================================== */}
       {activeSection === 'privacy' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Privacy & Data"
+          description="Manage data sharing permissions, profile visibility, session audit records, and account lifecycle."
+          icon={ShieldCheck}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
@@ -3011,14 +3464,21 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             </div>
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       {/* ==========================================
           SECTION 10: ACCOUNT ACTIONS
          ========================================== */}
       {activeSection === 'actions' && (
-        <div className="space-y-6">
+        <SectionPlaceholder
+          title="Account Actions"
+          description="Manage active session devices, account deactivation, and sign out controls."
+          icon={LogOut}
+          existingComponent={
+            <div className="space-y-6">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
@@ -3102,7 +3562,9 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ user, onLogo
               </div>
             </div>
           </div>
-        </div>
+            </div>
+          }
+        />
       )}
 
       <ChangelogModal

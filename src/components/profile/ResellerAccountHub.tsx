@@ -6,7 +6,7 @@ import {
   User, Shield, Store, Phone, MapPin, MessagesSquare, 
   Percent, LifeBuoy, Bell, Star, MessageSquare, Lock, 
   LogOut, ChevronRight, Sparkles, HelpCircle, CheckCircle2,
-  Share2, ArrowLeft, RefreshCw, Smartphone, Bot
+  Share2, ArrowLeft, RefreshCw, Smartphone, Bot, Settings
 } from 'lucide-react';
 import { ResellerProfilePage } from './ResellerProfilePage';
 import { SupportSystem } from '../support/SupportSystem';
@@ -85,6 +85,7 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
         case 'reviews': return 'Product Reviews';
         case 'feedback': return 'App Feedback';
         case 'security': return 'Security & PIN Lock';
+        case 'settings': return 'Settings & Preferences';
         default: return 'Account';
       }
     };
@@ -110,7 +111,16 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
         </header>
 
         <div className="flex-1 p-3 sm:p-4 pb-24">
-          {currentView === 'profile' && <ResellerProfilePage user={user} />}
+          {currentView === 'profile' && (
+            <ResellerSettings
+              user={user}
+              onLogout={onLogout}
+              initialSection="account"
+              canAccessFullApp={canAccessFullApp}
+              onOpenLockedModal={onOpenLockedModal}
+              onNavigateTab={onNavigateTab}
+            />
+          )}
           {currentView === 'chat' && (
             <div className="h-[calc(100vh-8.5rem)]">
               <LiveChatWindow
@@ -132,7 +142,26 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
           {currentView === 'support' && <SupportSystem user={user} />}
           {currentView === 'reviews' && <ProductReviewForm user={user} />}
           {currentView === 'feedback' && <FeedbackForm user={user} />}
-          {currentView === 'security' && <ResellerSettings user={user} onLogout={onLogout} />}
+          {currentView === 'security' && (
+            <ResellerSettings
+              user={user}
+              onLogout={onLogout}
+              initialSection="security"
+              canAccessFullApp={canAccessFullApp}
+              onOpenLockedModal={onOpenLockedModal}
+              onNavigateTab={onNavigateTab}
+            />
+          )}
+          {currentView === 'settings' && (
+            <ResellerSettings
+              user={user}
+              onLogout={onLogout}
+              initialSection="menu"
+              canAccessFullApp={canAccessFullApp}
+              onOpenLockedModal={onOpenLockedModal}
+              onNavigateTab={onNavigateTab}
+            />
+          )}
         </div>
       </div>
     );
@@ -533,6 +562,26 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                 <div className="min-w-0">
                   <div className="text-sm font-bold text-slate-900">App Security & PIN Lock</div>
                   <div className="text-xs text-slate-500">Protect app with custom 4-digit PIN</div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700" />
+            </button>
+
+            {/* Settings & Preferences (Drill-Down App) */}
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                setCurrentView('settings');
+              }}
+              className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left group cursor-pointer select-none"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Settings className="w-4.5 h-4.5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-slate-900">Settings & Preferences</div>
+                  <div className="text-xs text-slate-500">Profile, payouts, privacy, notifications & app settings</div>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700" />
