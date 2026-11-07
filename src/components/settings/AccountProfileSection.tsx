@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile } from '../../types';
@@ -15,6 +15,7 @@ import {
   AlertCircle, CheckCircle2, MessageSquare, ExternalLink,
   Calendar, Clock, ShieldAlert, Sparkles, Lock
 } from 'lucide-react';
+import { ProfilePhotoUploader, ProfilePhotoUploaderHandle } from './ProfilePhotoUploader';
 
 interface AccountProfileSectionProps {
   user: UserProfile;
@@ -43,6 +44,7 @@ export const AccountProfileSection: React.FC<AccountProfileSectionProps> = ({
   const [copiedId, setCopiedId] = useState<boolean>(false);
   const [activeModal, setActiveModal] = useState<EditModalType>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const photoUploaderRef = useRef<ProfilePhotoUploaderHandle>(null);
 
   // Form states for Bottom Sheet Modals
   // 1. Full Name
@@ -317,7 +319,7 @@ export const AccountProfileSection: React.FC<AccountProfileSectionProps> = ({
             {canAccessFullApp && (
               <button
                 type="button"
-                onClick={() => handleOpenEdit('shopLogo')}
+                onClick={() => photoUploaderRef.current?.open()}
                 className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#0E9AA7] text-white flex items-center justify-center shadow-xs border border-white hover:scale-105 active:scale-95 transition-transform"
                 title="Change Photo"
               >
@@ -440,25 +442,24 @@ export const AccountProfileSection: React.FC<AccountProfileSectionProps> = ({
                 </div>
               </div>
 
-              {/* Shop Logo (Editable) */}
-              <div 
-                onClick={() => handleOpenEdit('shopLogo')}
-                className={DT.settingsRow}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className={`${DT.iconTile} bg-amber-50/60 text-amber-600`}>
-                    <Camera className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className={DT.settingsRowTitle}>Shop Logo</div>
-                    <div className={DT.settingsRowHelper}>Store identity & watermarks</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className={DT.settingsRowValue}>{profile.shopPhotoUrl || profile.shopLogoUrl ? 'Uploaded' : 'Default'}</span>
-                  {canAccessFullApp && <ChevronRight className="w-4 h-4 text-slate-400" />}
-                </div>
-              </div>
+              {/* Profile & Shop Photo Uploader Row */}
+              <ProfilePhotoUploader
+                ref={photoUploaderRef}
+                user={profile}
+                canAccessFullApp={canAccessFullApp}
+                onOpenLockedModal={onOpenLockedModal}
+                onPhotoUpdated={(newUrl) => {
+                  setProfile((prev) => ({
+                    ...prev,
+                    profilePhotoUrl: newUrl,
+                    shopPhotoUrl: newUrl,
+                    shopLogoUrl: newUrl,
+                  }));
+                  setFormShopLogo(newUrl);
+                }}
+                onRefreshUser={onRefreshUser}
+                showToast={showToast}
+              />
 
               {/* Shop Address (Editable) */}
               <div 
