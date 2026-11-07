@@ -36,6 +36,23 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["uid", "shopName", "shopNameKey", "createdAt"]
+    },
+    "PhoneChangeRequest": {
+      "title": "PhoneChangeRequest",
+      "description": "Phone number change request submitted by reseller for admin review",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "resellerName": { "type": "string" },
+        "resellerId": { "type": "string" },
+        "oldPhone": { "type": "string" },
+        "newPhone": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["userId", "oldPhone", "newPhone", "reason", "status"]
     }
   },
   "firestore": {
@@ -46,6 +63,10 @@
     "/shopNames/{shopNameKey}": {
       "schema": "ShopNameReservation",
       "description": "Unique shop name reservations collection, Cloud Functions / server only"
+    },
+    "/phone_change_requests/{requestId}": {
+      "schema": "PhoneChangeRequest",
+      "description": "Phone number change approval requests"
     }
   }
 }

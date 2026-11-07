@@ -196,6 +196,7 @@ service cloud.firestore {
     match /userSessions/{sessionId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
     match /appVersion/{versionId} { allow read: if true; allow write: if isAdmin(); }
     match /payoutChangeRequests/{requestId} { allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin()); allow write: if isApproved() || isAdmin(); }
+    match /phone_change_requests/{requestId} { allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin()); allow create: if isSignedIn() && (request.resource.data.userId == request.auth.uid); allow update, delete: if isAdmin(); }
     match /feedback/{feedbackId} { allow read: if isAdmin(); allow write: if isSignedIn(); }
     match /changelogs/{changelogId} { allow read: if true; allow write: if isAdmin(); }
 

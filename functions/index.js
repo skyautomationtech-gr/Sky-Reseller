@@ -1456,3 +1456,38 @@ exports.clearSuperAdminOtpSession = functions.https.onCall(async (data, context)
 
   return { success: true };
 });
+
+/**
+ * 12. Revoke All User Sessions (Callable)
+ * Revokes refresh tokens via Firebase Admin Auth for the authenticated caller.
+ */
+exports.revokeAllUserSessions = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  try {
+    await admin.auth().revokeRefreshTokens(uid);
+    console.log(`[Security] Revoked all refresh tokens for uid: ${uid}`);
+
+    // Audit log
+    await admin.firestore().collection('auditLogs').add({
+      userId: uid,
+      action: 'REVOKE_ALL_SESSIONS',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      details: {
+        reason: 'User requested remote logout of all devices',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'All device refresh tokens revoked successfully.',
+    };
+  } catch (err) {
+    console.error('Error revoking refresh tokens:', err);
+    throw new functions.https.HttpsError('internal', err.message || 'Failed to revoke sessions.');
+  }
+});
+

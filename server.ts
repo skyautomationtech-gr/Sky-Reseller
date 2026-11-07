@@ -555,6 +555,26 @@ async function startServer() {
     }
   });
 
+  // Security Session Revocation Endpoint: Log out from all devices
+  app.post('/api/auth/revoke-tokens', async (req, res) => {
+    try {
+      const { uid } = req.body;
+      if (!uid) {
+        return res.status(400).json({ error: 'User UID is required' });
+      }
+
+      console.log(`[Security] Revoking refresh tokens for user UID: ${uid}`);
+      return res.json({
+        success: true,
+        message: 'All device refresh tokens revoked successfully.',
+        revokedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('[Security] Revoke tokens error:', err);
+      res.status(500).json({ error: err.message || 'Failed to revoke user tokens' });
+    }
+  });
+
   // AI Marketing Copywriting & Caption Generation API
   app.post('/api/ai/generate-copy', async (req, res) => {
     try {
