@@ -19,6 +19,7 @@ import { ResellerSettings } from '../settings/ResellerSettings';
 import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
 import { triggerHaptic } from '../../lib/nativeFeedback';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface ResellerAccountHubProps {
   user: UserProfile;
@@ -43,6 +44,9 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
 }) => {
   const [currentView, setCurrentView] = useState<string>(activeSubTab === 'more' ? 'menu' : activeSubTab);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // Instantly reset scroll to top before paint on sub-tab navigation
+  useScrollToTop([currentView]);
   const [showAiModal, setShowAiModal] = useState(false);
   const [showPosterModal, setShowPosterModal] = useState(false);
   const [selectedPosterProduct, setSelectedPosterProduct] = useState<any>(null);

@@ -13,6 +13,7 @@ import {
   ExternalLink, Key, Clock, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface PrivacyDataSectionProps {
   user: UserProfile;
@@ -42,6 +43,9 @@ export const PrivacyDataSection: React.FC<PrivacyDataSectionProps> = ({
   onBack,
 }) => {
   const isAdminUser = user.role === 'admin' || user.role === 'super_admin';
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
 
   // Active Requests from user
   const [existingRequests, setExistingRequests] = useState<AccountRequest[]>([]);

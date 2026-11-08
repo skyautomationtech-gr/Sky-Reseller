@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SupportTicketForm } from '../support/SupportTicketForm';
 import { SupportSystem } from '../support/SupportSystem';
 import { FeedbackForm } from '../feedback/FeedbackForm';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface HelpSupportSectionProps {
   user: UserProfile;
@@ -37,6 +38,9 @@ export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({
   onBack,
 }) => {
   const isRestricted = !canAccessFullApp || user.status === 'pending';
+
+  // Instantly reset scroll to top on mount or when toggling support system
+  useScrollToTop([viewingSupportSystem]);
 
   // Company Settings
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);

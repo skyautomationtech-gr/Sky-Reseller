@@ -14,6 +14,7 @@ import {
   Clock, CheckCircle2, Globe, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface AccountInfoSectionProps {
   user: UserProfile;
@@ -218,6 +219,9 @@ export const AccountInfoSection: React.FC<AccountInfoSectionProps> = ({
   // Active Policy Reading View: null = show list; string = show policy document
   const [activePolicyKey, setActivePolicyKey] = useState<string | null>(initialPolicyKey);
   const [activePolicyDoc, setActivePolicyDoc] = useState<PolicyDocument | null>(null);
+
+  // Instantly reset scroll to top on mount and whenever a policy document is opened/closed
+  useScrollToTop([activePolicyKey]);
   const [language, setLanguage] = useState<'en' | 'bn'>('en');
   const [loadingPolicy, setLoadingPolicy] = useState(false);
 

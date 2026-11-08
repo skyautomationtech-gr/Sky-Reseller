@@ -12,12 +12,16 @@ import {
   User, Store, Phone, MapPin, Key, Image as ImageIcon, 
   Save, Lock, CheckCircle2, AlertCircle, Loader2, Shield, MessageCircle, Tag
 } from 'lucide-react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface ResellerProfilePageProps {
   user: UserProfile;
 }
 
 export const ResellerProfilePage: React.FC<ResellerProfilePageProps> = ({ user }) => {
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
+
   // Profile Form State
   const [shopName, setShopName] = useState(user.shopName || '');
   const [mobile, setMobile] = useState(user.mobile || '');

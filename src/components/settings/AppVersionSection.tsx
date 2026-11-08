@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { WhatsNewModal } from '../version/WhatsNewModal';
 import { ChangelogModal } from '../version/ChangelogModal';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface AppVersionSectionProps {
   user: UserProfile;
@@ -35,6 +36,10 @@ export const AppVersionSection: React.FC<AppVersionSectionProps> = ({
   const [changelogs, setChangelogs] = useState<ChangelogEntry[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
+
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [lastCheckedTime, setLastCheckedTime] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);

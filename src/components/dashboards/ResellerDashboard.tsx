@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
@@ -19,6 +19,7 @@ import { useAccess } from '../../hooks/useAccess';
 import { PendingHomeBanner } from '../auth/PendingHomeBanner';
 import { AccessLockedModal } from '../auth/AccessLockedModal';
 import { AnimatedCounter } from '../common/AnimatedCounter';
+import { resetAppScroll } from '../../utils/scrollToTop';
 
 interface ResellerDashboardProps {
   user: UserProfile;
@@ -31,6 +32,36 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLockedModalOpen, setIsLockedModalOpen] = useState(false);
   const [lockedFeatureName, setLockedFeatureName] = useState('This feature');
+
+  // Scroll retention for list screens and strict scroll-to-top for Settings & other pages
+  const savedScrollMap = useRef<Record<string, number>>({});
+  const prevTabRef = useRef<string>('home');
+  const mainContainerRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    const prevTab = prevTabRef.current;
+    const rootEl = document.getElementById('root');
+    const currentScroll = rootEl?.scrollTop || window.scrollY || 0;
+
+    // Save scroll only for list views (Catalog & Orders)
+    if (prevTab === 'products' || prevTab === 'orders') {
+      savedScrollMap.current[prevTab] = currentScroll;
+    }
+
+    // If navigating back to a list view with a saved scroll position, restore it
+    if ((activeTab === 'products' || activeTab === 'orders') && savedScrollMap.current[activeTab] !== undefined) {
+      const targetPos = savedScrollMap.current[activeTab];
+      if (rootEl) rootEl.scrollTop = targetPos;
+      if (document.documentElement) document.documentElement.scrollTop = targetPos;
+      if (document.body) document.body.scrollTop = targetPos;
+      window.scrollTo(0, targetPos);
+    } else {
+      // For Settings, Wallet, Profile, Home, etc., ALWAYS start clean at the top
+      resetAppScroll(mainContainerRef.current);
+    }
+
+    prevTabRef.current = activeTab;
+  }, [activeTab]);
 
   const handleOpenLocked = (featName = 'This feature') => {
     setLockedFeatureName(featName);
@@ -408,7 +439,7 @@ export const ResellerDashboard: React.FC<ResellerDashboardProps> = ({ user, onLo
         )}
 
         {/* Main Content Area (pb-28 so floating bottom navigation doesn't overlap content) */}
-        <main className="flex-1 pb-28 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
+        <main ref={mainContainerRef} className="flex-1 pb-28 px-3.5 sm:px-4.5 py-3.5 sm:py-4 overflow-x-hidden">
           {renderContent()}
         </main>
 

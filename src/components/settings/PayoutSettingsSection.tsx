@@ -12,6 +12,7 @@ import {
   HelpCircle, AlertTriangle, ArrowLeft, Building2, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface PayoutSettingsSectionProps {
   user: UserProfile;
@@ -41,6 +42,9 @@ export const PayoutSettingsSection: React.FC<PayoutSettingsSectionProps> = ({
 }) => {
   const [payoutMethods, setPayoutMethods] = useState<PayoutMethod[]>(user.payoutMethods || []);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
 
   // Unmask eye state for each account (number visible for 5 seconds)
   const [revealedIds, setRevealedIds] = useState<Record<string, boolean>>({});

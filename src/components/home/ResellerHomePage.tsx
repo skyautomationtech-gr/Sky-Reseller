@@ -23,6 +23,7 @@ import {
   ShoppingCart, Trash2, Plus, Minus, AlertTriangle, Share2, Bot, ShieldCheck,
   TrendingUp, CheckCircle2, Lock
 } from 'lucide-react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface ResellerHomePageProps {
   user: UserProfile;
@@ -50,6 +51,9 @@ export const ResellerHomePage: React.FC<ResellerHomePageProps> = ({
   canAccessFullApp = true,
   onOpenLockedModal,
 }) => {
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);

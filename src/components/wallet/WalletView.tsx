@@ -19,6 +19,7 @@ import { AnimatedCounter } from '../common/AnimatedCounter';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { usePageRefresh, useRefresh } from '../../context/RefreshContext';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface WalletViewProps {
   user: UserProfile;
@@ -26,6 +27,9 @@ interface WalletViewProps {
 
 export const WalletView: React.FC<WalletViewProps> = ({ user }) => {
   const isAdminOrSuperAdmin = user.role === 'super_admin' || user.role === 'admin';
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
 
   // Core Data States
   const [wallet, setWallet] = useState<Wallet | null>(null);

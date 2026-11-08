@@ -14,6 +14,7 @@ import {
   ChevronRight, RefreshCw, Sparkles, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface NotificationSettingsSectionProps {
   user: UserProfile;
@@ -59,6 +60,9 @@ export const NotificationSettingsSection: React.FC<NotificationSettingsSectionPr
   onBack,
 }) => {
   const isRestricted = !canAccessFullApp || user.status === 'pending';
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
 
   // Permission State: 'granted' | 'denied' | 'prompt' | 'loading'
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'prompt' | 'loading'>('loading');

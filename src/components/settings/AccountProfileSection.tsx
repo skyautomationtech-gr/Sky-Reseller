@@ -16,6 +16,7 @@ import {
   Calendar, Clock, ShieldAlert, Sparkles, Lock
 } from 'lucide-react';
 import { ProfilePhotoUploader, ProfilePhotoUploaderHandle } from './ProfilePhotoUploader';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface AccountProfileSectionProps {
   user: UserProfile;
@@ -45,6 +46,9 @@ export const AccountProfileSection: React.FC<AccountProfileSectionProps> = ({
   const [activeModal, setActiveModal] = useState<EditModalType>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const photoUploaderRef = useRef<ProfilePhotoUploaderHandle>(null);
+
+  // Scroll to top immediately before paint on mount
+  useScrollToTop([]);
 
   // Form states for Bottom Sheet Modals
   // 1. Full Name
@@ -736,7 +740,6 @@ export const AccountProfileSection: React.FC<AccountProfileSectionProps> = ({
                   onChange={(e) => setFormFullName(e.target.value)}
                   placeholder="e.g. Tanvir Ahmed"
                   className={DT.inputHeight}
-                  autoFocus
                 />
                 <p className="text-[10px] text-slate-500">
                   Please match the full legal name associated with your registered payout accounts.

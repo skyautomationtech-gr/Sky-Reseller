@@ -38,6 +38,7 @@ import { HelpSupportSection } from './HelpSupportSection';
 import { PrivacyDataSection } from './PrivacyDataSection';
 import { SectionPlaceholder } from './SectionPlaceholder';
 import { triggerHaptic } from '../../lib/nativeFeedback';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 export interface ResellerSettingsProps {
   user: UserProfile;
@@ -57,6 +58,11 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
   onNavigateTab,
 }) => {
   const [activeSection, setActiveSection] = useState<'menu' | 'account' | 'payout' | 'security' | 'notifications' | 'preferences' | 'version' | 'info' | 'support' | 'privacy' | 'actions'>(initialSection);
+  const [selectedPolicyKey, setSelectedPolicyKey] = useState<string | null>(null);
+
+  // Instantly reset scroll to top before paint on any sub-page or root settings change
+  useScrollToTop([activeSection, selectedPolicyKey]);
+
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedResellerId, setCopiedResellerId] = useState(false);
@@ -194,7 +200,6 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
   // ==========================================
   // SECTION 7: ACCOUNT INFORMATION STATE & HELPERS
   // ==========================================
-  const [selectedPolicyKey, setSelectedPolicyKey] = useState<string | null>(null);
   const [policyContent, setPolicyContent] = useState<{ title: string; lastUpdated: string; body: string } | null>(null);
   const [policyLoading, setPolicyLoading] = useState(false);
 

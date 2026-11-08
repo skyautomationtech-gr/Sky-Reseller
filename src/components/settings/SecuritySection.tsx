@@ -38,6 +38,7 @@ import {
   ShieldCheck, Fingerprint, Clock, Send, ShieldAlert, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface SecuritySectionProps {
   user: UserProfile;
@@ -70,6 +71,10 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
 }) => {
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeModal, setActiveModal] = useState<SecurityModalType>(null);
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
+
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState('');
 

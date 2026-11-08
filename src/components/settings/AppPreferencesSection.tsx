@@ -10,6 +10,7 @@ import {
   AlertCircle, Lock, Eye, ZapOff, HelpCircle, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollToTop } from '../../utils/scrollToTop';
 
 interface AppPreferencesSectionProps {
   user: UserProfile;
@@ -27,6 +28,9 @@ export const AppPreferencesSection: React.FC<AppPreferencesSectionProps> = ({
   onBack,
 }) => {
   const isRestricted = !canAccessFullApp || user.status === 'pending';
+
+  // Instantly reset scroll to top on mount
+  useScrollToTop([]);
 
   // Display Density: 'compact' (default) | 'comfortable'
   const [density, setDensity] = useState<'compact' | 'comfortable'>(() => {
