@@ -53,6 +53,40 @@
         "updatedAt": { "type": "timestamp" }
       },
       "required": ["userId", "oldPhone", "newPhone", "reason", "status"]
+    },
+    "DeactivationRequest": {
+      "title": "DeactivationRequest",
+      "description": "Account deactivation request submitted by reseller for admin review",
+      "type": "object",
+      "properties": {
+        "resellerId": { "type": "string" },
+        "resellerName": { "type": "string" },
+        "shopName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "reason": { "type": "string" },
+        "note": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "cancelled"] },
+        "adminNote": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["resellerId", "reason", "status"]
+    },
+    "DeletionRequest": {
+      "title": "DeletionRequest",
+      "description": "Account permanent deletion request submitted by reseller for admin review",
+      "type": "object",
+      "properties": {
+        "resellerId": { "type": "string" },
+        "resellerName": { "type": "string" },
+        "shopName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "walletBalance": { "type": "number" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "cancelled"] },
+        "adminNote": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["resellerId", "reason", "status"]
     }
   },
   "firestore": {
@@ -67,6 +101,14 @@
     "/phone_change_requests/{requestId}": {
       "schema": "PhoneChangeRequest",
       "description": "Phone number change approval requests"
+    },
+    "/deactivationRequests/{requestId}": {
+      "schema": "DeactivationRequest",
+      "description": "Account deactivation requests"
+    },
+    "/deletionRequests/{requestId}": {
+      "schema": "DeletionRequest",
+      "description": "Account permanent deletion requests"
     }
   }
 }

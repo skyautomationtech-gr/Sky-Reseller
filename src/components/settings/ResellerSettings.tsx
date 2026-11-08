@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import bcrypt from 'bcryptjs';
 import { updatePassword, updateEmail, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, limit, serverTimestamp, arrayRemove } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { UserProfile, PayoutMethod, NotificationPreferences, AppVersionConfig, ChangelogEntry, DEFAULT_DEMO_PRODUCT } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
@@ -33,6 +33,9 @@ import { SecuritySection } from './SecuritySection';
 import { NotificationSettingsSection } from './NotificationSettingsSection';
 import { AppPreferencesSection } from './AppPreferencesSection';
 import { AppVersionSection } from './AppVersionSection';
+import { AccountInfoSection } from './AccountInfoSection';
+import { HelpSupportSection } from './HelpSupportSection';
+import { PrivacyDataSection } from './PrivacyDataSection';
 import { SectionPlaceholder } from './SectionPlaceholder';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 
@@ -1730,564 +1733,77 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
       )}
 
       {/* ==========================================
-          SECTION 7: ACCOUNT INFORMATION
+          SECTION 7: ACCOUNT INFORMATION (POLICIES & FAQ)
          ========================================== */}
-      {activeSection === 'info' && (
-        <SectionPlaceholder
-          title="Account Information & Policies"
-          description="Read platform terms of service, reseller code of conduct, payout policies, and commission rules."
-          icon={FileText}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600" />
-                <span>{selectedPolicyKey ? 'Policy Document' : 'Account Information & Policies'}</span>
-              </h3>
-              {selectedPolicyKey && (
-                <button
-                  onClick={() => setSelectedPolicyKey(null)}
-                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer min-h-[36px]"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back to All Policies</span>
-                </button>
-              )}
-            </div>
-
-            {selectedPolicyKey === null ? (
-              /* Policy List */
-              <div className="space-y-3">
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Review official terms, policies, reseller guidelines, and payout rules governing your reseller account with Sky Automation Tech.
-                </p>
-
-                <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
-                  {POLICY_PAGES_LIST.map((policy) => (
-                    <button
-                      key={policy.key}
-                      onClick={() => fetchPolicyContent(policy.key)}
-                      className="w-full p-4 flex items-center justify-between hover:bg-indigo-50/40 transition-colors text-left group cursor-pointer min-h-[60px]"
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          <FileText className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-900 group-hover:text-indigo-900">{policy.title}</h4>
-                          <p className="text-xs text-slate-500 mt-0.5">{policy.desc}</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* Policy Document Detail */
-              <div className="space-y-4">
-                {policyLoading ? (
-                  <div className="p-12 text-center text-slate-500 space-y-3">
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600" />
-                    <p className="text-xs font-bold">Loading policy content...</p>
-                  </div>
-                ) : (
-                  policyContent && (
-                    <div className="space-y-5 animate-in fade-in duration-200">
-                      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-xs space-y-1">
-                        <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border border-indigo-400/30">
-                          Official Sky Automation Tech Document
-                        </span>
-                        <h3 className="text-lg font-extrabold text-white mt-1">{policyContent.title}</h3>
-                        <p className="text-xs text-indigo-200">
-                          Last updated: {policyContent.lastUpdated}
-                        </p>
-                      </div>
-
-                      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 text-sm text-slate-700 leading-relaxed whitespace-pre-line shadow-inner">
-                        {policyContent.body}
-                      </div>
-
-                      <div className="bg-indigo-50/60 border border-indigo-200 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-2 text-indigo-900">
-                          <HelpCircle className="w-4 h-4 shrink-0 text-indigo-600" />
-                          <span>Have questions regarding {policyContent.title}? Contact our support team.</span>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setSupportView('menu');
-                            setActiveSection('support');
-                          }}
-                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shrink-0 cursor-pointer"
-                        >
-                          Contact Support
-                        </button>
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-            </div>
-          }
+      {activeSection === "info" && (
+        <AccountInfoSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          initialPolicyKey={selectedPolicyKey}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, "users", user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn("Error refreshing profile:", err);
+            }
+          }}
+          onBack={() => {
+            setSelectedPolicyKey(null);
+            setActiveSection("menu");
+          }}
         />
       )}
 
       {/* ==========================================
           SECTION 8: HELP & SUPPORT
          ========================================== */}
-      {activeSection === 'support' && (
-        <SectionPlaceholder
-          title="Help & Support"
-          description="Reach out to dedicated reseller support staff via live chat, submit inquiries, or view FAQs."
-          icon={HelpCircle}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-teal-600" />
-                <span>
-                  {supportView === 'menu' && 'Help & Customer Support Center'}
-                  {supportView === 'ticket' && 'Submit Support Ticket'}
-                  {supportView === 'faq' && 'Frequently Asked Questions'}
-                  {supportView === 'bug' && 'Report a Problem / Bug'}
-                  {supportView === 'history' && 'My Support Tickets History'}
-                </span>
-              </h3>
-              {supportView !== 'menu' && (
-                <button
-                  onClick={() => setSupportView('menu')}
-                  className="text-xs font-bold text-teal-600 hover:text-teal-800 hover:underline flex items-center gap-1 cursor-pointer min-h-[36px]"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back to Support Menu</span>
-                </button>
-              )}
-            </div>
-
-            {/* View: MENU */}
-            {supportView === 'menu' && (
-              <div className="space-y-4">
-                {/* Contact Support Row */}
-                <div className="bg-gradient-to-r from-teal-900 via-emerald-950 to-slate-900 p-5 rounded-2xl text-white shadow-xs space-y-3">
-                  <div>
-                    <h4 className="font-extrabold text-sm text-white">Direct Customer Helpline</h4>
-                    <p className="text-xs text-teal-200 mt-0.5">Reach Sky Automation Tech support agents for urgent assistance.</p>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <a
-                      href="https://wa.me/8801722063777"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 p-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer min-h-[44px]"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>WhatsApp (+8801722063777)</span>
-                    </a>
-                    <a
-                      href="tel:01722063777"
-                      className="flex items-center justify-center gap-2 p-3 bg-white/15 hover:bg-white/25 text-white border border-white/20 font-bold text-xs rounded-xl transition-colors cursor-pointer min-h-[44px]"
-                    >
-                      <PhoneCall className="w-4 h-4" />
-                      <span>Call Support (01722063777)</span>
-                    </a>
-                  </div>
-                </div>
-
-                {/* Support Actions Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Submit Ticket */}
-                  <button
-                    onClick={() => setSupportView('ticket')}
-                    className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-teal-300 hover:bg-teal-50/30 transition-all group cursor-pointer min-h-[72px] flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center border border-teal-100 group-hover:bg-teal-600 group-hover:text-white transition-colors">
-                        <MessageSquare className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-teal-900">Submit a Ticket</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">Formal ticket for orders, payout, or commissions</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </button>
-
-                  {/* FAQ */}
-                  <button
-                    onClick={() => setSupportView('faq')}
-                    className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-teal-300 hover:bg-teal-50/30 transition-all group cursor-pointer min-h-[72px] flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100 group-hover:bg-sky-600 group-hover:text-white transition-colors">
-                        <HelpCircle className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-sky-900">FAQ</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">Quick answers to common reseller questions</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-sky-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </button>
-
-                  {/* Report Problem */}
-                  <button
-                    onClick={() => setSupportView('bug')}
-                    className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-amber-300 hover:bg-amber-50/30 transition-all group cursor-pointer min-h-[72px] flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                        <Bug className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-amber-900">Report a Problem</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">Report bugs, glitches, or service feedback</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </button>
-
-                  {/* WhatsApp Group */}
-                  <a
-                    href="https://wa.me/8801722063777"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-emerald-300 hover:bg-emerald-50/30 transition-all group cursor-pointer min-h-[72px] flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                        <Users className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-emerald-900">WhatsApp / Support Group</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">Join official reseller community update group</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </a>
-
-                  {/* Support History */}
-                  <button
-                    onClick={() => setSupportView('history')}
-                    className="p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group cursor-pointer min-h-[72px] flex items-center justify-between sm:col-span-2"
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                        <History className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-indigo-900">Support History</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">View your previously submitted tickets and track responses</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* View: SUBMIT TICKET FORM */}
-            {supportView === 'ticket' && (
-              <div className="animate-in fade-in duration-200">
-                <SupportTicketForm
-                  user={profile}
-                  onSuccess={() => {
-                    showToast('Support ticket submitted successfully!', 'success');
-                    setSupportView('history');
-                  }}
-                  onCancel={() => setSupportView('menu')}
-                />
-              </div>
-            )}
-
-            {/* View: FAQ ACCORDION */}
-            {supportView === 'faq' && (
-              <div className="space-y-3 animate-in fade-in duration-200">
-                <p className="text-xs text-slate-500 mb-2">Tap any question to expand detailed answers regarding orders, wallet, and payouts.</p>
-                <div className="space-y-2.5">
-                  {FAQ_ITEMS.map((faq) => {
-                    const isOpen = expandedFaqId === faq.id;
-                    return (
-                      <div
-                        key={faq.id}
-                        className="border border-slate-200 rounded-2xl overflow-hidden transition-all bg-white"
-                      >
-                        <button
-                          onClick={() => setExpandedFaqId(isOpen ? null : faq.id)}
-                          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors min-h-[56px] cursor-pointer"
-                        >
-                          <span className="font-bold text-xs sm:text-sm text-slate-900 pr-2">{faq.question}</span>
-                          {isOpen ? (
-                            <ChevronUp className="w-4 h-4 text-teal-600 shrink-0" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                          )}
-                        </button>
-                        {isOpen && (
-                          <div className="px-4 pb-4 pt-1 border-t border-slate-100 text-xs text-slate-600 leading-relaxed bg-teal-50/20">
-                            {faq.answer}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* View: REPORT A PROBLEM / BUG FORM */}
-            {supportView === 'bug' && (
-              <div className="animate-in fade-in duration-200">
-                <FeedbackForm
-                  user={profile}
-                  initialType="Bug Report"
-                  onSuccess={() => {
-                    showToast('Problem report submitted successfully!', 'success');
-                    setSupportView('menu');
-                  }}
-                  onCancel={() => setSupportView('menu')}
-                />
-              </div>
-            )}
-
-            {/* View: SUPPORT HISTORY */}
-            {supportView === 'history' && (
-              <div className="animate-in fade-in duration-200">
-                <SupportSystem user={profile} />
-              </div>
-            )}
-          </div>
-            </div>
-          }
+      {activeSection === "support" && (
+        <HelpSupportSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          onOpenLockedModal={onOpenLockedModal}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, "users", user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn("Error refreshing profile:", err);
+            }
+          }}
+          onBack={() => setActiveSection("menu")}
         />
       )}
 
       {/* ==========================================
-          SECTION 9: PRIVACY
+          SECTION 9: PRIVACY & DATA
          ========================================== */}
-      {activeSection === 'privacy' && (
-        <SectionPlaceholder
-          title="Privacy & Data"
-          description="Manage data sharing permissions, profile visibility, session audit records, and account lifecycle."
-          icon={ShieldCheck}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-rose-600" />
-                <span>Privacy & Data Control</span>
-              </h3>
-              <span className="bg-slate-100 text-slate-600 text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-slate-200">
-                Coming Soon
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-500">
-              Enhanced privacy management and account data preferences will be released in the upcoming update.
-            </p>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl divide-y divide-slate-200 overflow-hidden">
-              {/* Data & Privacy */}
-              <div
-                onClick={() => showToast('This feature is coming soon!', 'info')}
-                className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/60 transition-colors min-h-[60px]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900">Data & Privacy</span>
-                      <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                        Coming Soon
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Manage data sharing preferences and analytics collection.</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </div>
-
-              {/* Login Activity */}
-              <div
-                onClick={() => showToast('This feature is coming soon!', 'info')}
-                className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/60 transition-colors min-h-[60px]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                    <History className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900">Login Activity</span>
-                      <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                        Coming Soon
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Detailed historical audit logs and IP geographic access reports.</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </div>
-
-              {/* Account Visibility */}
-              <div
-                onClick={() => showToast('This feature is coming soon!', 'info')}
-                className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/60 transition-colors min-h-[60px]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                    <Eye className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900">Account Visibility</span>
-                      <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                        Coming Soon
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Control leaderboard display and public profile visibility.</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </div>
-
-              {/* Delete / Deactivate */}
-              <div
-                onClick={() => showToast('This feature is coming soon!', 'info')}
-                className="p-4 flex items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/60 transition-colors min-h-[60px]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                    <UserX className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900">Delete / Deactivate Account</span>
-                      <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                        Coming Soon
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Self-service account suspension or permanent data purging.</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </div>
-            </div>
-          </div>
-            </div>
-          }
+      {activeSection === "privacy" && (
+        <PrivacyDataSection
+          user={profile}
+          canAccessFullApp={canAccessFullApp}
+          onNavigateSection={(sec) => setActiveSection(sec as any)}
+          onOpenPolicy={(policyKey) => {
+            setSelectedPolicyKey(policyKey);
+            setActiveSection("info");
+          }}
+          onRefreshUser={async () => {
+            try {
+              const snap = await getDoc(doc(db, "users", user.uid));
+              if (snap.exists()) {
+                setProfile({ uid: snap.id, ...snap.data() } as UserProfile);
+              }
+            } catch (err) {
+              console.warn("Error refreshing profile:", err);
+            }
+          }}
+          onBack={() => setActiveSection("menu")}
         />
       )}
-
-      {/* ==========================================
-          SECTION 10: ACCOUNT ACTIONS
-         ========================================== */}
-      {activeSection === 'actions' && (
-        <SectionPlaceholder
-          title="Account Actions"
-          description="Manage active session devices, account deactivation, and sign out controls."
-          icon={LogOut}
-          existingComponent={
-            <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-            <div className="border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <LogOut className="w-5 h-5 text-slate-700" />
-                <span>Account Actions & Session Management</span>
-              </h3>
-            </div>
-
-            <div className="space-y-3">
-              {/* Logout (Functional) */}
-              <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 bg-rose-100 text-rose-700 rounded-2xl flex items-center justify-center shrink-0 border border-rose-200">
-                    <LogOut className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-sm text-rose-950">Logout from Account</h4>
-                    <p className="text-xs text-rose-700 mt-0.5">Safely end your current session and return to the login screen.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowLogoutModal(true)}
-                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer min-h-[44px]"
-                >
-                  Sign Out Now
-                </button>
-              </div>
-
-              {/* Deactivate Account (Coming Soon) */}
-              <div
-                onClick={() => showToast('This feature is coming soon!', 'info')}
-                className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/80 transition-colors"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 bg-amber-50 text-amber-800 rounded-2xl flex items-center justify-center shrink-0 border border-amber-200">
-                    <UserX className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-extrabold text-sm text-slate-900">Deactivate Account</h4>
-                      <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                        Coming Soon
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">Temporarily pause your reseller store catalog, links, and payout processing.</p>
-                  </div>
-                </div>
-                <button
-                  disabled
-                  className="px-4 py-2 bg-slate-200 text-slate-500 font-bold text-xs rounded-xl shrink-0 cursor-not-allowed min-h-[40px]"
-                >
-                  Deactivate
-                </button>
-              </div>
-
-              {/* Delete Account (Coming Soon) */}
-              <div
-                onClick={() => showToast('This feature is coming soon!', 'info')}
-                className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 opacity-60 cursor-pointer hover:bg-slate-100/80 transition-colors"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 bg-rose-50 text-rose-700 rounded-2xl flex items-center justify-center shrink-0 border border-rose-200">
-                    <Trash2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-extrabold text-sm text-slate-900">Delete Account</h4>
-                      <span className="bg-slate-200 text-slate-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                        Coming Soon
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">Permanently delete your reseller profile, wallet history, and stored data.</p>
-                  </div>
-                </div>
-                <button
-                  disabled
-                  className="px-4 py-2 bg-slate-200 text-slate-500 font-bold text-xs rounded-xl shrink-0 cursor-not-allowed min-h-[40px]"
-                >
-                  Delete Account
-                </button>
-              </div>
-            </div>
-          </div>
-            </div>
-          }
-        />
-      )}
-
-      <ChangelogModal
-        isOpen={showChangelogModal}
-        onClose={() => setShowChangelogModal(false)}
-        currentVersion={appVersionInfo?.version || '1.0.0'}
-      />
 
       {/* AI Marketing & Smart Assist Modal */}
       <AIMarketingModal
@@ -2335,7 +1851,27 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
                 Cancel
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
+                  try {
+                    // Deregister device FCM token if available
+                    const storedFcm = localStorage.getItem('fcm_token');
+                    if (storedFcm && user.uid) {
+                      await updateDoc(doc(db, 'users', user.uid), {
+                        fcmTokens: arrayRemove(storedFcm)
+                      });
+                    }
+                  } catch (_) {}
+
+                  try {
+                    // Clear temporary session drafts and in-memory caches
+                    const draftKeys = [
+                      'reseller_recent_searches', 'product_filter_state', 'cart_temp_draft',
+                      'custom_order_draft', 'payout_form_draft', 'category_cache'
+                    ];
+                    draftKeys.forEach(k => localStorage.removeItem(k));
+                    sessionStorage.clear();
+                  } catch (_) {}
+
                   setShowLogoutModal(false);
                   onLogout();
                 }}
