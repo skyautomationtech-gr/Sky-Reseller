@@ -449,6 +449,16 @@ function AppContent() {
         setOnboardingCompleted();
         setShowOnboarding(false);
 
+        // Ensure session ID and active device record exist locally
+        if (!localStorage.getItem(`sky_active_session_id_${currentUser.uid}`)) {
+          try {
+            console.log('[AuthDebug] Initializing session ID for active user session on app load...');
+            await recordLoginHistory(currentUser.uid);
+          } catch (recErr) {
+            console.warn('[AuthDebug] Could not initialize device session on load:', recErr);
+          }
+        }
+
         // Remote device session revocation check
         try {
           // Force token refresh from server
@@ -508,8 +518,14 @@ function AppContent() {
             profile.uid,
             (payload) => {
               if (payload.data?.type === 'force_logout') {
-                console.warn('[Security] FCM force_logout message received in foreground. Signing out...');
-                handleForceLogout('You were signed out from another device');
+                const targetSessionId = payload.data?.targetSessionId;
+                const currentSessionId = localStorage.getItem(`sky_active_session_id_${profile.uid}`);
+                if (targetSessionId && currentSessionId && targetSessionId !== currentSessionId) {
+                  console.log('[AuthDebug] FCM force_logout targetSessionId mismatch. Ignoring:', { targetSessionId, currentSessionId });
+                } else {
+                  console.warn('[Security] FCM force_logout message received in foreground. Signing out...');
+                  handleForceLogout('You were signed out from another device');
+                }
                 return;
               }
               setActivePushBanner({
@@ -521,8 +537,14 @@ function AppContent() {
             },
             (data) => {
               if (data?.type === 'force_logout') {
-                console.warn('[Security] FCM force_logout message action tapped. Signing out...');
-                handleForceLogout('You were signed out from another device');
+                const targetSessionId = data?.targetSessionId;
+                const currentSessionId = localStorage.getItem(`sky_active_session_id_${profile.uid}`);
+                if (targetSessionId && currentSessionId && targetSessionId !== currentSessionId) {
+                  console.log('[AuthDebug] FCM force_logout action targetSessionId mismatch. Ignoring:', { targetSessionId, currentSessionId });
+                } else {
+                  console.warn('[Security] FCM force_logout message action tapped. Signing out...');
+                  handleForceLogout('You were signed out from another device');
+                }
                 return;
               }
               handlePushActionNavigation(data);

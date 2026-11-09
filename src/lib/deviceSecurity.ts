@@ -19,6 +19,7 @@ export interface DeviceItem {
   appVersion: string;
   deviceType: 'phone' | 'tablet' | 'laptop';
   status: 'active' | 'signed_out' | 'inactive';
+  activeSessionId?: string | null;
   lastActive: any;
   createdAt?: any;
   fcmToken?: string | null;
@@ -45,6 +46,39 @@ export interface LoginHistoryItem {
 
 const DEVICE_ID_STORAGE_KEY = 'resellbd_device_id_v2';
 const LEGACY_STORAGE_KEY = 'resellbd_device_id_v1';
+
+/**
+ * Returns the active session ID stored locally for the given user.
+ */
+export function getLocalSessionId(userId: string): string | null {
+  try {
+    return (
+      localStorage.getItem(`sky_active_session_id_${userId}`) ||
+      sessionStorage.getItem(`sky_active_session_id_${userId}`) ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates and persists a brand new random session ID for the given user.
+ */
+export function createNewSessionId(userId: string): string {
+  const rand = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+  const sessionId = 'sess_' + rand;
+  const nowMs = Date.now();
+  try {
+    localStorage.setItem(`sky_active_session_id_${userId}`, sessionId);
+    sessionStorage.setItem(`sky_active_session_id_${userId}`, sessionId);
+    localStorage.setItem(`sky_session_login_time_${userId}`, String(nowMs));
+    sessionStorage.setItem(`sky_session_auth_time_${userId}`, String(nowMs));
+  } catch (_) {}
+  return sessionId;
+}
 
 /**
  * Returns a stable physical device identifier.
@@ -323,20 +357,25 @@ export async function getDeviceMetadata(): Promise<{
 
 /**
  * On user login:
- * 1. Updates or creates ONE record per physical device in users/{uid}/devices/{deviceId}.
- * 2. Records a separate entry in users/{uid}/loginHistory.
- * 3. Tags as 'isNewDevice' only if the deviceId was never previously registered for this user.
+ * 1. Creates a brand new random activeSessionId and saves it locally.
+ * 2. Writes status: 'active', activeSessionId, lastActive, sessionStartedAt to users/{uid}/devices/{deviceId}.
+ * 3. AWAITS this server write FIRST before resolving.
+ * 4. Revives any previously "signed_out" device document without blocking login.
  */
 export async function recordLoginHistory(userId: string, fcmToken?: string | null): Promise<{
   isNewDevice: boolean;
   meta: Awaited<ReturnType<typeof getDeviceMetadata>>;
+  sessionId: string;
 }> {
   const meta = await getDeviceMetadata();
   let isNewDevice = true;
 
   if (!userId) {
-    return { isNewDevice: false, meta };
+    return { isNewDevice: false, meta, sessionId: '' };
   }
+
+  const sessionId = createNewSessionId(userId);
+  console.log('[AuthDebug] recordLoginHistory: initialized new sessionId:', sessionId, 'for device:', meta.deviceId);
 
   try {
     const deviceRef = doc(db, 'users', userId, 'devices', meta.deviceId);
@@ -344,54 +383,38 @@ export async function recordLoginHistory(userId: string, fcmToken?: string | nul
 
     if (existingSnap.exists()) {
       isNewDevice = false;
-      // UPDATE existing device record
-      await updateDoc(deviceRef, {
-        deviceName: meta.deviceName,
-        platform: meta.platform,
-        os: meta.os,
-        osVersion: meta.osVersion,
-        browser: meta.browser,
-        model: meta.model,
-        appVersion: meta.appVersion,
-        deviceType: meta.deviceType,
-        status: 'active',
-        lastActive: serverTimestamp(),
-        signedOutAt: null,
-        signedOutBy: null,
-        ...(fcmToken ? { fcmToken } : {}),
-      });
     } else {
       isNewDevice = true;
-      // CREATE brand new physical device record
-      await setDoc(deviceRef, {
-        deviceId: meta.deviceId,
-        deviceName: meta.deviceName,
-        platform: meta.platform,
-        os: meta.os,
-        osVersion: meta.osVersion,
-        browser: meta.browser,
-        model: meta.model,
-        appVersion: meta.appVersion,
-        deviceType: meta.deviceType,
-        status: 'active',
-        createdAt: serverTimestamp(),
-        lastActive: serverTimestamp(),
-        signedOutAt: null,
-        signedOutBy: null,
-        fcmToken: fcmToken || null,
-      });
     }
 
-    // Save current session start timestamp in sessionStorage to evaluate against sessionsValidFrom
-    try {
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem(`sky_session_auth_time_${userId}`, String(Date.now()));
-      }
-    } catch (_) {}
+    // SERVER WRITE FIRST: Revive device record immediately with status 'active' and new activeSessionId
+    const devicePayload = {
+      deviceId: meta.deviceId,
+      deviceName: meta.deviceName,
+      platform: meta.platform,
+      os: meta.os,
+      osVersion: meta.osVersion,
+      browser: meta.browser,
+      model: meta.model,
+      appVersion: meta.appVersion,
+      deviceType: meta.deviceType,
+      status: 'active',
+      activeSessionId: sessionId,
+      lastActive: serverTimestamp(),
+      sessionStartedAt: serverTimestamp(),
+      signedOutAt: null,
+      signedOutBy: null,
+      ...(fcmToken ? { fcmToken } : {}),
+      ...(isNewDevice ? { createdAt: serverTimestamp() } : {}),
+    };
+
+    // Await setDoc FIRST so Firestore server holds status: 'active' before UI listeners attach
+    await setDoc(deviceRef, devicePayload, { merge: true });
+    console.log('[AuthDebug] recordLoginHistory: device document updated on server as active:', meta.deviceId);
 
     // Append separate entry to loginHistory (keep audit trail)
     const historyCol = collection(db, 'users', userId, 'loginHistory');
-    await setDoc(doc(historyCol), {
+    setDoc(doc(historyCol), {
       timestamp: serverTimestamp(),
       deviceId: meta.deviceId,
       deviceName: meta.deviceName,
@@ -404,15 +427,16 @@ export async function recordLoginHistory(userId: string, fcmToken?: string | nul
       deviceType: meta.deviceType,
       isNewDevice,
       userAgent: (meta.userAgent || '').slice(0, 160),
-    });
+    }).catch(() => {});
 
   } catch (err) {
-    console.warn('Error recording device login:', err);
+    console.error('Error recording device login:', err);
   }
 
   return {
     isNewDevice,
     meta,
+    sessionId,
   };
 }
 
@@ -457,6 +481,7 @@ export async function fetchUserDevices(userId: string): Promise<{
           appVersion: data.appVersion || '1.0.0',
           deviceType: data.deviceType || 'laptop',
           status: data.status || 'active',
+          activeSessionId: data.activeSessionId || null,
           lastActive: data.lastActive,
           createdAt: data.createdAt,
           fcmToken: data.fcmToken,
@@ -484,21 +509,11 @@ export async function fetchUserDevices(userId: string): Promise<{
         const existingTs = getTimestampMs(existing.lastActive);
 
         if (devTs > existingTs) {
-          // Keep newer, record older for background cleanup
-          if (existing.id && existing.id !== dev.id) duplicateDocIdsToDelete.push(existing.id);
+          // Keep newer
           mergedMap.set(dedupeKey, dev);
-        } else {
-          if (dev.id && dev.id !== existing.id) duplicateDocIdsToDelete.push(dev.id);
         }
       }
     });
-
-    // Cleanup redundant duplicate docs asynchronously
-    if (duplicateDocIdsToDelete.length > 0) {
-      Promise.all(
-        duplicateDocIdsToDelete.map((id) => deleteDoc(doc(db, 'users', userId, 'devices', id)).catch(() => {}))
-      ).catch(() => {});
-    }
 
     const uniqueList = Array.from(mergedMap.values());
 
@@ -570,6 +585,7 @@ async function migrateLegacyLoginHistoryToDevices(userId: string, currentDeviceI
         appVersion: meta.appVersion,
         deviceType: meta.deviceType,
         status: 'active',
+        activeSessionId: getLocalSessionId(userId),
         lastActive: serverTimestamp(),
         createdAt: serverTimestamp(),
         isCurrent: true,
@@ -599,6 +615,7 @@ async function migrateLegacyLoginHistoryToDevices(userId: string, currentDeviceI
           appVersion: data.appVersion || '2.4.0',
           deviceType: parsed.deviceType,
           status: devId === currentDeviceId ? 'active' : 'signed_out',
+          activeSessionId: devId === currentDeviceId ? getLocalSessionId(userId) : null,
           lastActive: data.timestamp,
           createdAt: data.timestamp,
           isCurrent: devId === currentDeviceId,
@@ -610,7 +627,7 @@ async function migrateLegacyLoginHistoryToDevices(userId: string, currentDeviceI
     const migrated = Array.from(seenMap.values());
     // Persist migrated devices to Firestore
     Promise.all(
-      migrated.map((item) => setDoc(doc(db, 'users', userId, 'devices', item.deviceId), item).catch(() => {}))
+      migrated.map((item) => setDoc(doc(db, 'users', userId, 'devices', item.deviceId), item, { merge: true }).catch(() => {}))
     ).catch(() => {});
 
     return migrated;
@@ -622,62 +639,58 @@ async function migrateLegacyLoginHistoryToDevices(userId: string, currentDeviceI
 
 /**
  * Sign out one specific remote device:
- * 1. Calls Cloud Function logoutDevice(deviceId) (sends high-priority force_logout FCM data message)
- * 2. Updates Firestore device document status to "signed_out" with signedOutAt and signedOutBy
- * 3. Removes FCM token associated with this device
- * 4. Calls server revocation endpoint
+ * 1. Sets status: 'signed_out', activeSessionId: null, signedOutAt in users/{uid}/devices/{targetDeviceId}.
+ * 2. Calls Cloud Function logoutDevice(targetDeviceId, targetSessionId) (sends force_logout FCM with targetSessionId).
+ * 3. MUST NOT call revokeRefreshTokens and MUST NOT touch sessionsValidFrom.
  */
 export async function signOutSingleDevice(userId: string, targetDeviceId: string): Promise<boolean> {
   if (!userId || !targetDeviceId) return false;
 
   try {
-    // 1. Try Cloud Function logoutDevice first (for high-priority FCM message & token purge)
-    try {
-      const logoutFn = httpsCallable<{ deviceId: string }, { success: boolean }>(functions, 'logoutDevice');
-      await logoutFn({ deviceId: targetDeviceId });
-    } catch (cfErr) {
-      console.warn('Callable logoutDevice notice (using direct database & server update):', cfErr);
-    }
-
-    // 2. Direct Firestore enforcement update
     const devRef = doc(db, 'users', userId, 'devices', targetDeviceId);
     const snap = await getDoc(devRef);
+    let targetSessionId: string | null = null;
     let tokenToRemove: string | null = null;
 
     if (snap.exists()) {
-      tokenToRemove = snap.data().fcmToken || null;
+      const dData = snap.data();
+      targetSessionId = dData.activeSessionId || null;
+      tokenToRemove = dData.fcmToken || null;
+      
       await updateDoc(devRef, {
         status: 'signed_out',
+        activeSessionId: null,
         fcmToken: null,
         signedOutAt: serverTimestamp(),
         signedOutBy: userId,
       });
     }
 
-    // 3. Remove token from user document array
+    // 1. Try Cloud Function logoutDevice (sends force_logout FCM message containing targetSessionId)
+    try {
+      const logoutFn = httpsCallable<{ deviceId: string; targetSessionId?: string | null }, { success: boolean }>(functions, 'logoutDevice');
+      await logoutFn({ deviceId: targetDeviceId, targetSessionId });
+    } catch (cfErr) {
+      console.warn('Callable logoutDevice notice (using direct database update):', cfErr);
+    }
+
+    // 2. Remove token from user document array
     if (tokenToRemove) {
       await updateDoc(doc(db, 'users', userId), {
         fcmTokens: arrayRemove(tokenToRemove),
       }).catch(() => {});
     }
 
-    // 4. Invoke local server proxy endpoints
-    await Promise.allSettled([
-      fetch('/api/auth/logout-device', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: userId, deviceId: targetDeviceId }),
-      }),
-      fetch('/api/auth/revoke-tokens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: userId, deviceId: targetDeviceId }),
-      }),
-    ]);
+    // 3. Invoke server proxy endpoint for single device
+    await fetch('/api/auth/logout-device', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: userId, deviceId: targetDeviceId, targetSessionId }),
+    }).catch(() => {});
 
     return true;
   } catch (err) {
-    console.error('Error signing out device:', err);
+    console.error('Error signing out single device:', err);
     return false;
   }
 }
@@ -685,10 +698,9 @@ export async function signOutSingleDevice(userId: string, targetDeviceId: string
 /**
  * Log out from ALL devices:
  * 1. Calls Cloud Function logoutAllDevices() (revokes refresh tokens, sets sessionsValidFrom,
- *    marks all devices signed_out, sends force_logout FCM messages to all tokens)
+ *    marks all devices signed_out, sends force_logout FCM messages)
  * 2. Updates Firestore users/{uid}.sessionsValidFrom and marks every device signed_out
  * 3. Clears ALL fcmTokens from user document
- * 4. Notifies server revocation endpoints
  */
 export async function signOutAllDevices(userId: string): Promise<boolean> {
   if (!userId) return false;
@@ -699,7 +711,7 @@ export async function signOutAllDevices(userId: string): Promise<boolean> {
       const logoutAllFn = httpsCallable<void, { success: boolean }>(functions, 'logoutAllDevices');
       await logoutAllFn();
     } catch (cfErr) {
-      console.warn('Callable logoutAllDevices notice (using direct database & server update):', cfErr);
+      console.warn('Callable logoutAllDevices notice (using direct database update):', cfErr);
     }
 
     // 2. Direct Firestore enforcement updates
@@ -709,6 +721,7 @@ export async function signOutAllDevices(userId: string): Promise<boolean> {
       snap.docs.map((d) => 
         updateDoc(d.ref, {
           status: 'signed_out',
+          activeSessionId: null,
           fcmToken: null,
           signedOutAt: serverTimestamp(),
           signedOutBy: userId,
@@ -747,9 +760,7 @@ export async function signOutAllDevices(userId: string): Promise<boolean> {
 /**
  * Verifies if the current physical device's session has been revoked/signed out remotely.
  * Enforces reading directly from the SERVER (not cache).
- * Checks:
- * 1. Device document status !== 'signed_out'
- * 2. User document sessionsValidFrom is not newer than current session start time
+ * Respects a 10-second grace period after login.
  */
 export async function verifyCurrentDeviceSession(userId: string): Promise<{
   valid: boolean;
@@ -757,6 +768,20 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
   reason?: string;
 }> {
   if (!userId) return { valid: true };
+
+  const localSessionId = getLocalSessionId(userId);
+  const loginTimeMs = Number(
+    localStorage.getItem(`sky_session_login_time_${userId}`) ||
+    sessionStorage.getItem(`sky_session_auth_time_${userId}`) ||
+    0
+  );
+  const now = Date.now();
+
+  // 10-second grace period after login: do not revoke during initial load right after login
+  if (loginTimeMs > 0 && (now - loginTimeMs < 10000)) {
+    console.log('[AuthDebug] verifyCurrentDeviceSession: within 10s grace period. Session valid.');
+    return { valid: true };
+  }
 
   try {
     const currentDeviceId = await getStableDeviceId();
@@ -767,7 +792,6 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
     try {
       devSnap = await getDocFromServer(devRef);
     } catch (err: any) {
-      // If server cannot be reached because client is offline
       if (err?.message?.includes('offline') || err?.code === 'unavailable' || !navigator.onLine) {
         return { valid: false, isOffline: true, reason: 'Device is offline and server cannot be reached.' };
       }
@@ -776,7 +800,9 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
 
     if (devSnap && devSnap.exists()) {
       const data = devSnap.data();
-      if (data.status === 'signed_out') {
+      // Only sign out if the server document says status 'signed_out' AND activeSessionId differs from our current local sessionId
+      if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
+        console.warn('[AuthDebug] Server confirms device signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
         return { valid: false, reason: 'You were signed out from another device' };
       }
     }
@@ -790,8 +816,8 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
         const validFrom = uData.sessionsValidFrom;
         if (validFrom) {
           const validFromMs = getTimestampMs(validFrom);
-          const sessionStartMs = Number(sessionStorage.getItem(`sky_session_auth_time_${userId}`)) || 0;
-          if (sessionStartMs > 0 && validFromMs > sessionStartMs) {
+          if (loginTimeMs > 0 && validFromMs > (loginTimeMs + 3000)) {
+            console.warn('[AuthDebug] Server confirms sessionsValidFrom newer than login time:', { validFromMs, loginTimeMs });
             return { valid: false, reason: 'You were signed out from all devices' };
           }
         }
@@ -816,8 +842,7 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
  * Attaches real-time live listeners to:
  * 1. users/{uid}/devices/{myDeviceId}
  * 2. users/{uid} (sessionsValidFrom)
- * If my device status becomes "signed_out" or sessionsValidFrom > sessionStart,
- * triggers onForceLogout immediately.
+ * Ignores cache snapshots and enforces 10-second grace period after login.
  */
 export function setupSessionEnforcementListener(
   userId: string,
@@ -827,40 +852,57 @@ export function setupSessionEnforcementListener(
 
   let isUnsubscribed = false;
   const currentDeviceId = getOrCreateDeviceId();
-  const sessionStartMs = Number(sessionStorage.getItem(`sky_session_auth_time_${userId}`)) || Date.now();
+  const localSessionId = getLocalSessionId(userId);
+  const loginTimeMs = Number(
+    localStorage.getItem(`sky_session_login_time_${userId}`) ||
+    sessionStorage.getItem(`sky_session_auth_time_${userId}`) ||
+    Date.now()
+  );
 
   // 1. Device document live listener
   const devRef = doc(db, 'users', userId, 'devices', currentDeviceId);
   const unsubDev = onSnapshot(devRef, (snap) => {
     if (isUnsubscribed) return;
+
+    // Ignore cache snapshots (which might contain old pre-login state)
+    if (snap.metadata.fromCache) return;
+
+    // Ignore updates during 10-second grace period after login
+    if (Date.now() - loginTimeMs < 10000) return;
+
     if (snap.exists()) {
       const data = snap.data();
-      if (data.status === 'signed_out') {
-        console.warn('[Security] Realtime listener: device has been marked signed_out.');
+      // Only trigger if status is signed_out AND activeSessionId does not match current local sessionId
+      if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
+        console.warn('[AuthDebug] Realtime listener: device marked signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
         onForceLogout('You were signed out from another device');
       }
     }
   }, (err) => {
-    console.warn('[Security] Device live listener error:', err);
+    console.warn('[Security] Device live listener notice:', err);
   });
 
   // 2. User document live listener (watches sessionsValidFrom)
   const userRef = doc(db, 'users', userId);
   const unsubUser = onSnapshot(userRef, (snap) => {
     if (isUnsubscribed) return;
+
+    if (snap.metadata.fromCache) return;
+    if (Date.now() - loginTimeMs < 10000) return;
+
     if (snap.exists()) {
       const data = snap.data();
       const validFrom = data.sessionsValidFrom;
       if (validFrom) {
         const validFromMs = getTimestampMs(validFrom);
-        if (validFromMs > sessionStartMs) {
-          console.warn('[Security] Realtime listener: sessionsValidFrom was updated.');
+        if (loginTimeMs > 0 && validFromMs > (loginTimeMs + 3000)) {
+          console.warn('[AuthDebug] Realtime listener: sessionsValidFrom was updated remotely.');
           onForceLogout('You were signed out from all devices');
         }
       }
     }
   }, (err) => {
-    console.warn('[Security] User live listener error:', err);
+    console.warn('[Security] User live listener notice:', err);
   });
 
   return () => {

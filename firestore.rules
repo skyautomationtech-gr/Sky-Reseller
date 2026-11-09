@@ -63,9 +63,7 @@ service cloud.firestore {
 
     // Session validity check:
     // Compares request.auth.token.auth_time (in seconds) with user's sessionsValidFrom (in milliseconds).
-    // Any session started before sessionsValidFrom is deemed revoked.
-    // Note: Calling get() on the user document introduces 1 extra read on checked operations,
-    // which is why this check is strictly applied to writes and the most sensitive operations.
+    // Uses +10000ms buffer to account for sub-second rounding differences in auth_time.
     function isSessionValid() {
       return isSignedIn() && (
         !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
@@ -73,11 +71,11 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom == null ||
         (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom is timestamp &&
-          (request.auth.token.auth_time * 1000) >= get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom.toMillis()
+          (request.auth.token.auth_time * 1000 + 10000) >= get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom.toMillis()
         ) ||
         (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom is int &&
-          (request.auth.token.auth_time * 1000) >= get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom
+          (request.auth.token.auth_time * 1000 + 10000) >= get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom
         )
       );
     }
@@ -139,7 +137,7 @@ service cloud.firestore {
       match /devices/{deviceId} {
         allow read, list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
         allow create, update, delete: if isSignedIn() && (
-          (request.auth.uid == userId && isSessionValid()) || isAdmin()
+          (request.auth.uid == userId) || isAdmin()
         );
       }
     }

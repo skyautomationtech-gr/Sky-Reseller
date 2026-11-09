@@ -31,9 +31,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     try {
       const logoutReason = sessionStorage.getItem('sky_logout_reason');
       if (logoutReason) {
-        setError(logoutReason);
+        setSecurityNotice(logoutReason);
         sessionStorage.removeItem('sky_logout_reason');
-        return;
       }
     } catch (_) {}
 
@@ -61,6 +60,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     setSecurityNotice('');
 
     try {
+      console.log('[AuthDebug] Starting login attempt for identifier:', identifier.trim());
       // Set Auth persistence safely
       try {
         await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
@@ -236,20 +236,23 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
           console.warn('Could not sync password or verify role in Firestore:', syncErr);
         }
 
-        // Record device login security monitoring
+        // Record device login security monitoring FIRST on server before completing login
         try {
-          const { isNewDevice } = await recordLoginHistory(userCredential.user.uid);
+          console.log('[AuthDebug] Auth sign-in successful. Updating device record on server FIRST...');
+          const { isNewDevice, sessionId } = await recordLoginHistory(userCredential.user.uid);
+          console.log('[AuthDebug] Device record updated as active on server with sessionId:', sessionId);
           if (isNewDevice) {
             setSecurityNotice('New device login detected. A security entry has been logged.');
           }
         } catch (devErr) {
-          console.warn('Could not record device login:', devErr);
+          console.warn('[AuthDebug] Could not record device login:', devErr);
         }
       }
 
+      console.log('[AuthDebug] Login complete. Invoking onLoginSuccess()...');
       onLoginSuccess();
     } catch (err: any) {
-      console.warn('Login attempt failed:', err?.code || err?.message);
+      console.warn('[AuthDebug] Login attempt failed:', err?.code || err?.message, err);
       let msg = 'ভুল ইমেইল/মোবাইল বা পাসওয়ার্ড। অনুগ্রহ করে আবার চেষ্টা করুন।';
       if (err.message === 'timeout') {
         msg = 'সার্ভার সংযোগ সময় শেষ হয়ে গেছে। আপনার ইন্টারনেট কানেকশন চেক করে পুনরায় চেষ্টা করুন। (Connection timed out)';
