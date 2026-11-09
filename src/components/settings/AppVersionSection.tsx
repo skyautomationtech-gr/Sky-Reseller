@@ -8,12 +8,13 @@ import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
 import { 
   Smartphone, RefreshCw, CheckCircle2, AlertTriangle, 
   Sparkles, History, ChevronRight, ChevronDown, Share2, 
-  ExternalLink, Phone, Mail, Globe, Building2, Info, Check, AlertCircle, Copy
+  ExternalLink, Phone, Mail, Globe, Building2, Info, Check, AlertCircle, Copy, Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { WhatsNewModal } from '../version/WhatsNewModal';
 import { ChangelogModal } from '../version/ChangelogModal';
 import { useScrollToTop } from '../../utils/scrollToTop';
+import { triggerOnboardingReplay } from '../../lib/onboardingService';
 
 interface AppVersionSectionProps {
   user: UserProfile;
@@ -356,6 +357,33 @@ export const AppVersionSection: React.FC<AppVersionSectionProps> = ({
             </div>
 
             <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+          </div>
+
+          {/* App Tour / View Onboarding */}
+          <div
+            onClick={() => {
+              triggerHaptic('medium');
+              triggerOnboardingReplay();
+            }}
+            className={DT.settingsRow}
+          >
+            <div className="flex items-center gap-2.5 min-w-0 pr-3">
+              <div className="w-[28px] h-[28px] rounded-[8px] flex items-center justify-center shrink-0 border bg-emerald-50 text-emerald-600 border-emerald-200/60">
+                <Compass className="w-[18px] h-[18px]" />
+              </div>
+              <div className="min-w-0">
+                <span className={DT.settingsRowTitle}>App Tour / View Onboarding</span>
+                <p className={DT.settingsRowHelper}>Replay the 5-step intro</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="text-[11px] font-bold text-emerald-600 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>Play</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>

@@ -1182,8 +1182,8 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
                   {
                     id: 'version' as const,
                     title: 'App & Version',
-                    helper: `v${appVersionInfo?.version || '1.0.8'} • Check for updates`,
-                    keywords: ['version', 'update', 'changelog', 'release notes', 'build', 'app'],
+                    helper: `v${appVersionInfo?.version || '1.0.8'} • Check for updates & App Tour`,
+                    keywords: ['version', 'update', 'changelog', 'release notes', 'build', 'app', 'tour', 'onboarding', 'intro'],
                     icon: Smartphone,
                     iconBg: 'bg-sky-50 text-sky-600 border-sky-200/60',
                     isLocked: false,

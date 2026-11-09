@@ -36,6 +36,12 @@ import { registerPushNotificationListeners, requestAndRegisterPushNotifications 
 import { InAppPushBanner, PushBannerNotification } from './components/notifications/InAppPushBanner';
 import { subscribeToRealtimeNotifications } from './lib/notificationHelper';
 import { initNativeStatusBar } from './lib/nativeFeedback';
+import { OnboardingScreen } from './components/onboarding/OnboardingScreen';
+import {
+  isOnboardingCompleted,
+  setOnboardingCompleted,
+  ONBOARDING_REPLAY_EVENT,
+} from './lib/onboardingService';
 
 // 🛠️ ========================================================
 // 🛠️ MAINTENANCE MODE SWITCH (মেইনটেন্যান্স মোড সুইচ)
@@ -62,6 +68,20 @@ function AppContent() {
   const [isSuperAdminOtpPending, setIsSuperAdminOtpPending] = useState(false);
   const [splashActive, setSplashActive] = useState(true);
   const splashTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Onboarding screen state (first launch only or replay)
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => !isOnboardingCompleted());
+  const [isOnboardingReplay, setIsOnboardingReplay] = useState<boolean>(false);
+
+  // Listen for replay requests (from Settings or anywhere in app)
+  useEffect(() => {
+    const handleReplay = () => {
+      setIsOnboardingReplay(true);
+      setShowOnboarding(true);
+    };
+    window.addEventListener(ONBOARDING_REPLAY_EVENT, handleReplay);
+    return () => window.removeEventListener(ONBOARDING_REPLAY_EVENT, handleReplay);
+  }, []);
 
   // Splash Screen Minimum 60-Second Timer with Cleanup
   useEffect(() => {
@@ -425,6 +445,10 @@ function AppContent() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setFirebaseUser(currentUser);
       if (currentUser) {
+        // Silently mark onboarding completed for existing logged-in users after update
+        setOnboardingCompleted();
+        setShowOnboarding(false);
+
         // Remote device session revocation check
         try {
           // Force token refresh from server
@@ -615,6 +639,19 @@ function AppContent() {
         />
       );
     }
+  }
+
+  // Onboarding (first-time launch flow or replay from Settings)
+  if (showOnboarding) {
+    return (
+      <OnboardingScreen
+        isReplay={isOnboardingReplay}
+        onComplete={() => {
+          setShowOnboarding(false);
+          setIsOnboardingReplay(false);
+        }}
+      />
+    );
   }
 
   // Not logged in -> show Login or Register (guarded by full screen overlay)
