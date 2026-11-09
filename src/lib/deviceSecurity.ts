@@ -2,10 +2,13 @@ import { Device } from '@capacitor/device';
 import { Capacitor } from '@capacitor/core';
 import { 
   collection, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, getDocs, 
-  query, orderBy, limit, serverTimestamp, arrayRemove, onSnapshot 
+  query, orderBy, limit, serverTimestamp, arrayRemove, onSnapshot, Timestamp 
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
+
+/** Retention period for login history (in minutes). Easy to change. */
+export const LOGIN_HISTORY_RETENTION_MINUTES = 60;
 
 export interface DeviceItem {
   id?: string;
@@ -31,6 +34,7 @@ export interface DeviceItem {
 export interface LoginHistoryItem {
   id?: string;
   timestamp: any;
+  expireAt?: any;
   platform: string;
   deviceName: string;
   deviceModel: string;
@@ -360,7 +364,7 @@ export async function getDeviceMetadata(): Promise<{
  * 1. Creates a brand new random activeSessionId and saves it locally.
  * 2. Writes status: 'active', activeSessionId, lastActive, sessionStartedAt to users/{uid}/devices/{deviceId}.
  * 3. AWAITS this server write FIRST before resolving.
- * 4. Revives any previously "signed_out" device document without blocking login.
+ * 4. Adds expireAt (createdAt + 60 minutes) to the loginHistory record.
  */
 export async function recordLoginHistory(userId: string, fcmToken?: string | null): Promise<{
   isNewDevice: boolean;
@@ -387,7 +391,7 @@ export async function recordLoginHistory(userId: string, fcmToken?: string | nul
       isNewDevice = true;
     }
 
-    // SERVER WRITE FIRST: Revive device record immediately with status 'active' and new activeSessionId
+    // SERVER WRITE FIRST: Create/revive device record immediately with status 'active' and new activeSessionId
     const devicePayload = {
       deviceId: meta.deviceId,
       deviceName: meta.deviceName,
@@ -410,12 +414,13 @@ export async function recordLoginHistory(userId: string, fcmToken?: string | nul
 
     // Await setDoc FIRST so Firestore server holds status: 'active' before UI listeners attach
     await setDoc(deviceRef, devicePayload, { merge: true });
-    console.log('[AuthDebug] recordLoginHistory: device document updated on server as active:', meta.deviceId);
 
-    // Append separate entry to loginHistory (keep audit trail)
+    // Append separate entry to loginHistory with expireAt = now + 60 minutes for TTL
+    const expireAtMs = Date.now() + LOGIN_HISTORY_RETENTION_MINUTES * 60 * 1000;
     const historyCol = collection(db, 'users', userId, 'loginHistory');
     setDoc(doc(historyCol), {
       timestamp: serverTimestamp(),
+      expireAt: Timestamp.fromMillis(expireAtMs),
       deviceId: meta.deviceId,
       deviceName: meta.deviceName,
       deviceModel: meta.model,
@@ -441,35 +446,45 @@ export async function recordLoginHistory(userId: string, fcmToken?: string | nul
 }
 
 /**
- * Fetches all registered physical devices for the user and categorizes them:
- * - Active: status === 'active' AND lastActive within 30 days
- * - Signed Out / Inactive: explicitly signed_out or inactive >30 days
- * Automatically deduplicates records that belong to the same physical device/browser.
+ * Callable acknowledgeSignedOut:
+ * Called by a device just before it signs itself out to delete its device record from Firestore.
  */
-export async function fetchUserDevices(userId: string): Promise<{
-  activeDevices: DeviceItem[];
-  previousDevices: DeviceItem[];
-  currentDeviceId: string;
-}> {
+export async function acknowledgeSignedOut(userId: string, deviceId: string): Promise<boolean> {
+  if (!userId || !deviceId) return false;
+  try {
+    const devRef = doc(db, 'users', userId, 'devices', deviceId);
+    await deleteDoc(devRef);
+    console.log('[AuthDebug] acknowledgeSignedOut: deleted device record from Firestore:', deviceId);
+    return true;
+  } catch (err) {
+    console.warn('[AuthDebug] acknowledgeSignedOut error:', err);
+    return false;
+  }
+}
+
+/**
+ * Real-time subscription for active user devices.
+ * Filters out logged-out devices so they disappear IMMEDIATELY from the UI in real-time.
+ */
+export function subscribeUserDevices(
+  userId: string,
+  onUpdate: (activeDevices: DeviceItem[]) => void
+): () => void {
   if (!userId) {
-    return { activeDevices: [], previousDevices: [], currentDeviceId: '' };
+    onUpdate([]);
+    return () => {};
   }
 
-  const currentDeviceId = await getStableDeviceId();
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const currentDeviceId = getOrCreateDeviceId();
+  const devicesCol = collection(db, 'users', userId, 'devices');
 
-  try {
-    const devicesCol = collection(db, 'users', userId, 'devices');
-    const snap = await getDocs(devicesCol);
-    let allDevices: DeviceItem[] = [];
-
-    // If no devices exist in devices collection, migrate from recent loginHistory
-    if (snap.empty) {
-      allDevices = await migrateLegacyLoginHistoryToDevices(userId, currentDeviceId);
-    } else {
-      allDevices = snap.docs.map((d) => {
-        const data = d.data();
-        return {
+  const unsub = onSnapshot(devicesCol, (snap) => {
+    const rawDevices: DeviceItem[] = [];
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      // Only keep active devices (status === 'active')
+      if (data.status === 'active' || !data.status) {
+        rawDevices.push({
           id: d.id,
           deviceId: data.deviceId || d.id,
           deviceName: data.deviceName || data.model || 'Device',
@@ -480,23 +495,19 @@ export async function fetchUserDevices(userId: string): Promise<{
           model: data.model || '',
           appVersion: data.appVersion || '1.0.0',
           deviceType: data.deviceType || 'laptop',
-          status: data.status || 'active',
+          status: 'active',
           activeSessionId: data.activeSessionId || null,
           lastActive: data.lastActive,
           createdAt: data.createdAt,
           fcmToken: data.fcmToken,
-          signedOutAt: data.signedOutAt,
           isCurrent: (data.deviceId || d.id) === currentDeviceId,
-        } as DeviceItem;
-      });
-    }
+        });
+      }
+    });
 
-    // Merge duplicate records (same platform + deviceName + similar browser/model)
+    // Deduplicate physical device entries
     const mergedMap = new Map<string, DeviceItem>();
-    const duplicateDocIdsToDelete: string[] = [];
-
-    allDevices.forEach((dev) => {
-      // Key for physical deduplication
+    rawDevices.forEach((dev) => {
       const dedupeKey = dev.deviceId === currentDeviceId
         ? `CURRENT_${dev.deviceId}`
         : `${dev.platform}_${dev.deviceName.toLowerCase().replace(/\s+/g, '')}`;
@@ -507,141 +518,84 @@ export async function fetchUserDevices(userId: string): Promise<{
         const existing = mergedMap.get(dedupeKey)!;
         const devTs = getTimestampMs(dev.lastActive);
         const existingTs = getTimestampMs(existing.lastActive);
-
         if (devTs > existingTs) {
-          // Keep newer
           mergedMap.set(dedupeKey, dev);
         }
       }
     });
 
-    const uniqueList = Array.from(mergedMap.values());
-
-    // Segregate into Active vs Previous (Signed out / Inactive)
-    const activeDevices: DeviceItem[] = [];
-    const previousDevices: DeviceItem[] = [];
-
-    uniqueList.forEach((dev) => {
-      const isCur = dev.deviceId === currentDeviceId;
-      const lastActiveMs = getTimestampMs(dev.lastActive);
-      const isRecent = lastActiveMs >= thirtyDaysAgo;
-
-      if (dev.status === 'signed_out') {
-        previousDevices.push({ ...dev, status: 'signed_out', isCurrent: isCur });
-      } else if (!isRecent && !isCur) {
-        previousDevices.push({ ...dev, status: 'inactive', isCurrent: isCur });
-      } else {
-        // Active session
-        activeDevices.push({ ...dev, status: 'active', isCurrent: isCur });
-      }
-    });
-
-    // Ensure Current Device is always at the top of activeDevices
-    activeDevices.sort((a, b) => {
+    const activeList = Array.from(mergedMap.values());
+    activeList.sort((a, b) => {
       if (a.isCurrent) return -1;
       if (b.isCurrent) return 1;
       return getTimestampMs(b.lastActive) - getTimestampMs(a.lastActive);
     });
 
-    previousDevices.sort((a, b) => getTimestampMs(b.lastActive) - getTimestampMs(a.lastActive));
+    onUpdate(activeList);
+  }, (err) => {
+    console.warn('subscribeUserDevices error:', err);
+  });
 
-    return {
-      activeDevices,
-      previousDevices,
-      currentDeviceId,
-    };
-  } catch (err) {
-    console.warn('Error fetching user devices:', err);
-    return {
-      activeDevices: [],
-      previousDevices: [],
-      currentDeviceId,
-    };
-  }
+  return unsub;
 }
 
 /**
- * Migration helper: Populates users/{uid}/devices from legacy users/{uid}/loginHistory
+ * Real-time subscription for login history.
+ * Enforces rule (a): UI ONLY shows entries created/timestamped within the last LOGIN_HISTORY_RETENTION_MINUTES (60 min).
  */
-async function migrateLegacyLoginHistoryToDevices(userId: string, currentDeviceId: string): Promise<DeviceItem[]> {
-  try {
-    const historyCol = collection(db, 'users', userId, 'loginHistory');
-    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(30));
-    const snap = await getDocs(q);
+export function subscribeUserLoginHistory(
+  userId: string,
+  onUpdate: (items: LoginHistoryItem[]) => void
+): () => void {
+  if (!userId) {
+    onUpdate([]);
+    return () => {};
+  }
 
-    if (snap.empty) {
-      // Create record for current device immediately
-      const meta = await getDeviceMetadata();
-      const devRef = doc(db, 'users', userId, 'devices', meta.deviceId);
-      const initialDev: DeviceItem = {
-        id: meta.deviceId,
-        deviceId: meta.deviceId,
-        deviceName: meta.deviceName,
-        platform: meta.platform,
-        os: meta.os,
-        osVersion: meta.osVersion,
-        browser: meta.browser,
-        model: meta.model,
-        appVersion: meta.appVersion,
-        deviceType: meta.deviceType,
-        status: 'active',
-        activeSessionId: getLocalSessionId(userId),
-        lastActive: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        isCurrent: true,
-      };
-      await setDoc(devRef, initialDev).catch(() => {});
-      return [initialDev];
-    }
+  const historyCol = collection(db, 'users', userId, 'loginHistory');
+  const q = query(historyCol, orderBy('timestamp', 'desc'), limit(30));
 
-    const seenMap = new Map<string, DeviceItem>();
+  const unsub = onSnapshot(q, (snap) => {
+    const now = Date.now();
+    const cutoffMs = now - LOGIN_HISTORY_RETENTION_MINUTES * 60 * 1000;
 
-    snap.docs.forEach((d) => {
-      const data = d.data();
-      const devId = data.deviceId || 'legacy_' + d.id;
-      const parsed = parseUserAgentFriendly(data.userAgent || data.deviceModel);
-      const key = `${data.platform || 'web'}_${parsed.deviceName.toLowerCase().replace(/\s+/g, '')}`;
+    const filtered: LoginHistoryItem[] = [];
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      const tsMs = getTimestampMs(data.timestamp || data.createdAt);
 
-      if (!seenMap.has(key)) {
-        const item: DeviceItem = {
-          id: devId,
-          deviceId: devId,
-          deviceName: parsed.deviceName,
-          platform: (data.platform === 'android' ? 'android' : data.platform === 'ios' ? 'ios' : 'web'),
-          os: parsed.os,
-          osVersion: parsed.osVersion,
-          browser: parsed.browser,
-          model: data.deviceModel || parsed.model,
+      // UI filter: only show entries newer than 60 minutes
+      if (tsMs === 0 || tsMs >= cutoffMs) {
+        const parsed = parseUserAgentFriendly(data.userAgent || data.deviceModel);
+        filtered.push({
+          id: docSnap.id,
+          timestamp: data.timestamp,
+          platform: data.platform || parsed.platform || 'web',
+          deviceName: data.deviceName || parsed.deviceName,
+          deviceModel: data.deviceModel || parsed.model,
+          os: data.os || parsed.os,
+          osVersion: data.osVersion || parsed.osVersion,
+          browser: data.browser || parsed.browser,
           appVersion: data.appVersion || '2.4.0',
-          deviceType: parsed.deviceType,
-          status: devId === currentDeviceId ? 'active' : 'signed_out',
-          activeSessionId: devId === currentDeviceId ? getLocalSessionId(userId) : null,
-          lastActive: data.timestamp,
-          createdAt: data.timestamp,
-          isCurrent: devId === currentDeviceId,
-        };
-        seenMap.set(key, item);
+          deviceId: data.deviceId || docSnap.id,
+          deviceType: data.deviceType || parsed.deviceType,
+          isNewDevice: !!data.isNewDevice,
+          userAgent: data.userAgent,
+        });
       }
     });
 
-    const migrated = Array.from(seenMap.values());
-    // Persist migrated devices to Firestore
-    Promise.all(
-      migrated.map((item) => setDoc(doc(db, 'users', userId, 'devices', item.deviceId), item, { merge: true }).catch(() => {}))
-    ).catch(() => {});
+    onUpdate(filtered);
+  }, (err) => {
+    console.warn('subscribeUserLoginHistory error:', err);
+  });
 
-    return migrated;
-  } catch (err) {
-    console.warn('Migration error:', err);
-    return [];
-  }
+  return unsub;
 }
 
 /**
  * Sign out one specific remote device:
- * 1. Sets status: 'signed_out', activeSessionId: null, signedOutAt in users/{uid}/devices/{targetDeviceId}.
- * 2. Calls Cloud Function logoutDevice(targetDeviceId, targetSessionId) (sends force_logout FCM with targetSessionId).
- * 3. MUST NOT call revokeRefreshTokens and MUST NOT touch sessionsValidFrom.
+ * Deletes the device record directly from Firestore so it disappears immediately.
  */
 export async function signOutSingleDevice(userId: string, targetDeviceId: string): Promise<boolean> {
   if (!userId || !targetDeviceId) return false;
@@ -656,22 +610,17 @@ export async function signOutSingleDevice(userId: string, targetDeviceId: string
       const dData = snap.data();
       targetSessionId = dData.activeSessionId || null;
       tokenToRemove = dData.fcmToken || null;
-      
-      await updateDoc(devRef, {
-        status: 'signed_out',
-        activeSessionId: null,
-        fcmToken: null,
-        signedOutAt: serverTimestamp(),
-        signedOutBy: userId,
-      });
     }
 
-    // 1. Try Cloud Function logoutDevice (sends force_logout FCM message containing targetSessionId)
+    // Delete record immediately from Firestore so the device row disappears from every active list
+    await deleteDoc(devRef).catch(() => {});
+
+    // 1. Try Cloud Function logoutDevice (sends force_logout FCM with targetSessionId)
     try {
       const logoutFn = httpsCallable<{ deviceId: string; targetSessionId?: string | null }, { success: boolean }>(functions, 'logoutDevice');
       await logoutFn({ deviceId: targetDeviceId, targetSessionId });
     } catch (cfErr) {
-      console.warn('Callable logoutDevice notice (using direct database update):', cfErr);
+      console.warn('Callable logoutDevice notice:', cfErr);
     }
 
     // 2. Remove token from user document array
@@ -697,44 +646,33 @@ export async function signOutSingleDevice(userId: string, targetDeviceId: string
 
 /**
  * Log out from ALL devices:
- * 1. Calls Cloud Function logoutAllDevices() (revokes refresh tokens, sets sessionsValidFrom,
- *    marks all devices signed_out, sends force_logout FCM messages)
- * 2. Updates Firestore users/{uid}.sessionsValidFrom and marks every device signed_out
- * 3. Clears ALL fcmTokens from user document
+ * Deletes all device records from Firestore so they disappear immediately.
  */
 export async function signOutAllDevices(userId: string): Promise<boolean> {
   if (!userId) return false;
 
   try {
-    // 1. Try Cloud Function logoutAllDevices first
-    try {
-      const logoutAllFn = httpsCallable<void, { success: boolean }>(functions, 'logoutAllDevices');
-      await logoutAllFn();
-    } catch (cfErr) {
-      console.warn('Callable logoutAllDevices notice (using direct database update):', cfErr);
-    }
-
-    // 2. Direct Firestore enforcement updates
+    // 1. Delete all device records in users/{uid}/devices directly from Firestore
     const devicesCol = collection(db, 'users', userId, 'devices');
     const snap = await getDocs(devicesCol);
     await Promise.all(
-      snap.docs.map((d) => 
-        updateDoc(d.ref, {
-          status: 'signed_out',
-          activeSessionId: null,
-          fcmToken: null,
-          signedOutAt: serverTimestamp(),
-          signedOutBy: userId,
-        }).catch(() => {})
-      )
+      snap.docs.map((d) => deleteDoc(d.ref).catch(() => {}))
     );
 
-    // 3. Invalidate all sessions via sessionsValidFrom and wipe fcmTokens
+    // 2. Invalidate all sessions via sessionsValidFrom and wipe fcmTokens
     await updateDoc(doc(db, 'users', userId), {
       sessionsValidFrom: serverTimestamp(),
       fcmTokens: [],
       fcmToken: null,
     }).catch(() => {});
+
+    // 3. Try Cloud Function logoutAllDevices
+    try {
+      const logoutAllFn = httpsCallable<void, { success: boolean }>(functions, 'logoutAllDevices');
+      await logoutAllFn();
+    } catch (cfErr) {
+      console.warn('Callable logoutAllDevices notice:', cfErr);
+    }
 
     // 4. Invoke local server revocation endpoints
     await Promise.allSettled([
@@ -759,8 +697,8 @@ export async function signOutAllDevices(userId: string): Promise<boolean> {
 
 /**
  * Verifies if the current physical device's session has been revoked/signed out remotely.
- * Enforces reading directly from the SERVER (not cache).
- * Respects a 10-second grace period after login.
+ * A device whose record is missing counts as signed out ONLY if it had a record before
+ * (never during the first 10 seconds after a new login).
  */
 export async function verifyCurrentDeviceSession(userId: string): Promise<{
   valid: boolean;
@@ -777,7 +715,7 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
   );
   const now = Date.now();
 
-  // 10-second grace period after login: do not revoke during initial load right after login
+  // 10-second grace period after login: never count as signed out during initial 10s after new login
   if (loginTimeMs > 0 && (now - loginTimeMs < 10000)) {
     console.log('[AuthDebug] verifyCurrentDeviceSession: within 10s grace period. Session valid.');
     return { valid: true };
@@ -798,13 +736,17 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
       throw err;
     }
 
-    if (devSnap && devSnap.exists()) {
-      const data = devSnap.data();
-      // Only sign out if the server document says status 'signed_out' AND activeSessionId differs from our current local sessionId
-      if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
-        console.warn('[AuthDebug] Server confirms device signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
-        return { valid: false, reason: 'You were signed out from another device' };
-      }
+    // If record is missing (deleted on remote logout), and we are past the 10-second grace period:
+    if (!devSnap.exists()) {
+      console.warn('[AuthDebug] Device record was deleted from server (remote logout). Forcing sign-out...');
+      return { valid: false, reason: 'You were signed out from another device' };
+    }
+
+    const data = devSnap.data();
+    // Only sign out if the server document says status 'signed_out' AND activeSessionId differs from our current local sessionId
+    if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
+      console.warn('[AuthDebug] Server confirms device signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
+      return { valid: false, reason: 'You were signed out from another device' };
     }
 
     // Check user document sessionsValidFrom directly from server
@@ -870,13 +812,18 @@ export function setupSessionEnforcementListener(
     // Ignore updates during 10-second grace period after login
     if (Date.now() - loginTimeMs < 10000) return;
 
-    if (snap.exists()) {
-      const data = snap.data();
-      // Only trigger if status is signed_out AND activeSessionId does not match current local sessionId
-      if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
-        console.warn('[AuthDebug] Realtime listener: device marked signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
-        onForceLogout('You were signed out from another device');
-      }
+    // If device document was deleted from Firestore (remote logout):
+    if (!snap.exists()) {
+      console.warn('[AuthDebug] Realtime listener: device document deleted remotely.');
+      onForceLogout('You were signed out from another device');
+      return;
+    }
+
+    const data = snap.data();
+    // Only trigger if status is signed_out AND activeSessionId does not match current local sessionId
+    if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
+      console.warn('[AuthDebug] Realtime listener: device marked signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
+      onForceLogout('You were signed out from another device');
     }
   }, (err) => {
     console.warn('[Security] Device live listener notice:', err);
@@ -917,35 +864,108 @@ export function setupSessionEnforcementListener(
 }
 
 /**
- * Fetches the last 20 login history records, applying human-friendly device names
- * and ensuring 'isNewDevice' only appears on legitimate first-time device entries.
+ * Legacy fetch for initial load or backward compatibility
+ */
+export async function fetchUserDevices(userId: string): Promise<{
+  activeDevices: DeviceItem[];
+  previousDevices: DeviceItem[];
+  currentDeviceId: string;
+}> {
+  if (!userId) {
+    return { activeDevices: [], previousDevices: [], currentDeviceId: '' };
+  }
+
+  const currentDeviceId = await getStableDeviceId();
+
+  try {
+    const devicesCol = collection(db, 'users', userId, 'devices');
+    const snap = await getDocs(devicesCol);
+    const activeDevices: DeviceItem[] = [];
+
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      if (data.status === 'active' || !data.status) {
+        activeDevices.push({
+          id: d.id,
+          deviceId: data.deviceId || d.id,
+          deviceName: data.deviceName || data.model || 'Device',
+          platform: data.platform || 'web',
+          os: data.os || '',
+          osVersion: data.osVersion || '',
+          browser: data.browser || '',
+          model: data.model || '',
+          appVersion: data.appVersion || '1.0.0',
+          deviceType: data.deviceType || 'laptop',
+          status: 'active',
+          activeSessionId: data.activeSessionId || null,
+          lastActive: data.lastActive,
+          createdAt: data.createdAt,
+          fcmToken: data.fcmToken,
+          isCurrent: (data.deviceId || d.id) === currentDeviceId,
+        });
+      }
+    });
+
+    activeDevices.sort((a, b) => {
+      if (a.isCurrent) return -1;
+      if (b.isCurrent) return 1;
+      return getTimestampMs(b.lastActive) - getTimestampMs(a.lastActive);
+    });
+
+    return {
+      activeDevices,
+      previousDevices: [], // Previous devices removed completely
+      currentDeviceId,
+    };
+  } catch (err) {
+    console.warn('Error fetching user devices:', err);
+    return {
+      activeDevices: [],
+      previousDevices: [],
+      currentDeviceId,
+    };
+  }
+}
+
+/**
+ * Legacy fetch for initial load or backward compatibility
  */
 export async function fetchUserLoginHistory(userId: string): Promise<LoginHistoryItem[]> {
   if (!userId) return [];
   try {
     const historyCol = collection(db, 'users', userId, 'loginHistory');
-    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(20));
+    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(30));
     const snap = await getDocs(q);
 
-    return snap.docs.map((docSnap) => {
+    const now = Date.now();
+    const cutoffMs = now - LOGIN_HISTORY_RETENTION_MINUTES * 60 * 1000;
+
+    const filtered: LoginHistoryItem[] = [];
+    snap.docs.forEach((docSnap) => {
       const data = docSnap.data();
-      const parsed = parseUserAgentFriendly(data.userAgent || data.deviceModel);
-      return {
-        id: docSnap.id,
-        timestamp: data.timestamp,
-        platform: data.platform || parsed.platform || 'web',
-        deviceName: data.deviceName || parsed.deviceName,
-        deviceModel: data.deviceModel || parsed.model,
-        os: data.os || parsed.os,
-        osVersion: data.osVersion || parsed.osVersion,
-        browser: data.browser || parsed.browser,
-        appVersion: data.appVersion || '2.4.0',
-        deviceId: data.deviceId || docSnap.id,
-        deviceType: data.deviceType || parsed.deviceType,
-        isNewDevice: !!data.isNewDevice,
-        userAgent: data.userAgent,
-      };
+      const tsMs = getTimestampMs(data.timestamp || data.createdAt);
+
+      if (tsMs === 0 || tsMs >= cutoffMs) {
+        const parsed = parseUserAgentFriendly(data.userAgent || data.deviceModel);
+        filtered.push({
+          id: docSnap.id,
+          timestamp: data.timestamp,
+          platform: data.platform || parsed.platform || 'web',
+          deviceName: data.deviceName || parsed.deviceName,
+          deviceModel: data.deviceModel || parsed.model,
+          os: data.os || parsed.os,
+          osVersion: data.osVersion || parsed.osVersion,
+          browser: data.browser || parsed.browser,
+          appVersion: data.appVersion || '2.4.0',
+          deviceId: data.deviceId || docSnap.id,
+          deviceType: data.deviceType || parsed.deviceType,
+          isNewDevice: !!data.isNewDevice,
+          userAgent: data.userAgent,
+        });
+      }
     });
+
+    return filtered;
   } catch (err) {
     console.warn('Error fetching user login history:', err);
     return [];

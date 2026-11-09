@@ -26,11 +26,12 @@ import { logAuditAction } from '../../lib/auditLogger';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
 import { 
-  fetchUserLoginHistory, 
-  fetchUserDevices,
+  subscribeUserLoginHistory, 
+  subscribeUserDevices,
   signOutSingleDevice,
   signOutAllDevices,
   getOrCreateDeviceId, 
+  LOGIN_HISTORY_RETENTION_MINUTES,
   LoginHistoryItem,
   DeviceItem
 } from '../../lib/deviceSecurity';
@@ -108,15 +109,14 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
 
   // 4. Devices & Sessions State
   const [activeDevices, setActiveDevices] = useState<DeviceItem[]>([]);
-  const [previousDevices, setPreviousDevices] = useState<DeviceItem[]>([]);
-  const [loadingDevices, setLoadingDevices] = useState(false);
-  const [showPreviousDevices, setShowPreviousDevices] = useState(false);
+  const [loadingDevices, setLoadingDevices] = useState(true);
   const [selectedDeviceToSignOut, setSelectedDeviceToSignOut] = useState<DeviceItem | null>(null);
   const [isSigningOutSingle, setIsSigningOutSingle] = useState(false);
 
   // 4b. Recent Login History State
   const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [visibleHistoryCount, setVisibleHistoryCount] = useState(5);
   const [currentDeviceId, setCurrentDeviceId] = useState('');
 
   // 5. App Lock / PIN State
@@ -157,34 +157,30 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
     return () => clearInterval(timer);
   }, [resetEmailCooldown]);
 
-  // Initial load: device ID, sessions, biometrics check, phone requests
+  // Initial load & real-time subscriptions
   useEffect(() => {
     const devId = getOrCreateDeviceId();
     setCurrentDeviceId(devId);
-    loadDevicesAndHistory();
     loadPhoneRequests();
     checkBiometrics();
-  }, [user.uid]);
 
-  const loadDevicesAndHistory = async () => {
-    setLoadingDevices(true);
-    setLoadingHistory(true);
-    try {
-      const [devResult, historyItems] = await Promise.all([
-        fetchUserDevices(user.uid),
-        fetchUserLoginHistory(user.uid),
-      ]);
-      setActiveDevices(devResult.activeDevices);
-      setPreviousDevices(devResult.previousDevices);
-      setCurrentDeviceId(devResult.currentDeviceId);
-      setLoginHistory(historyItems);
-    } catch (err) {
-      console.warn('Error loading devices and history:', err);
-    } finally {
+    // Subscribe to active devices in REAL-TIME
+    const unsubDevices = subscribeUserDevices(user.uid, (devices) => {
+      setActiveDevices(devices);
       setLoadingDevices(false);
+    });
+
+    // Subscribe to recent login history (last 60 minutes) in REAL-TIME
+    const unsubHistory = subscribeUserLoginHistory(user.uid, (history) => {
+      setLoginHistory(history);
       setLoadingHistory(false);
-    }
-  };
+    });
+
+    return () => {
+      unsubDevices();
+      unsubHistory();
+    };
+  }, [user.uid]);
 
   const loadPhoneRequests = async () => {
     setLoadingPhoneRequests(true);
@@ -605,7 +601,6 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       );
       triggerHaptic('success');
       showToast(`${selectedDeviceToSignOut.deviceName} signed out.`, 'success');
-      await loadDevicesAndHistory();
     } catch (err: any) {
       console.error('Error signing out device:', err);
       showToast('Failed to sign out device. Please retry.', 'error');
@@ -766,240 +761,205 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
          ======================================================== */}
       <div className="space-y-1">
         <div className="flex items-center justify-between px-1">
-          <span className={`${DT.settingsGroupLabel} truncate mr-2`}>SESSIONS & ACTIVE DEVICES</span>
-          <button
-            type="button"
-            onClick={loadDevicesAndHistory}
-            className="text-[11px] text-slate-500 font-bold hover:text-slate-700 flex items-center gap-1.5 shrink-0 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-slate-100 transition-colors"
-          >
-            <RefreshCw className={`w-3 h-3 ${loadingDevices || loadingHistory ? 'animate-spin text-[#0E9AA7]' : ''}`} />
-            <span>Refresh</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <span className={DT.settingsGroupLabel}>DEVICES</span>
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{activeDevices.length} active</span>
+            </span>
+          </div>
         </div>
 
         <div className={DT.settingsGroupCard}>
-          {/* Active Devices (Only Active Sessions) */}
-          <div className="p-3.5 space-y-2.5">
+          {/* Active Devices List */}
+          <div className="p-3.5 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Active Devices ({activeDevices.length})
+                Active Sessions
               </span>
-              <span className="text-[10px] text-slate-400">Real-time sessions</span>
+              <span className="text-[10px] text-slate-400">Live real-time sync</span>
             </div>
 
             <div className="space-y-2">
               {loadingDevices ? (
                 <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0E9AA7]" />
-                  <span>Loading device sessions...</span>
+                  <span>Syncing active devices...</span>
                 </div>
               ) : activeDevices.length === 0 ? (
-                // Current device fallback if empty
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Laptop className="w-4 h-4 text-blue-600" />
-                    <div>
-                      <p className="font-bold text-slate-800 text-[12px]">Current Session</p>
-                      <p className="text-[10px] text-slate-400 font-mono">Web / Mobile Browser</p>
+                // Fallback display if no devices loaded yet
+                <div className="flex items-center justify-between h-[52px] px-3 rounded-xl bg-slate-50 border-l-[3px] border-l-[#0E9AA7] border-slate-200/60 text-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Laptop className="w-4 h-4 text-[#0E9AA7] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-800 text-[12px] truncate">This Device</p>
+                      <p className="text-[10px] text-slate-400">Active session</p>
                     </div>
                   </div>
-                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-600 text-white">
+                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-[#04203F] text-white">
                     This Device
                   </span>
                 </div>
               ) : (
-                activeDevices.map((dev) => {
-                  const isCurrent = dev.isCurrent || dev.deviceId === currentDeviceId;
-                  const ts = dev.lastActive?.toDate ? dev.lastActive.toDate() : (dev.lastActive ? new Date(dev.lastActive) : new Date());
-                  return (
-                    <div
-                      key={dev.deviceId}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition-colors ${
-                        isCurrent
-                          ? 'bg-blue-50/50 border-blue-200/80 shadow-2xs'
-                          : 'bg-slate-50/70 border-slate-200/60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {dev.deviceType === 'tablet' ? (
-                          <Tablet className="w-4 h-4 text-purple-600 shrink-0" />
-                        ) : dev.deviceType === 'phone' || dev.platform === 'android' || dev.platform === 'ios' ? (
-                          <Smartphone className="w-4 h-4 text-emerald-600 shrink-0" />
-                        ) : (
-                          <Laptop className="w-4 h-4 text-blue-600 shrink-0" />
-                        )}
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="font-bold text-slate-900 text-[12px] truncate">
-                              {dev.deviceName}
-                            </p>
-                            {dev.platform === 'android' ? (
-                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.2 rounded">
-                                Android App
-                              </span>
-                            ) : dev.platform === 'ios' ? (
-                              <span className="text-[9px] font-bold text-slate-700 bg-slate-100 border border-slate-200/80 px-1.5 py-0.2 rounded">
-                                iOS App
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.2 rounded">
-                                Web
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                            {dev.os} {dev.osVersion} • v{dev.appVersion || '2.4.0'} • Last active {ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          </p>
-                        </div>
-                      </div>
+                <AnimatePresence initial={false}>
+                  {activeDevices.map((dev) => {
+                    const isCurrent = dev.isCurrent || dev.deviceId === currentDeviceId;
+                    const ts = dev.lastActive?.toDate ? dev.lastActive.toDate() : (dev.lastActive ? new Date(dev.lastActive) : new Date());
+                    const timeAgo = (() => {
+                      if (!ts) return 'Active now';
+                      const diffMin = Math.floor((Date.now() - ts.getTime()) / 60000);
+                      if (diffMin < 2) return 'Active now';
+                      if (diffMin < 60) return `Last active ${diffMin}m ago`;
+                      const diffHours = Math.floor(diffMin / 60);
+                      if (diffHours < 24) return `Last active ${diffHours}h ago`;
+                      return `Last active ${ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+                    })();
 
-                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                        {isCurrent ? (
-                          <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-[#04203F] text-white">
-                            This Device
-                          </span>
-                        ) : (
-                          <>
-                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
-                              Active
+                    return (
+                      <motion.div
+                        key={dev.deviceId}
+                        initial={{ opacity: 0, height: 0, y: -6 }}
+                        animate={{ opacity: 1, height: 'auto', y: 0 }}
+                        exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                        transition={{ duration: 0.2 }}
+                        className={`flex items-center justify-between min-h-[52px] px-3 py-2 rounded-xl border text-xs transition-colors ${
+                          isCurrent
+                            ? 'bg-teal-50/40 border-l-[3px] border-l-[#0E9AA7] border-t-teal-200/60 border-r-teal-200/60 border-b-teal-200/60 shadow-2xs'
+                            : 'bg-slate-50/70 border-slate-200/60 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {dev.deviceType === 'tablet' ? (
+                            <Tablet className="w-4 h-4 text-purple-600 shrink-0" />
+                          ) : dev.deviceType === 'phone' || dev.platform === 'android' || dev.platform === 'ios' ? (
+                            <Smartphone className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Laptop className="w-4 h-4 text-[#0E9AA7] shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-slate-900 text-[12px] truncate">
+                                {dev.deviceName}
+                              </p>
+                              {dev.platform === 'android' ? (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.2 rounded">
+                                  Android App
+                                </span>
+                              ) : dev.platform === 'ios' ? (
+                                <span className="text-[9px] font-bold text-slate-700 bg-slate-100 border border-slate-200/80 px-1.5 py-0.2 rounded">
+                                  iOS App
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.2 rounded">
+                                  Web
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                              {dev.os} {dev.osVersion ? `v${dev.osVersion}` : ''} • {isCurrent ? 'This device • Active now' : timeAgo}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          {isCurrent ? (
+                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-[#04203F] text-white">
+                              This Device
                             </span>
+                          ) : (
                             <button
                               type="button"
                               onClick={() => {
                                 setSelectedDeviceToSignOut(dev);
                                 setActiveModal('signOutDeviceConfirm');
                               }}
-                              className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded border border-rose-200 transition-colors cursor-pointer"
+                              className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1.5 rounded-lg border border-rose-200 transition-colors cursor-pointer flex items-center gap-1"
                               title="Sign out this device"
                             >
-                              Log out
+                              <LogOut className="w-3 h-3" />
+                              <span>Log out</span>
                             </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               )}
             </div>
-
-            {/* Collapsed Previous Devices (Signed-out and Inactive Devices) */}
-            {previousDevices.length > 0 && (
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowPreviousDevices(!showPreviousDevices)}
-                  className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-100/70 hover:bg-slate-100 border border-slate-200/60 text-slate-600 text-xs font-bold transition-colors cursor-pointer"
-                >
-                  <span className="text-[11px]">Previous devices ({previousDevices.length})</span>
-                  {showPreviousDevices ? (
-                    <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                  )}
-                </button>
-
-                <AnimatePresence>
-                  {showPreviousDevices && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="space-y-1.5 pt-2 overflow-hidden"
-                    >
-                      {previousDevices.map((dev) => {
-                        const ts = dev.lastActive?.toDate ? dev.lastActive.toDate() : (dev.lastActive ? new Date(dev.lastActive) : new Date());
-                        return (
-                          <div
-                            key={dev.deviceId}
-                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/50 text-xs"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              {dev.deviceType === 'tablet' ? (
-                                <Tablet className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              ) : dev.deviceType === 'phone' || dev.platform === 'android' || dev.platform === 'ios' ? (
-                                <Smartphone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              ) : (
-                                <Laptop className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              )}
-                              <div className="min-w-0">
-                                <p className="font-bold text-slate-700 text-[11px] truncate">
-                                  {dev.deviceName}
-                                </p>
-                                <p className="text-[9px] text-slate-400">
-                                  {dev.os} • Last active {ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                </p>
-                              </div>
-                            </div>
-
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
-                              dev.status === 'signed_out'
-                                ? 'bg-slate-200 text-slate-600'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {dev.status === 'signed_out' ? 'Signed out' : 'Inactive'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
           </div>
 
-          {/* Login Activity (Last 20 Logins Accordion / Preview) */}
-          <div className="border-t border-slate-100/80 p-3.5 space-y-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-              Recent Login History (Last 20)
-            </span>
+          {/* Login Activity (Last 60 minutes Timeline) */}
+          <div className="border-t border-slate-100/80 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                Recent Sign-ins (Last 60 min)
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Auto-clears after 1h
+              </span>
+            </div>
 
             {loadingHistory ? (
               <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0E9AA7]" />
-                <span>Loading sign-ins...</span>
+                <span>Loading sign-in history...</span>
               </div>
             ) : loginHistory.length === 0 ? (
-              <p className="text-[11px] text-slate-400 text-center py-2 bg-slate-50 rounded-xl">
-                Current sign-in session active.
-              </p>
+              <div className="text-center py-4 px-3 bg-slate-50/70 rounded-xl border border-dashed border-slate-200/80">
+                <p className="text-[11px] font-medium text-slate-500">No sign-ins in the last hour</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Sign-in activity auto-purges after 60 minutes.</p>
+              </div>
             ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-                {loginHistory.map((lh, idx) => {
-                  const ts = lh.timestamp?.toDate ? lh.timestamp.toDate() : new Date(lh.timestamp);
-                  const isCur = lh.deviceId === currentDeviceId;
-                  return (
-                    <div
-                      key={lh.id || idx}
-                      className="flex items-center justify-between p-2 rounded-lg bg-slate-50/60 border border-slate-100 text-[11px]"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-slate-800 truncate">
-                            {lh.deviceName || lh.deviceModel || 'Web Client'}
-                          </span>
-                          {isCur && (
-                            <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded">
-                              This Device
+              <div className="space-y-2">
+                <div className="relative pl-3 border-l-2 border-slate-200/60 space-y-2.5 my-1">
+                  {loginHistory.slice(0, visibleHistoryCount).map((lh, idx) => {
+                    const ts = lh.timestamp?.toDate ? lh.timestamp.toDate() : new Date(lh.timestamp);
+                    const isCur = lh.deviceId === currentDeviceId;
+                    const formattedTime = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    return (
+                      <div key={lh.id || idx} className="relative flex items-center justify-between text-xs group">
+                        {/* Timeline Dot */}
+                        <div className={`absolute -left-[17px] top-1 w-2 h-2 rounded-full border border-white ${
+                          isCur ? 'bg-[#0E9AA7]' : 'bg-slate-400'
+                        }`} />
+
+                        <div className="min-w-0 pr-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-800 text-[11px] truncate">
+                              {lh.deviceName || lh.deviceModel || 'Web Client'}
                             </span>
-                          )}
-                          {lh.isNewDevice && !isCur && (
-                            <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-amber-100 text-amber-800 rounded">
-                              New Device
-                            </span>
-                          )}
+                            {isCur ? (
+                              <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-teal-100 text-teal-800 rounded">
+                                This Device
+                              </span>
+                            ) : lh.isNewDevice ? (
+                              <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-amber-100 text-amber-800 rounded">
+                                New Device
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {formattedTime} • <span className="capitalize">{lh.platform || 'web'}</span>
+                          </p>
                         </div>
-                        <p className="text-[9px] text-slate-400 font-mono mt-0.5">
-                          {ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} • {ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </p>
                       </div>
-                      <span className="text-[9px] font-semibold text-slate-500 capitalize shrink-0 ml-2">
-                        {lh.platform || 'web'}
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                {loginHistory.length > 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setVisibleHistoryCount(prev => prev === 5 ? loginHistory.length : 5)}
+                    className="w-full text-[11px] font-bold text-[#0E9AA7] hover:text-[#0a7a85] pt-1 text-center cursor-pointer transition-colors"
+                  >
+                    {visibleHistoryCount === 5
+                      ? `Show more (${loginHistory.length - 5} hidden)`
+                      : 'Show less'}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1012,13 +972,13 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
                 triggerHaptic('medium');
                 setActiveModal('logoutAllConfirm');
               }}
-              className="w-full h-[38px] rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full h-[38px] rounded-xl bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 hover:text-rose-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
             >
-              <ShieldAlert className="w-4 h-4 text-rose-600" />
+              <ShieldAlert className="w-4 h-4 text-rose-500" />
               <span>Log Out From All Devices</span>
             </button>
             <p className="text-[10px] text-slate-400 text-center mt-1.5">
-              Revokes refresh tokens on all devices and signs out of this session.
+              Revokes sessions on all other devices and signs you out.
             </p>
           </div>
         </div>
