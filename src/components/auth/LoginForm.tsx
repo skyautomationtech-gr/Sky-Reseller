@@ -26,8 +26,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
   const [securityNotice, setSecurityNotice] = useState('');
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
-  // Check network state
+  // Check network state & remote forced logout message
   useEffect(() => {
+    try {
+      const logoutReason = sessionStorage.getItem('sky_logout_reason');
+      if (logoutReason) {
+        setError(logoutReason);
+        sessionStorage.removeItem('sky_logout_reason');
+        return;
+      }
+    } catch (_) {}
+
     if (!isOnline) {
       setError('You are offline. Please connect to the internet to sign in.');
     } else {

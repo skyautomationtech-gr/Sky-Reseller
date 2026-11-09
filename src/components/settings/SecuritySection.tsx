@@ -27,15 +27,19 @@ import { triggerHaptic } from '../../lib/nativeFeedback';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
 import { 
   fetchUserLoginHistory, 
+  fetchUserDevices,
+  signOutSingleDevice,
+  signOutAllDevices,
   getOrCreateDeviceId, 
-  LoginHistoryItem 
+  LoginHistoryItem,
+  DeviceItem
 } from '../../lib/deviceSecurity';
 import { NeumorphicPinKeypad } from '../common/NeumorphicPinKeypad';
 import { 
-  Shield, Key, Mail, Phone, Lock, Smartphone, Laptop, 
-  CheckCircle2, AlertCircle, Eye, EyeOff, ChevronRight, 
+  Shield, Key, Mail, Phone, Lock, Smartphone, Laptop, Tablet,
+  CheckCircle2, AlertCircle, Eye, EyeOff, ChevronRight, ChevronDown, ChevronUp,
   X, Loader2, Check, ArrowLeft, RefreshCw, AlertTriangle, 
-  ShieldCheck, Fingerprint, Clock, Send, ShieldAlert, Info
+  ShieldCheck, Fingerprint, Clock, Send, ShieldAlert, Info, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useScrollToTop } from '../../utils/scrollToTop';
@@ -57,7 +61,8 @@ type SecurityModalType =
   | 'verifyCurrentPinForAction'
   | 'pinSetup'
   | 'lockTiming'
-  | 'logoutAllConfirm';
+  | 'logoutAllConfirm'
+  | 'signOutDeviceConfirm';
 
 type PinAction = 'change' | 'disable' | 'enable';
 
@@ -99,7 +104,15 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
   const [recentPhoneRequests, setRecentPhoneRequests] = useState<any[]>([]);
   const [loadingPhoneRequests, setLoadingPhoneRequests] = useState(false);
 
-  // 4. Sessions & Login History State
+  // 4. Devices & Sessions State
+  const [activeDevices, setActiveDevices] = useState<DeviceItem[]>([]);
+  const [previousDevices, setPreviousDevices] = useState<DeviceItem[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [showPreviousDevices, setShowPreviousDevices] = useState(false);
+  const [selectedDeviceToSignOut, setSelectedDeviceToSignOut] = useState<DeviceItem | null>(null);
+  const [isSigningOutSingle, setIsSigningOutSingle] = useState(false);
+
+  // 4b. Recent Login History State
   const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [currentDeviceId, setCurrentDeviceId] = useState('');
@@ -146,19 +159,27 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
   useEffect(() => {
     const devId = getOrCreateDeviceId();
     setCurrentDeviceId(devId);
-    loadLoginHistory();
+    loadDevicesAndHistory();
     loadPhoneRequests();
     checkBiometrics();
   }, [user.uid]);
 
-  const loadLoginHistory = async () => {
+  const loadDevicesAndHistory = async () => {
+    setLoadingDevices(true);
     setLoadingHistory(true);
     try {
-      const items = await fetchUserLoginHistory(user.uid);
-      setLoginHistory(items);
+      const [devResult, historyItems] = await Promise.all([
+        fetchUserDevices(user.uid),
+        fetchUserLoginHistory(user.uid),
+      ]);
+      setActiveDevices(devResult.activeDevices);
+      setPreviousDevices(devResult.previousDevices);
+      setCurrentDeviceId(devResult.currentDeviceId);
+      setLoginHistory(historyItems);
     } catch (err) {
-      console.warn('Error loading login history:', err);
+      console.warn('Error loading devices and history:', err);
     } finally {
+      setLoadingDevices(false);
       setLoadingHistory(false);
     }
   };
@@ -535,17 +556,8 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
     triggerHaptic('medium');
 
     try {
-      // 1. Call server API to revoke refresh tokens
-      const res = await fetch('/api/auth/revoke-tokens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        console.warn('Revoke tokens API returned status:', res.status, data);
-      }
+      // 1. Revoke refresh tokens, clear FCM tokens, and mark EVERY device as signed_out
+      await signOutAllDevices(user.uid);
 
       // 2. Audit Log
       await logAuditAction(
@@ -557,35 +569,50 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       );
 
       triggerHaptic('success');
-      showToast('All remote sessions revoked. Signing you out...', 'success');
+      showToast('Signed out from all devices', 'success');
 
       // 3. Clear local states & sign out
       setTimeout(() => {
         onLogout();
-      }, 1000);
+      }, 800);
     } catch (err: any) {
       console.error('Logout all sessions error:', err);
-      showToast(err.message || 'Failed to revoke remote sessions.', 'error');
+      showToast(err.message || 'Failed to logout from all devices. Please retry.', 'error');
     } finally {
       setModalLoading(false);
       setActiveModal(null);
     }
   };
 
-  // Compute active devices in last 30 days
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const activeDevicesMap = new Map<string, LoginHistoryItem>();
+  // ==========================================
+  // SIGN OUT SINGLE DEVICE HANDLER
+  // ==========================================
+  const handleSignOutSingleDevice = async () => {
+    if (!selectedDeviceToSignOut) return;
+    setIsSigningOutSingle(true);
+    triggerHaptic('medium');
 
-  loginHistory.forEach((lh) => {
-    const ts = lh.timestamp?.toDate ? lh.timestamp.toDate().getTime() : new Date(lh.timestamp).getTime();
-    if (ts >= thirtyDaysAgo) {
-      if (!activeDevicesMap.has(lh.deviceId)) {
-        activeDevicesMap.set(lh.deviceId, lh);
-      }
+    try {
+      await signOutSingleDevice(user.uid, selectedDeviceToSignOut.deviceId);
+      await logAuditAction(
+        user.uid,
+        user.fullName || 'Reseller',
+        user.role || 'reseller',
+        'LOGOUT_SINGLE_DEVICE',
+        { deviceId: selectedDeviceToSignOut.deviceId, deviceName: selectedDeviceToSignOut.deviceName }
+      );
+      triggerHaptic('success');
+      showToast(`${selectedDeviceToSignOut.deviceName} signed out.`, 'success');
+      await loadDevicesAndHistory();
+    } catch (err: any) {
+      console.error('Error signing out device:', err);
+      showToast('Failed to sign out device. Please retry.', 'error');
+    } finally {
+      setIsSigningOutSingle(false);
+      setSelectedDeviceToSignOut(null);
+      setActiveModal(null);
     }
-  });
-
-  const activeDevicesList = Array.from(activeDevicesMap.values());
+  };
 
   const getLockTimeoutLabel = (ms: number): string => {
     if (ms <= 0) return 'Immediately';
@@ -746,35 +773,40 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
          ======================================================== */}
       <div className="space-y-1">
         <div className="flex items-center justify-between px-1">
-          <span className={DT.settingsGroupLabel}>SESSIONS & ACTIVE DEVICES</span>
+          <span className={`${DT.settingsGroupLabel} truncate mr-2`}>SESSIONS & ACTIVE DEVICES</span>
           <button
             type="button"
-            onClick={loadLoginHistory}
-            className="text-[10px] text-slate-400 font-bold hover:text-slate-600 flex items-center gap-1"
+            onClick={loadDevicesAndHistory}
+            className="text-[11px] text-slate-500 font-bold hover:text-slate-700 flex items-center gap-1.5 shrink-0 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-slate-100 transition-colors"
           >
-            <RefreshCw className={`w-3 h-3 ${loadingHistory ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3 h-3 ${loadingDevices || loadingHistory ? 'animate-spin text-[#0E9AA7]' : ''}`} />
             <span>Refresh</span>
           </button>
         </div>
 
         <div className={DT.settingsGroupCard}>
-          {/* Active Devices (Last 30 Days) */}
+          {/* Active Devices (Only Active Sessions) */}
           <div className="p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Recognized Devices ({activeDevicesList.length || 1})
+                Active Devices ({activeDevices.length})
               </span>
-              <span className="text-[10px] text-slate-400">Past 30 days</span>
+              <span className="text-[10px] text-slate-400">Real-time sessions</span>
             </div>
 
             <div className="space-y-2">
-              {activeDevicesList.length === 0 ? (
-                // Current device fallback
+              {loadingDevices ? (
+                <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0E9AA7]" />
+                  <span>Loading device sessions...</span>
+                </div>
+              ) : activeDevices.length === 0 ? (
+                // Current device fallback if empty
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-xs">
                   <div className="flex items-center gap-2">
                     <Laptop className="w-4 h-4 text-blue-600" />
                     <div>
-                      <p className="font-bold text-slate-800 text-[12px]">Current Device Session</p>
+                      <p className="font-bold text-slate-800 text-[12px]">Current Session</p>
                       <p className="text-[10px] text-slate-400 font-mono">Web / Mobile Browser</p>
                     </div>
                   </div>
@@ -783,9 +815,9 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
                   </span>
                 </div>
               ) : (
-                activeDevicesList.map((dev) => {
-                  const isCurrent = dev.deviceId === currentDeviceId;
-                  const ts = dev.timestamp?.toDate ? dev.timestamp.toDate() : new Date(dev.timestamp);
+                activeDevices.map((dev) => {
+                  const isCurrent = dev.isCurrent || dev.deviceId === currentDeviceId;
+                  const ts = dev.lastActive?.toDate ? dev.lastActive.toDate() : (dev.lastActive ? new Date(dev.lastActive) : new Date());
                   return (
                     <div
                       key={dev.deviceId}
@@ -796,32 +828,60 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        {dev.platform === 'android' ? (
+                        {dev.deviceType === 'tablet' ? (
+                          <Tablet className="w-4 h-4 text-purple-600 shrink-0" />
+                        ) : dev.deviceType === 'phone' || dev.platform === 'android' || dev.platform === 'ios' ? (
                           <Smartphone className="w-4 h-4 text-emerald-600 shrink-0" />
-                        ) : dev.platform === 'ios' ? (
-                          <Smartphone className="w-4 h-4 text-slate-700 shrink-0" />
                         ) : (
                           <Laptop className="w-4 h-4 text-blue-600 shrink-0" />
                         )}
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-900 text-[12px] truncate">
-                            {dev.deviceModel || 'Browser Device'}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {dev.platform.toUpperCase()} • v{dev.appVersion || '1.0'} • Last active {ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-slate-900 text-[12px] truncate">
+                              {dev.deviceName}
+                            </p>
+                            {dev.platform === 'android' ? (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.2 rounded">
+                                Android App
+                              </span>
+                            ) : dev.platform === 'ios' ? (
+                              <span className="text-[9px] font-bold text-slate-700 bg-slate-100 border border-slate-200/80 px-1.5 py-0.2 rounded">
+                                iOS App
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.2 rounded">
+                                Web
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                            {dev.os} {dev.osVersion} • v{dev.appVersion || '2.4.0'} • Last active {ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                           </p>
                         </div>
                       </div>
 
-                      <div className="shrink-0 ml-2">
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
                         {isCurrent ? (
                           <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded bg-[#04203F] text-white">
                             This Device
                           </span>
                         ) : (
-                          <span className="text-[9px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded">
-                            Active
-                          </span>
+                          <>
+                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                              Active
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDeviceToSignOut(dev);
+                                setActiveModal('signOutDeviceConfirm');
+                              }}
+                              className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded border border-rose-200 transition-colors cursor-pointer"
+                              title="Sign out this device"
+                            >
+                              Log out
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -829,6 +889,71 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
                 })
               )}
             </div>
+
+            {/* Collapsed Previous Devices (Signed-out and Inactive Devices) */}
+            {previousDevices.length > 0 && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPreviousDevices(!showPreviousDevices)}
+                  className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-100/70 hover:bg-slate-100 border border-slate-200/60 text-slate-600 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <span className="text-[11px]">Previous devices ({previousDevices.length})</span>
+                  {showPreviousDevices ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {showPreviousDevices && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-1.5 pt-2 overflow-hidden"
+                    >
+                      {previousDevices.map((dev) => {
+                        const ts = dev.lastActive?.toDate ? dev.lastActive.toDate() : (dev.lastActive ? new Date(dev.lastActive) : new Date());
+                        return (
+                          <div
+                            key={dev.deviceId}
+                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/50 text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              {dev.deviceType === 'tablet' ? (
+                                <Tablet className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              ) : dev.deviceType === 'phone' || dev.platform === 'android' || dev.platform === 'ios' ? (
+                                <Smartphone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              ) : (
+                                <Laptop className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-bold text-slate-700 text-[11px] truncate">
+                                  {dev.deviceName}
+                                </p>
+                                <p className="text-[9px] text-slate-400">
+                                  {dev.os} • Last active {ts.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                </p>
+                              </div>
+                            </div>
+
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                              dev.status === 'signed_out'
+                                ? 'bg-slate-200 text-slate-600'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {dev.status === 'signed_out' ? 'Signed out' : 'Inactive'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
 
           {/* Login Activity (Last 20 Logins Accordion / Preview) */}
@@ -857,9 +982,9 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
                       className="flex items-center justify-between p-2 rounded-lg bg-slate-50/60 border border-slate-100 text-[11px]"
                     >
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-slate-800 truncate">
-                            {lh.deviceModel || 'Web Client'}
+                            {lh.deviceName || lh.deviceModel || 'Web Client'}
                           </span>
                           {isCur && (
                             <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded">
@@ -1770,6 +1895,55 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* ========================================================
+          MODAL 8: SIGN OUT SINGLE DEVICE CONFIRM
+         ======================================================== */}
+      <AnimatePresence>
+        {activeModal === 'signOutDeviceConfirm' && selectedDeviceToSignOut && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[20px] max-w-xs w-full p-5 space-y-3 shadow-2xl border border-slate-100 text-center"
+            >
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 border border-rose-200/80 flex items-center justify-center mx-auto">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-[14px] font-bold text-[#04203F]">Sign Out Device?</h4>
+                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                  Are you sure you want to sign out <strong className="text-slate-700">{selectedDeviceToSignOut.deviceName}</strong>? This session will be terminated and push notifications removed.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveModal(null);
+                    setSelectedDeviceToSignOut(null);
+                  }}
+                  disabled={isSigningOutSingle}
+                  className="flex-1 h-[36px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignOutSingleDevice}
+                  disabled={isSigningOutSingle}
+                  className="flex-1 h-[36px] rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isSigningOutSingle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Sign Out</span>}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+

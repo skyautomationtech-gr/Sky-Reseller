@@ -19,6 +19,7 @@ import { OTP_REQUIRED_ROLES } from './config/authSecurity';
 import { checkSuperAdminOtpStatus, clearSuperAdminOtpSessionCall } from './lib/superAdminAuth';
 import { AppLockScreen } from './components/common/AppLockScreen';
 import { logUserSession } from './lib/auditLogger';
+import { verifyCurrentDeviceSession, setupSessionEnforcementListener } from './lib/deviceSecurity';
 import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from './lib/versionService';
 import { WhatsNewModal } from './components/version/WhatsNewModal';
 import { SplashLoadingScreen } from './components/common/SplashLoadingScreen';
@@ -143,11 +144,83 @@ function AppContent() {
     }
   };
 
+  const handleForceLogout = async (reason?: string) => {
+    const finalReason = reason || 'You were signed out from another device';
+    console.warn('[Security] Triggering immediate forced sign-out:', finalReason);
+    try {
+      sessionStorage.setItem('sky_logout_reason', finalReason);
+      if (auth.currentUser?.uid) {
+        localStorage.removeItem('sky_user_profile_' + auth.currentUser.uid);
+        sessionStorage.removeItem(`sky_app_unlocked_${auth.currentUser.uid}`);
+        sessionStorage.removeItem(`sky_session_auth_time_${auth.currentUser.uid}`);
+      }
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Error during forced sign-out:', err);
+    } finally {
+      setUserProfile(null);
+      setFirebaseUser(null);
+      setIsSuperAdminOtpPending(false);
+      setShowLockScreen(false);
+    }
+  };
+
+  // Live session enforcement listener (kicks device out when signed out from another device or sessionsValidFrom changes)
+  useEffect(() => {
+    if (!userProfile?.uid) return;
+
+    const unsubListener = setupSessionEnforcementListener(userProfile.uid, (reason) => {
+      handleForceLogout(reason);
+    });
+
+    const handleCustomForceLogout = (e: any) => {
+      handleForceLogout(e?.detail?.reason);
+    };
+    window.addEventListener('sky_force_logout', handleCustomForceLogout);
+
+    return () => {
+      unsubListener();
+      window.removeEventListener('sky_force_logout', handleCustomForceLogout);
+    };
+  }, [userProfile?.uid]);
+
   // App background & resume listener
   useEffect(() => {
     if (!userProfile || userProfile.status !== 'approved') return;
 
-    checkIfLockNeeded();
+    const verifySessionState = async () => {
+      if (auth.currentUser) {
+        try {
+          // Force token refresh from server to catch token revocations
+          await auth.currentUser.getIdToken(true);
+
+          // Force reading device document and sessionsValidFrom from SERVER
+          const check = await verifyCurrentDeviceSession(auth.currentUser.uid);
+          if (!check.valid) {
+            if (check.isOffline) {
+              console.warn('[Security] Server cannot be reached (offline) - retaining offline state');
+              return;
+            }
+            await handleForceLogout(check.reason || 'You were signed out from another device');
+            return;
+          }
+        } catch (err: any) {
+          if (
+            err?.code === 'auth/user-token-revoked' ||
+            err?.code === 'auth/user-disabled' ||
+            err?.message?.includes('revoked') ||
+            err?.message?.includes('expired')
+          ) {
+            console.warn('[Security] Token revoked on resume. Forcing sign-out...');
+            await handleForceLogout('You were signed out from another device');
+            return;
+          }
+        }
+      }
+      checkIfLockNeeded();
+    };
+
+    verifySessionState();
 
     let appListenerHandle: any = null;
     let isSubscribed = true;
@@ -157,7 +230,7 @@ function AppContent() {
         if (!isActive) {
           localStorage.setItem('appBackgroundedAt', Date.now().toString());
         } else {
-          checkIfLockNeeded();
+          verifySessionState();
         }
       }).then((handle) => {
         if (isSubscribed) {
@@ -176,7 +249,7 @@ function AppContent() {
       if (document.hidden) {
         localStorage.setItem('appBackgroundedAt', Date.now().toString());
       } else {
-        checkIfLockNeeded();
+        verifySessionState();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -352,6 +425,36 @@ function AppContent() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setFirebaseUser(currentUser);
       if (currentUser) {
+        // Remote device session revocation check
+        try {
+          // Force token refresh from server
+          await currentUser.getIdToken(true);
+
+          const sessionCheck = await verifyCurrentDeviceSession(currentUser.uid);
+          if (!sessionCheck.valid) {
+            if (sessionCheck.isOffline) {
+              console.warn('[Security] Remote verification deferred (device offline)');
+            } else {
+              console.warn('[Security] Remote device session was revoked/signed out. Forcing sign-out...');
+              await handleForceLogout(sessionCheck.reason || 'You were signed out from another device');
+              setAuthLoading(false);
+              return;
+            }
+          }
+        } catch (tokenErr: any) {
+          if (
+            tokenErr?.code === 'auth/user-token-revoked' ||
+            tokenErr?.code === 'auth/user-disabled' ||
+            tokenErr?.message?.includes('revoked') ||
+            tokenErr?.message?.includes('expired')
+          ) {
+            console.warn('[Security] Refresh tokens revoked. Forcing sign-out...');
+            await handleForceLogout('You were signed out from another device');
+            setAuthLoading(false);
+            return;
+          }
+        }
+
         const profile = await fetchOrCreateUserProfile(currentUser);
 
         // Mobile APK Security Check: Only resellers are permitted on mobile app
@@ -380,6 +483,11 @@ function AppContent() {
           registerPushNotificationListeners(
             profile.uid,
             (payload) => {
+              if (payload.data?.type === 'force_logout') {
+                console.warn('[Security] FCM force_logout message received in foreground. Signing out...');
+                handleForceLogout('You were signed out from another device');
+                return;
+              }
               setActivePushBanner({
                 id: Date.now().toString(),
                 title: payload.title,
@@ -388,6 +496,11 @@ function AppContent() {
               });
             },
             (data) => {
+              if (data?.type === 'force_logout') {
+                console.warn('[Security] FCM force_logout message action tapped. Signing out...');
+                handleForceLogout('You were signed out from another device');
+                return;
+              }
               handlePushActionNavigation(data);
             }
           );

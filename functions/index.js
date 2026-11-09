@@ -1549,37 +1549,216 @@ exports.clearSuperAdminOtpSession = functions.https.onCall(async (data, context)
   return { success: true };
 });
 
+// In-memory rate limiting map for logout actions (key: uid, value: lastActionTimestampMs)
+const logoutRateLimits = new Map();
+
 /**
- * 12. Revoke All User Sessions (Callable)
- * Revokes refresh tokens via Firebase Admin Auth for the authenticated caller.
+ * 12. logoutDevice(deviceId) (Callable)
+ * Marks a specific device as signed_out, sends a high-priority force_logout FCM data message,
+ * and clears the device token.
  */
-exports.revokeAllUserSessions = functions.https.onCall(async (data, context) => {
+exports.logoutDevice = functions.https.onCall(async (data, context) => {
   const uid = context.auth?.uid;
   if (!uid) {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
   }
 
-  try {
-    await admin.auth().revokeRefreshTokens(uid);
-    console.log(`[Security] Revoked all refresh tokens for uid: ${uid}`);
+  const deviceId = data?.deviceId;
+  if (!deviceId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Device ID is required.');
+  }
 
-    // Audit log
+  // Rate Limiting: 3 seconds per user
+  const now = Date.now();
+  const lastAction = logoutRateLimits.get(`${uid}_single`) || 0;
+  if (now - lastAction < 3000) {
+    throw new functions.https.HttpsError('resource-exhausted', 'Please wait a few seconds before another logout action.');
+  }
+  logoutRateLimits.set(`${uid}_single`, now);
+
+  try {
+    const devRef = admin.firestore().collection('users').doc(uid).collection('devices').doc(deviceId);
+    const devSnap = await devRef.get();
+
+    let removedFcmToken = null;
+    let devName = 'Unknown Device';
+
+    if (devSnap.exists) {
+      const devData = devSnap.data();
+      removedFcmToken = devData.fcmToken || null;
+      devName = devData.deviceName || devName;
+
+      await devRef.update({
+        status: 'signed_out',
+        fcmToken: null,
+        signedOutAt: admin.firestore.FieldValue.serverTimestamp(),
+        signedOutBy: uid,
+      });
+    }
+
+    // Send high-priority FCM DATA message { type: "force_logout", deviceId }
+    if (removedFcmToken) {
+      const dataMessage = {
+        data: {
+          type: 'force_logout',
+          deviceId: String(deviceId),
+          timestamp: String(now),
+        },
+      };
+      const options = {
+        priority: 'high',
+        contentAvailable: true,
+      };
+
+      try {
+        await admin.messaging().sendToDevice(removedFcmToken, dataMessage, options);
+        console.log(`[Security] Sent force_logout data message to device ${deviceId}`);
+      } catch (fcmErr) {
+        console.warn(`[Security] Could not deliver force_logout FCM data message to ${deviceId}:`, fcmErr);
+      }
+
+      // Remove from user document fcmTokens array
+      await admin.firestore().collection('users').doc(uid).update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(removedFcmToken),
+      }).catch(() => {});
+    }
+
+    // Security audit log
     await admin.firestore().collection('auditLogs').add({
       userId: uid,
-      action: 'REVOKE_ALL_SESSIONS',
+      action: 'LOGOUT_DEVICE',
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       details: {
-        reason: 'User requested remote logout of all devices',
+        deviceId,
+        deviceName: devName,
+        signedOutBy: uid,
+        reason: 'User requested remote device sign-out',
       },
     });
 
     return {
       success: true,
-      message: 'All device refresh tokens revoked successfully.',
+      message: 'Device session signed out successfully.',
+      deviceId,
     };
   } catch (err) {
-    console.error('Error revoking refresh tokens:', err);
-    throw new functions.https.HttpsError('internal', err.message || 'Failed to revoke sessions.');
+    console.error('Error logging out device:', err);
+    throw new functions.https.HttpsError('internal', err.message || 'Failed to logout device.');
   }
 });
+
+/**
+ * 13. logoutAllDevices() (Callable)
+ * Revokes refresh tokens via Firebase Admin Auth, invalidates sessions via sessionsValidFrom,
+ * marks EVERY device record as signed_out, sends a high-priority force_logout FCM data message
+ * plus a push notification alert, and clears all fcmTokens.
+ */
+exports.logoutAllDevices = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  }
+
+  // Rate Limiting: 3 seconds per user
+  const now = Date.now();
+  const lastAction = logoutRateLimits.get(`${uid}_all`) || 0;
+  if (now - lastAction < 3000) {
+    throw new functions.https.HttpsError('resource-exhausted', 'Please wait a few seconds before another logout action.');
+  }
+  logoutRateLimits.set(`${uid}_all`, now);
+
+  try {
+    // 1. Revoke refresh tokens via Firebase Admin Auth
+    await admin.auth().revokeRefreshTokens(uid);
+    console.log(`[Security] Revoked all refresh tokens for uid: ${uid}`);
+
+    // 2. Fetch all registered devices to collect tokens and update status
+    const devicesSnap = await admin.firestore().collection('users').doc(uid).collection('devices').get();
+    const batch = admin.firestore().batch();
+    const allTokens = new Set();
+
+    devicesSnap.docs.forEach((devDoc) => {
+      const devData = devDoc.data();
+      if (devData.fcmToken) {
+        allTokens.add(devData.fcmToken);
+      }
+      batch.update(devDoc.ref, {
+        status: 'signed_out',
+        fcmToken: null,
+        signedOutAt: admin.firestore.FieldValue.serverTimestamp(),
+        signedOutBy: uid,
+      });
+    });
+
+    // Also collect any remaining tokens stored directly on user doc
+    const userDocRef = admin.firestore().collection('users').doc(uid);
+    const userSnap = await userDocRef.get();
+    if (userSnap.exists && Array.isArray(userSnap.data()?.fcmTokens)) {
+      userSnap.data().fcmTokens.forEach((t) => {
+        if (t) allTokens.add(t);
+      });
+    }
+
+    // 3. Set users/{uid}.sessionsValidFrom = serverTimestamp and wipe tokens
+    batch.update(userDocRef, {
+      sessionsValidFrom: admin.firestore.FieldValue.serverTimestamp(),
+      fcmTokens: [],
+      fcmToken: null,
+    });
+
+    await batch.commit();
+
+    // 4. Send high-priority force_logout data message + push notification to all device tokens
+    const tokenList = Array.from(allTokens);
+    if (tokenList.length > 0) {
+      const payload = {
+        notification: {
+          title: 'Security Alert: Signed Out',
+          body: 'You were signed out from all devices.',
+        },
+        data: {
+          type: 'force_logout',
+          reason: 'logout_all',
+          timestamp: String(now),
+        },
+      };
+      const options = {
+        priority: 'high',
+        contentAvailable: true,
+      };
+
+      try {
+        await admin.messaging().sendToDevice(tokenList, payload, options);
+        console.log(`[Security] Dispatched logout_all alerts to ${tokenList.length} device tokens.`);
+      } catch (fcmErr) {
+        console.warn('[Security] Error sending logout_all push notification:', fcmErr);
+      }
+    }
+
+    // 5. Security audit log
+    await admin.firestore().collection('auditLogs').add({
+      userId: uid,
+      action: 'LOGOUT_ALL_DEVICES',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      details: {
+        signedOutBy: uid,
+        reason: 'User requested remote logout of all devices',
+        devicesCount: devicesSnap.size,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'All devices signed out and sessions revoked.',
+    };
+  } catch (err) {
+    console.error('Error logging out all devices:', err);
+    throw new functions.https.HttpsError('internal', err.message || 'Failed to logout all devices.');
+  }
+});
+
+// Backward-compatible aliases for legacy callers
+exports.revokeSingleDeviceSession = exports.logoutDevice;
+exports.revokeAllUserSessions = exports.logoutAllDevices;
+
 

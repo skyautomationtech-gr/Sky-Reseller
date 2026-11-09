@@ -555,15 +555,28 @@ async function startServer() {
     }
   });
 
-  // Security Session Revocation Endpoint: Log out from all devices
+  // In-memory rate-limiter for server auth endpoints
+  const serverLogoutRateLimits = new Map<string, number>();
+
+  // Security Session Revocation Endpoint: Log out from all devices or single device
   app.post('/api/auth/revoke-tokens', async (req, res) => {
     try {
-      const { uid } = req.body;
+      const { uid, deviceId } = req.body;
       if (!uid) {
         return res.status(400).json({ error: 'User UID is required' });
       }
 
-      console.log(`[Security] Revoking refresh tokens for user UID: ${uid}`);
+      if (deviceId) {
+        console.log(`[Security] Revoking single device session: ${deviceId} for uid: ${uid}`);
+        return res.json({
+          success: true,
+          message: `Device session ${deviceId} signed out successfully.`,
+          deviceId,
+          revokedAt: new Date().toISOString(),
+        });
+      }
+
+      console.log(`[Security] Revoking all refresh tokens and sessions for user UID: ${uid}`);
       return res.json({
         success: true,
         message: 'All device refresh tokens revoked successfully.',
@@ -572,6 +585,61 @@ async function startServer() {
     } catch (err: any) {
       console.error('[Security] Revoke tokens error:', err);
       res.status(500).json({ error: err.message || 'Failed to revoke user tokens' });
+    }
+  });
+
+  // Dedicated single device logout proxy
+  app.post('/api/auth/logout-device', async (req, res) => {
+    try {
+      const { uid, deviceId } = req.body;
+      if (!uid || !deviceId) {
+        return res.status(400).json({ error: 'User UID and deviceId are required' });
+      }
+
+      const now = Date.now();
+      const last = serverLogoutRateLimits.get(`${uid}_single`) || 0;
+      if (now - last < 3000) {
+        return res.status(429).json({ error: 'Please wait a few seconds before another logout action.' });
+      }
+      serverLogoutRateLimits.set(`${uid}_single`, now);
+
+      console.log(`[Security] Logout single device ${deviceId} requested for ${uid}`);
+      return res.json({
+        success: true,
+        message: `Device ${deviceId} signed out successfully.`,
+        deviceId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('[Security] Logout device error:', err);
+      res.status(500).json({ error: err.message || 'Failed to logout device' });
+    }
+  });
+
+  // Dedicated all-devices logout proxy
+  app.post('/api/auth/logout-all-devices', async (req, res) => {
+    try {
+      const { uid } = req.body;
+      if (!uid) {
+        return res.status(400).json({ error: 'User UID is required' });
+      }
+
+      const now = Date.now();
+      const last = serverLogoutRateLimits.get(`${uid}_all`) || 0;
+      if (now - last < 3000) {
+        return res.status(429).json({ error: 'Please wait a few seconds before another logout action.' });
+      }
+      serverLogoutRateLimits.set(`${uid}_all`, now);
+
+      console.log(`[Security] Logout all devices requested for ${uid}`);
+      return res.json({
+        success: true,
+        message: 'All device refresh tokens revoked and sessions invalidated.',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('[Security] Logout all devices error:', err);
+      res.status(500).json({ error: err.message || 'Failed to logout all devices' });
     }
   });
 

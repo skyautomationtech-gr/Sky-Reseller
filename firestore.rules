@@ -61,6 +61,27 @@ service cloud.firestore {
         isOtpVerified();
     }
 
+    // Session validity check:
+    // Compares request.auth.token.auth_time (in seconds) with user's sessionsValidFrom (in milliseconds).
+    // Any session started before sessionsValidFrom is deemed revoked.
+    // Note: Calling get() on the user document introduces 1 extra read on checked operations,
+    // which is why this check is strictly applied to writes and the most sensitive operations.
+    function isSessionValid() {
+      return isSignedIn() && (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        !('sessionsValidFrom' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom == null ||
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom is timestamp &&
+          (request.auth.token.auth_time * 1000) >= get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom.toMillis()
+        ) ||
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom is int &&
+          (request.auth.token.auth_time * 1000) >= get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sessionsValidFrom
+        )
+      );
+    }
+
     // Users collection rules
     match /users/{userId} {
       allow read, list: if isSignedIn();
@@ -76,17 +97,19 @@ service cloud.firestore {
           request.resource.data.role in ['reseller', 'customer'] &&
           request.resource.data.status == 'pending' &&
           !request.resource.data.keys().hasAny([
-            'rejectReason', 'suspensionType', 'approvedAt'
+            'rejectReason', 'suspensionType', 'approvedAt', 'sessionsValidFrom'
           ])
         )
       );
 
       // Updating users: Super Admin can update all; Admins can update resellers; Resellers can update basic profile
+      // sessionsValidFrom is strictly immutable from the client (only Cloud Functions/Admin Auth can set it)
       allow update: if isSignedIn() && (
-        isSuperAdmin() ||
+        (isSuperAdmin() && isSessionValid()) ||
         (request.auth.uid == userId && isSuperAdminEmail()) ||
         (
           isAdmin() &&
+          isSessionValid() &&
           resource.data.role != 'admin' &&
           resource.data.role != 'super_admin' &&
           request.resource.data.role != 'admin' &&
@@ -94,8 +117,9 @@ service cloud.firestore {
         ) ||
         (
           request.auth.uid == userId &&
+          isSessionValid() &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'role', 'status', 'resellerId', 'emailVerified', 'rejectReason', 'suspensionType', 'approvedAt'
+            'role', 'status', 'resellerId', 'emailVerified', 'rejectReason', 'suspensionType', 'approvedAt', 'sessionsValidFrom'
           ])
         )
       );
@@ -108,6 +132,15 @@ service cloud.firestore {
         allow read, list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
         allow create: if isSignedIn() && request.auth.uid == userId;
         allow update, delete: if false;
+      }
+
+      // Devices subcollection: user can manage their devices, Admin can view/revoke
+      // Client cannot alter other users' device records
+      match /devices/{deviceId} {
+        allow read, list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+        allow create, update, delete: if isSignedIn() && (
+          (request.auth.uid == userId && isSessionValid()) || isAdmin()
+        );
       }
     }
 
@@ -123,35 +156,35 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Orders collection rules (Only approved users can create)
+    // Orders collection rules (Only approved users with valid non-revoked session can create)
     match /orders/{orderId} {
       allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
-      allow create: if isApproved();
-      allow update: if isAdmin();
+      allow create: if isApproved() && isSessionValid();
+      allow update: if isAdmin() && isSessionValid();
       // Deleting orders is strictly restricted to verified Super Admin
-      allow delete: if isSuperAdmin();
+      allow delete: if isSuperAdmin() && isSessionValid();
     }
 
     // Wallets & Transactions
     match /wallets/{walletId} {
       allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || request.auth.uid == walletId || isAdmin());
-      allow write: if isApproved() || isAdmin();
+      allow write: if (isApproved() || isAdmin()) && isSessionValid();
     }
 
     match /transactions/{transactionId} {
       allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
-      allow create: if isApproved() || isAdmin();
-      allow update: if isAdmin();
+      allow create: if (isApproved() || isAdmin()) && isSessionValid();
+      allow update: if isAdmin() && isSessionValid();
       // Deleting transactions is strictly restricted to verified Super Admin
-      allow delete: if isSuperAdmin();
+      allow delete: if isSuperAdmin() && isSessionValid();
     }
 
     // Withdrawal Requests: Approvals require Admin/SuperAdmin; Deleting requires Super Admin
     match /withdrawalRequests/{requestId} {
       allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
-      allow create: if isApproved();
-      allow update: if isSuperAdmin() || isAdmin();
-      allow delete: if isSuperAdmin();
+      allow create: if isApproved() && isSessionValid();
+      allow update: if (isSuperAdmin() || isAdmin()) && isSessionValid();
+      allow delete: if isSuperAdmin() && isSessionValid();
     }
 
     // Commission Settings: Strictly Super Admin only
@@ -174,9 +207,9 @@ service cloud.firestore {
     // Support Tickets (Only approved)
     match /supportTickets/{ticketId} {
       allow read, list: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
-      allow create: if isApproved();
-      allow update: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin());
-      allow delete: if isAdmin();
+      allow create: if isApproved() && isSessionValid();
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.userId || request.auth.uid == resource.data.resellerId || isAdmin()) && isSessionValid();
+      allow delete: if isAdmin() && isSessionValid();
     }
 
     // Product Reviews (Only approved)
