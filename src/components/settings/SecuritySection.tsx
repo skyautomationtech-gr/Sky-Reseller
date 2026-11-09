@@ -42,7 +42,7 @@ import {
   ShieldCheck, Fingerprint, Clock, Send, ShieldAlert, Info, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useScrollToTop } from '../../utils/scrollToTop';
+import { PageHeader } from '../common/PageHeader';
 
 interface SecuritySectionProps {
   user: UserProfile;
@@ -51,6 +51,7 @@ interface SecuritySectionProps {
   onRefreshUser?: () => void;
   onLogout: () => void;
   onBack?: () => void;
+  hideHeader?: boolean;
 }
 
 type SecurityModalType = 
@@ -73,6 +74,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
   onRefreshUser,
   onLogout,
   onBack,
+  hideHeader = false,
 }) => {
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeModal, setActiveModal] = useState<SecurityModalType>(null);
@@ -647,23 +649,14 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 1. Header with Breadcrumb Back */}
-      <div className="flex items-center gap-2 pt-1">
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="w-8 h-8 rounded-xl bg-white/80 border border-white/80 text-slate-700 flex items-center justify-center hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Back to Settings"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-        )}
-        <div>
-          <h2 className={DT.pageTitle}>Security & Access</h2>
-          <p className={DT.pageSubtitle}>Credentials, app lock, active sessions & devices</p>
-        </div>
-      </div>
+      {/* 1. Header with Breadcrumb Back (Shown only when not embedded in a parent with a header) */}
+      {!hideHeader && (
+        <PageHeader
+          title="Security"
+          subtitle="Password, PIN lock & active sessions"
+          onBack={onBack}
+        />
+      )}
 
       {/* ========================================================
           GROUP 1: SIGN-IN

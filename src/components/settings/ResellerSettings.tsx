@@ -38,7 +38,7 @@ import { HelpSupportSection } from './HelpSupportSection';
 import { PrivacyDataSection } from './PrivacyDataSection';
 import { SectionPlaceholder } from './SectionPlaceholder';
 import { triggerHaptic } from '../../lib/nativeFeedback';
-import { useScrollToTop } from '../../utils/scrollToTop';
+import { PageHeader } from '../common/PageHeader';
 
 export interface ResellerSettingsProps {
   user: UserProfile;
@@ -47,6 +47,8 @@ export interface ResellerSettingsProps {
   onOpenLockedModal?: (featureName?: string) => void;
   initialSection?: 'menu' | 'account' | 'payout' | 'security' | 'notifications' | 'preferences' | 'version' | 'info' | 'support' | 'privacy';
   onNavigateTab?: (tab: string) => void;
+  hideHeader?: boolean;
+  onSectionChange?: (section: string) => void;
 }
 
 export const ResellerSettings: React.FC<ResellerSettingsProps> = ({ 
@@ -56,12 +58,20 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
   onOpenLockedModal,
   initialSection = 'menu',
   onNavigateTab,
+  hideHeader = false,
+  onSectionChange,
 }) => {
   const [activeSection, setActiveSection] = useState<'menu' | 'account' | 'payout' | 'security' | 'notifications' | 'preferences' | 'version' | 'info' | 'support' | 'privacy' | 'actions'>(initialSection);
   const [selectedPolicyKey, setSelectedPolicyKey] = useState<string | null>(null);
 
   // Instantly reset scroll to top before paint on any sub-page or root settings change
   useScrollToTop([activeSection, selectedPolicyKey]);
+
+  useEffect(() => {
+    if (onSectionChange) {
+      onSectionChange(activeSection);
+    }
+  }, [activeSection, onSectionChange]);
 
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -918,52 +928,44 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
         </div>
       )}
 
-      {/* Sticky Header Bar for Drill-Down Sections */}
-      {activeSection !== 'menu' && (
-        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-white/80 px-3 py-2.5 flex items-center gap-2.5 shadow-2xs -mx-1 sm:mx-0 sm:rounded-2xl mb-3.5">
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              if (activeSection === 'info' && selectedPolicyKey !== null) {
-                setSelectedPolicyKey(null);
-              } else if (activeSection === 'support' && supportView !== 'menu') {
-                setSupportView('menu');
-              } else {
-                setActiveSection('menu');
-              }
-            }}
-            className="w-9 h-9 rounded-xl bg-white hover:bg-slate-50 text-[#04203F] border border-slate-200/80 shadow-2xs flex items-center justify-center transition-all cursor-pointer active:scale-95 shrink-0 min-h-[36px]"
-            title="Back to Settings"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-[16px] font-bold text-[#04203F] leading-tight truncate">
-              {activeSection === 'account' && 'Account & Profile'}
-              {activeSection === 'payout' && 'Payout Settings'}
-              {activeSection === 'security' && 'Security'}
-              {activeSection === 'notifications' && 'Notifications'}
-              {activeSection === 'preferences' && 'App Preferences'}
-              {activeSection === 'version' && 'App & Version'}
-              {activeSection === 'info' && 'Account Information'}
-              {activeSection === 'support' && 'Help & Support'}
-              {activeSection === 'privacy' && 'Privacy & Data'}
-              {activeSection === 'actions' && 'Account Actions'}
-            </h2>
-            <p className="text-[11px] font-medium text-slate-500 truncate leading-tight mt-0.5">
-              {activeSection === 'account' && 'Personal information, shop profile, and contact details'}
-              {activeSection === 'payout' && 'bKash, Nagad, and Bank payout methods'}
-              {activeSection === 'security' && 'Login password, 4-digit PIN lock, and security history'}
-              {activeSection === 'notifications' && 'Order alerts, announcements, sound, and push preferences'}
-              {activeSection === 'preferences' && 'UI language, dark/light appearance, and display'}
-              {activeSection === 'version' && 'Release updates, system build, and changelog'}
-              {activeSection === 'info' && 'Terms of service, reseller code of conduct, and policies'}
-              {activeSection === 'support' && 'Live chat, helpdesk tickets, and FAQs'}
-              {activeSection === 'privacy' && 'Data storage, privacy permissions, and session logs'}
-              {activeSection === 'actions' && 'Session sign out and account lifecycle'}
-            </p>
-          </div>
-        </div>
+      {/* Sticky Header Bar for Drill-Down Sections (Only when not embedded in parent container) */}
+      {activeSection !== 'menu' && !hideHeader && (
+        <PageHeader
+          title={
+            activeSection === 'account' ? 'Account & Profile' :
+            activeSection === 'payout' ? 'Payout Settings' :
+            activeSection === 'security' ? 'Security' :
+            activeSection === 'notifications' ? 'Notifications' :
+            activeSection === 'preferences' ? 'App Preferences' :
+            activeSection === 'version' ? 'App & Version' :
+            activeSection === 'info' ? (selectedPolicyKey ? 'Policy Document' : 'Account Information') :
+            activeSection === 'support' ? (supportView !== 'menu' ? 'Helpdesk Tickets' : 'Help & Support') :
+            activeSection === 'privacy' ? 'Privacy & Data' :
+            activeSection === 'actions' ? 'Account Actions' : 'Reseller Settings'
+          }
+          subtitle={
+            activeSection === 'account' ? 'Personal information, shop profile & contact details' :
+            activeSection === 'payout' ? 'bKash, Nagad, and Bank payout methods' :
+            activeSection === 'security' ? 'Password, PIN lock & active sessions' :
+            activeSection === 'notifications' ? 'Order alerts, sound & push preferences' :
+            activeSection === 'preferences' ? 'Display density, language & appearance' :
+            activeSection === 'version' ? 'Release updates, system build & changelog' :
+            activeSection === 'info' ? 'Terms of service, reseller rules & policies' :
+            activeSection === 'support' ? 'Live chat, helpdesk tickets & FAQs' :
+            activeSection === 'privacy' ? 'Data storage, permissions & session logs' :
+            activeSection === 'actions' ? 'Session sign out & account lifecycle' : 'Preferences, notifications & version'
+          }
+          onBack={() => {
+            if (activeSection === 'info' && selectedPolicyKey !== null) {
+              setSelectedPolicyKey(null);
+            } else if (activeSection === 'support' && supportView !== 'menu') {
+              setSupportView('menu');
+            } else {
+              setActiveSection('menu');
+            }
+          }}
+          className="-mx-1 sm:mx-0 sm:rounded-2xl mb-3.5"
+        />
       )}
 
       {/* ==========================================
@@ -1635,6 +1637,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
           user={profile}
           canAccessFullApp={canAccessFullApp}
           onOpenLockedModal={onOpenLockedModal}
+          hideHeader={hideHeader}
           onRefreshUser={async () => {
             try {
               const snap = await getDoc(doc(db, 'users', user.uid));
@@ -1657,6 +1660,7 @@ export const ResellerSettings: React.FC<ResellerSettingsProps> = ({
           user={profile}
           canAccessFullApp={canAccessFullApp}
           onOpenLockedModal={onOpenLockedModal}
+          hideHeader={hideHeader}
           onRefreshUser={async () => {
             try {
               const snap = await getDoc(doc(db, 'users', user.uid));

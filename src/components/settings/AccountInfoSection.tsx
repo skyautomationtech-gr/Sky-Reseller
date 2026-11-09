@@ -14,7 +14,7 @@ import {
   Clock, CheckCircle2, Globe, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useScrollToTop } from '../../utils/scrollToTop';
+import { PageHeader } from '../common/PageHeader';
 
 interface AccountInfoSectionProps {
   user: UserProfile;
@@ -482,43 +482,41 @@ export const AccountInfoSection: React.FC<AccountInfoSectionProps> = ({
 
     return (
       <div className="space-y-3.5">
-        {/* Top Reading Navigation Bar */}
-        <div className="flex items-center justify-between gap-2.5 pb-1 border-b border-slate-200/80">
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              setActivePolicyKey(null);
-            }}
-            className="h-[32px] px-2.5 rounded-xl bg-white hover:bg-slate-50 text-[#04203F] text-[11px] font-bold border border-slate-200/80 shadow-2xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>All Policies</span>
-          </button>
-
-          {/* Bangla / English Toggle (if translation exists) */}
-          {activePolicyDoc.contentBn && (
-            <div className="bg-slate-100 p-0.5 rounded-xl flex items-center border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => setLanguage('en')}
-                className={`h-[26px] px-2 rounded-lg text-[10px] font-bold transition-all ${
-                  language === 'en' ? 'bg-white text-[#04203F] shadow-xs' : 'text-slate-500'
-                }`}
-              >
-                English
-              </button>
-              <button
-                type="button"
-                onClick={() => setLanguage('bn')}
-                className={`h-[26px] px-2 rounded-lg text-[10px] font-bold transition-all ${
-                  language === 'bn' ? 'bg-white text-[#04203F] shadow-xs' : 'text-slate-500'
-                }`}
-              >
-                বাংলা
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Top Reading Navigation Header */}
+        <PageHeader
+          title={displayedTitle}
+          subtitle={`Version ${activePolicyDoc.version || '1.0'} · Last updated ${formatDate(activePolicyDoc.updatedAt)}`}
+          onBack={() => {
+            triggerHaptic('light');
+            setActivePolicyKey(null);
+          }}
+          backTitle="All Policies"
+          rightAction={
+            activePolicyDoc.contentBn ? (
+              <div className="bg-slate-100 p-0.5 rounded-xl flex items-center border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setLanguage('en')}
+                  className={`h-[26px] px-2 rounded-lg text-[10px] font-bold transition-all ${
+                    language === 'en' ? 'bg-white text-[#04203F] shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage('bn')}
+                  className={`h-[26px] px-2 rounded-lg text-[10px] font-bold transition-all ${
+                    language === 'bn' ? 'bg-white text-[#04203F] shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  বাংলা
+                </button>
+              </div>
+            ) : undefined
+          }
+          sticky={false}
+        />
 
         {/* Policy Header Card */}
         <div className={`${DT.settingsGroupCard} p-3.5 space-y-1.5`}>

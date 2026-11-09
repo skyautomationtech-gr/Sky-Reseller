@@ -12,7 +12,7 @@ import {
   HelpCircle, AlertTriangle, ArrowLeft, Building2, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useScrollToTop } from '../../utils/scrollToTop';
+import { PageHeader } from '../common/PageHeader';
 
 interface PayoutSettingsSectionProps {
   user: UserProfile;
@@ -20,6 +20,7 @@ interface PayoutSettingsSectionProps {
   onOpenLockedModal?: (featureName?: string) => void;
   onRefreshUser?: () => void;
   onBack?: () => void;
+  hideHeader?: boolean;
 }
 
 type PayoutType = 'bKash' | 'Nagad' | 'Rocket' | 'Upay' | 'Bank';
@@ -39,6 +40,7 @@ export const PayoutSettingsSection: React.FC<PayoutSettingsSectionProps> = ({
   onOpenLockedModal,
   onRefreshUser,
   onBack,
+  hideHeader = false,
 }) => {
   const [payoutMethods, setPayoutMethods] = useState<PayoutMethod[]>(user.payoutMethods || []);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -400,34 +402,35 @@ export const PayoutSettingsSection: React.FC<PayoutSettingsSectionProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 1. Header with Breadcrumb Back */}
-      <div className="flex items-center justify-between gap-2 pt-1">
-        <div className="flex items-center gap-2">
-          {onBack && (
+      {/* 1. Header with Breadcrumb Back (Shown only when not embedded in a parent with a header) */}
+      {!hideHeader ? (
+        <PageHeader
+          title="Payout Settings"
+          subtitle="Registered bank & mobile banking accounts"
+          onBack={onBack}
+          rightAction={
             <button
               type="button"
-              onClick={onBack}
-              className="w-8 h-8 rounded-xl bg-white/80 border border-white/80 text-slate-700 flex items-center justify-center hover:bg-slate-100 transition-colors cursor-pointer"
-              title="Back to Settings"
+              onClick={handleOpenAdd}
+              className={`${DT.smallButton} bg-[#04203F] text-white hover:bg-[#0E9AA7]`}
             >
-              <ArrowLeft className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Account</span>
             </button>
-          )}
-          <div>
-            <h2 className={DT.pageTitle}>Payout Settings</h2>
-            <p className={DT.pageSubtitle}>Registered bank & mobile banking accounts</p>
-          </div>
+          }
+        />
+      ) : (
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={handleOpenAdd}
+            className={`${DT.smallButton} bg-[#04203F] text-white hover:bg-[#0E9AA7]`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Account</span>
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={handleOpenAdd}
-          className={`${DT.smallButton} bg-[#04203F] text-white hover:bg-[#0E9AA7]`}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Add Account</span>
-        </button>
-      </div>
+      )}
 
       {/* Verification Notice Banner */}
       <div className="p-3 rounded-[14px] bg-teal-50/70 border border-teal-200/80 text-[11px] text-[#04203F] flex items-start gap-2 shadow-2xs">

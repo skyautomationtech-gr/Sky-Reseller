@@ -20,6 +20,7 @@ import { AIMarketingModal } from '../marketing/AIMarketingModal';
 import { SocialShareModal } from '../inventory/SocialShareModal';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { useScrollToTop } from '../../utils/scrollToTop';
+import { PageHeader } from '../common/PageHeader';
 
 interface ResellerAccountHubProps {
   user: UserProfile;
@@ -43,10 +44,11 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
   onOpenLockedModal,
 }) => {
   const [currentView, setCurrentView] = useState<string>(activeSubTab === 'more' ? 'menu' : activeSubTab);
+  const [settingsSection, setSettingsSection] = useState<string>('menu');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Instantly reset scroll to top before paint on sub-tab navigation
-  useScrollToTop([currentView]);
+  useScrollToTop([currentView, settingsSection]);
   const [showAiModal, setShowAiModal] = useState(false);
   const [showPosterModal, setShowPosterModal] = useState(false);
   const [selectedPosterProduct, setSelectedPosterProduct] = useState<any>(null);
@@ -72,47 +74,83 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
   React.useEffect(() => {
     if (activeSubTab && activeSubTab !== 'more') {
       setCurrentView(activeSubTab);
+      setSettingsSection('menu');
     } else {
       setCurrentView('menu');
+      setSettingsSection('menu');
     }
   }, [activeSubTab]);
 
-  // If viewing a detailed sub-screen, render with a sticky mobile top bar and back button
+  // If viewing a detailed sub-screen, render with unified PageHeader
   if (currentView !== 'menu') {
-    const getSubScreenTitle = () => {
+    const getSubScreenInfo = () => {
       switch (currentView) {
-        case 'profile': return 'My Profile & Shop';
-        case 'chat': return 'Live Chat with Support';
-        case 'commission': return 'Commission Summary';
-        case 'notifications': return 'Notices & Announcements';
-        case 'support': return 'Support Tickets';
-        case 'reviews': return 'Product Reviews';
-        case 'feedback': return 'App Feedback';
-        case 'security': return 'Security & PIN Lock';
-        case 'settings': return 'Settings & Preferences';
-        default: return 'Account';
+        case 'profile':
+          return { title: 'Account & Profile', subtitle: 'Personal information, shop profile & contact details' };
+        case 'security':
+          return { title: 'Security', subtitle: 'Password, PIN lock & active sessions' };
+        case 'settings': {
+          switch (settingsSection) {
+            case 'account':
+              return { title: 'Account & Profile', subtitle: 'Personal information, shop profile & contact details' };
+            case 'payout':
+              return { title: 'Payout Settings', subtitle: 'bKash, Nagad & Bank payout methods' };
+            case 'security':
+              return { title: 'Security', subtitle: 'Password, PIN lock & active sessions' };
+            case 'notifications':
+              return { title: 'Notifications', subtitle: 'Order alerts, sound & push preferences' };
+            case 'preferences':
+              return { title: 'App Preferences', subtitle: 'Display density, language & appearance' };
+            case 'version':
+              return { title: 'App & Version', subtitle: 'Release updates, system build & changelog' };
+            case 'info':
+              return { title: 'Account Information', subtitle: 'Terms of service, reseller rules & policies' };
+            case 'support':
+              return { title: 'Help & Support', subtitle: 'Live chat, helpdesk tickets & FAQs' };
+            case 'privacy':
+              return { title: 'Privacy & Data', subtitle: 'Data storage, permissions & session logs' };
+            case 'actions':
+              return { title: 'Account Actions', subtitle: 'Session sign out & account lifecycle' };
+            default:
+              return { title: 'Reseller Settings', subtitle: 'Preferences, notifications & version' };
+          }
+        }
+        case 'chat':
+          return { title: 'Live Chat', subtitle: 'Chat with official support team' };
+        case 'commission':
+          return { title: 'Commission & Performance', subtitle: 'Earnings summary, stats & payout history' };
+        case 'notifications':
+          return { title: 'Notices & Announcements', subtitle: 'Platform updates & official announcements' };
+        case 'support':
+          return { title: 'Help & Support', subtitle: 'Live chat, tickets & FAQs' };
+        case 'reviews':
+          return { title: 'Product Reviews', subtitle: 'Rate accessories & share experience' };
+        case 'feedback':
+          return { title: 'Send App Feedback', subtitle: 'Suggest features or report app bugs' };
+        default:
+          return { title: 'Account', subtitle: 'Account management' };
       }
     };
 
+    const screenInfo = getSubScreenInfo();
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        {/* Mobile Sub-Screen Top Bar */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-slate-200 h-14 pt-[calc(env(safe-area-inset-top,0px))] px-3 flex items-center gap-3 shadow-xs">
-          <button
-            onClick={() => {
-              triggerHaptic('light');
+        {/* Unified Single Header Bar */}
+        <PageHeader
+          title={screenInfo.title}
+          subtitle={screenInfo.subtitle}
+          onBack={() => {
+            if (currentView === 'settings' && settingsSection !== 'menu') {
+              setSettingsSection('menu');
+            } else {
               setCurrentView('menu');
+              setSettingsSection('menu');
               onNavigateTab('more');
-            }}
-            className="p-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer active:scale-90"
-            title="Back to Account Menu"
-          >
-            <ArrowLeft className="w-5 h-5 text-slate-800" />
-          </button>
-          <h2 className="text-base font-bold text-slate-900 truncate flex-1">
-            {getSubScreenTitle()}
-          </h2>
-        </header>
+            }
+          }}
+          backTitle="Back to Account Menu"
+        />
 
         <div className="flex-1 p-3 sm:p-4 pb-24">
           {currentView === 'profile' && (
@@ -120,6 +158,8 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
               user={user}
               onLogout={onLogout}
               initialSection="account"
+              hideHeader={true}
+              onSectionChange={(sec) => setSettingsSection(sec)}
               canAccessFullApp={canAccessFullApp}
               onOpenLockedModal={onOpenLockedModal}
               onNavigateTab={onNavigateTab}
@@ -151,6 +191,8 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
               user={user}
               onLogout={onLogout}
               initialSection="security"
+              hideHeader={true}
+              onSectionChange={(sec) => setSettingsSection(sec)}
               canAccessFullApp={canAccessFullApp}
               onOpenLockedModal={onOpenLockedModal}
               onNavigateTab={onNavigateTab}
@@ -161,6 +203,8 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
               user={user}
               onLogout={onLogout}
               initialSection="menu"
+              hideHeader={true}
+              onSectionChange={(sec) => setSettingsSection(sec)}
               canAccessFullApp={canAccessFullApp}
               onOpenLockedModal={onOpenLockedModal}
               onNavigateTab={onNavigateTab}
@@ -564,8 +608,8 @@ export const ResellerAccountHub: React.FC<ResellerAccountHubProps> = ({
                   <Lock className="w-4.5 h-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-900">App Security & PIN Lock</div>
-                  <div className="text-xs text-slate-500">Protect app with custom 4-digit PIN</div>
+                  <div className="text-sm font-bold text-slate-900">Security</div>
+                  <div className="text-xs text-slate-500">Password, PIN lock & active sessions</div>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700" />

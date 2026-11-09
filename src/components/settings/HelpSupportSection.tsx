@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SupportTicketForm } from '../support/SupportTicketForm';
 import { SupportSystem } from '../support/SupportSystem';
 import { FeedbackForm } from '../feedback/FeedbackForm';
-import { useScrollToTop } from '../../utils/scrollToTop';
+import { PageHeader } from '../common/PageHeader';
 
 interface HelpSupportSectionProps {
   user: UserProfile;
@@ -150,15 +150,13 @@ export const HelpSupportSection: React.FC<HelpSupportSectionProps> = ({
   if (viewingSupportSystem) {
     return (
       <div className="space-y-3">
-        <div className="pb-1 border-b border-slate-200">
-          <button
-            onClick={() => setViewingSupportSystem(false)}
-            className="h-[32px] px-3 rounded-xl bg-white hover:bg-slate-50 text-[#04203F] text-[11px] font-bold border border-slate-200 flex items-center gap-1 cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Support Menu</span>
-          </button>
-        </div>
+        <PageHeader
+          title="Helpdesk Tickets"
+          subtitle="Track & reply to your support tickets"
+          onBack={() => setViewingSupportSystem(false)}
+          backTitle="Back to Support Menu"
+          sticky={false}
+        />
         <SupportSystem user={user} initialTab="tickets" />
       </div>
     );
