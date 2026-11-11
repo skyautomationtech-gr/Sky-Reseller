@@ -341,89 +341,144 @@ exports.sendTestPushNotification = functions.https.onCall(async (data, context) 
  * and sends the transactional email.
  */
 const crypto = require('crypto');
+const { getFirestore } = require('firebase-admin/firestore');
 
-function hashOtp(code, salt = 'resellbd_otp_secret_salt_2026') {
-  return crypto.createHash('sha256').update(code + salt).digest('hex');
+// Dedicated named database support for ai-studio instance
+const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-5b67ed85-eca9-4578-81ec-a8f1bfd7298e';
+
+function getOtpDb() {
+  try {
+    if (FIRESTORE_DATABASE_ID && FIRESTORE_DATABASE_ID !== '(default)') {
+      return getFirestore(FIRESTORE_DATABASE_ID);
+    }
+  } catch (err) {
+    console.warn('[OTP Engine] Fallback to default firestore instance:', err.message);
+  }
+  return admin.firestore();
 }
 
+const OTP_SECRET_SALT = process.env.OTP_SECRET_SALT || 'resellbd_otp_secret_salt_2026';
+
+function hashOtp(code, salt = OTP_SECRET_SALT) {
+  const safeSalt = salt || 'resellbd_otp_secret_salt_2026';
+  return crypto.createHash('sha256').update(String(code).trim() + safeSalt).digest('hex');
+}
+
+function hashEmailForLog(email) {
+  if (!email) return 'anonymous';
+  return crypto.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex').substring(0, 10);
+}
+
+function parseTimestampMs(val) {
+  if (!val) return 0;
+  if (typeof val.toDate === 'function') return val.toDate().getTime();
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (typeof val === 'number') return val;
+  if (val instanceof Date) return val.getTime();
+  return new Date(val).getTime() || 0;
+}
+
+/**
+ * 6. Reseller Registration - Send Email OTP
+ * Generates 6-digit code, hashes with SHA-256 + secret salt,
+ * stores expiry (10 min) & attempt count in Firestore, and sends transactional email.
+ */
 exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
-  const email = (data?.email || '').trim().toLowerCase();
-
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!email || !emailRegex.test(email)) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Please provide a valid email address.'
-    );
-  }
-
-  // Check if email is already in use by an approved reseller/admin
-  const existingUserSnap = await admin.firestore()
-    .collection('users')
-    .where('email', '==', email)
-    .limit(1)
-    .get();
-
-  if (!existingUserSnap.empty) {
-    const existingUser = existingUserSnap.docs[0].data();
-    if (existingUser.status === 'approved') {
-      throw new functions.https.HttpsError(
-        'already-exists',
-        'This email address is already registered and approved. Please sign in.'
-      );
-    }
-  }
-
-  const otpDocRef = admin.firestore().collection('emailOtps').doc(email);
-  const otpDocSnap = await otpDocRef.get();
-
-  // Enforce 60-second cooldown
-  if (otpDocSnap.exists) {
-    const otpData = otpDocSnap.data();
-    const lastSent = otpData?.lastSentAt?.toDate ? otpData.lastSentAt.toDate().getTime() : (otpData?.lastSentAt || 0);
-    const now = Date.now();
-    const elapsedSeconds = Math.floor((now - lastSent) / 1000);
-
-    if (elapsedSeconds < 60) {
-      const waitTime = 60 - elapsedSeconds;
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        `Please wait ${waitTime} seconds before requesting a new OTP.`
-      );
-    }
-  }
-
-  // Generate 6-digit code
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedCode = hashOtp(code);
-  const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)); // 10 minutes
-
-  // Save to Firestore
-  await otpDocRef.set({
-    hashedCode,
-    expiresAt,
-    attemptsLeft: 5,
-    lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-    verified: false,
-  });
-
-  console.log(`[ReSellBD OTP Engine] Generated OTP for: ${email}`);
-
-  // Send transactional email via Gmail SMTP with Google App Password
-  const nodemailer = require('nodemailer');
-  const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
-  const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
-
-  const gmailTransporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: gmailUser,
-      pass: gmailPass,
-    },
-  });
+  let step = 'init';
+  const email = String(data?.email || '').trim().toLowerCase();
+  const emailHash = hashEmailForLog(email);
 
   try {
+    step = 'validate_email';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Please provide a valid email address.'
+      );
+    }
+
+    step = 'check_existing_user';
+    const db = getOtpDb();
+    const existingUserSnap = await db
+      .collection('users')
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+
+    if (!existingUserSnap.empty) {
+      const existingUser = existingUserSnap.docs[0].data();
+      if (existingUser.status === 'approved') {
+        throw new functions.https.HttpsError(
+          'already-exists',
+          'This email address is already registered and approved. Please sign in.'
+        );
+      }
+    }
+
+    step = 'check_cooldown_and_lock';
+    const otpDocRef = db.collection('emailOtps').doc(email);
+    const otpDocSnap = await otpDocRef.get();
+    const now = Date.now();
+
+    if (otpDocSnap.exists) {
+      const otpData = otpDocSnap.data() || {};
+
+      // 15-minute lock check
+      const lockedUntil = parseTimestampMs(otpData.lockedUntil);
+      if (lockedUntil > now) {
+        const remainingMinutes = Math.ceil((lockedUntil - now) / 60000);
+        throw new functions.https.HttpsError(
+          'resource-exhausted',
+          `Too many failed attempts. Account is locked for ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`
+        );
+      }
+
+      // 60-second cooldown check
+      const lastSent = parseTimestampMs(otpData.lastSentAt);
+      const elapsedSeconds = Math.floor((now - lastSent) / 1000);
+      if (lastSent > 0 && elapsedSeconds < 60) {
+        const waitTime = 60 - elapsedSeconds;
+        throw new functions.https.HttpsError(
+          'resource-exhausted',
+          `Please wait ${waitTime} seconds before requesting a new OTP.`
+        );
+      }
+    }
+
+    step = 'generate_code';
+    // Generate exactly 6-digit numeric string with leading zero protection
+    const numericVal = Math.floor(100000 + Math.random() * 900000);
+    const code = String(numericVal).padStart(6, '0');
+    const hashedCode = hashOtp(code);
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(now + 10 * 60 * 1000)); // 10 minutes
+
+    step = 'save_otp_record';
+    await otpDocRef.set({
+      hashedCode,
+      expiresAt,
+      attemptsLeft: 5,
+      lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      verified: false,
+      lockedUntil: null,
+    });
+
+    // Developer test mode log (does NOT log the OTP code itself)
+    console.log(`[OTP TestMode] OTP sent for emailHash=${emailHash}`);
+
+    step = 'send_email';
+    const nodemailer = require('nodemailer');
+    const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
+    const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
+
+    const gmailTransporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailPass,
+      },
+    });
+
     await gmailTransporter.sendMail({
       from: `"ReSellBD Verification" <${gmailUser}>`,
       to: email,
@@ -447,109 +502,161 @@ exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
         </div>
       `,
     });
-    console.log(`[ReSellBD OTP Engine] Successfully dispatched email via Gmail SMTP to: ${email}`);
-  } catch (emailErr) {
-    console.error(`[ReSellBD OTP Engine] Error sending email via Gmail SMTP:`, emailErr);
+
+    console.log(`[sendEmailOtp] Successfully dispatched email to emailHash=${emailHash}`);
+
+    return {
+      success: true,
+      message: 'Verification code sent to your email address.',
+      email,
+      expiresInSeconds: 600,
+      cooldownSeconds: 60,
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      console.warn(`[sendEmailOtp] Expected HttpsError at step=${step} for emailHash=${emailHash}:`, err.code, err.message);
+      throw err;
+    }
+    console.error(`[sendEmailOtp] Unhandled error at step=${step} for emailHash=${emailHash}:`, err);
     throw new functions.https.HttpsError(
       'internal',
-      'Could not send the verification email. Please try again later.'
+      'Could not send verification email. Please try again later.'
     );
   }
-
-  return {
-    success: true,
-    message: 'Verification code sent to your email address.',
-    email,
-    expiresInSeconds: 600,
-    cooldownSeconds: 60,
-  };
 });
 
 /**
  * 7. Reseller Registration - Verify Email OTP
- * Verifies the 6-digit code against the stored SHA-256 hash,
- * decrements attempts, checks expiration, and marks email verified.
+ * Verifies the 6-digit code against stored SHA-256 hash,
+ * decrements attempts only on wrong code, enforces 15-minute lock on lockout,
+ * checks expiration, marks email verified server-side, deletes the OTP doc,
+ * and returns { verified: true } only.
  */
 exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
-  const email = (data?.email || '').trim().toLowerCase();
-  const code = (data?.code || '').trim();
+  let step = 'init';
+  const email = String(data?.email || '').trim().toLowerCase();
+  const rawCode = String(data?.code || '').trim();
+  const code = rawCode.replace(/\D/g, ''); // Extract only 6 digits
+  const emailHash = hashEmailForLog(email);
 
-  if (!email || !code || code.length !== 6) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Please enter the full 6-digit code.'
-    );
-  }
-
-  const otpDocRef = admin.firestore().collection('emailOtps').doc(email);
-  const otpDocSnap = await otpDocRef.get();
-
-  if (!otpDocSnap.exists) {
-    throw new functions.https.HttpsError(
-      'not-found',
-      'No active verification code found for this email. Please request a new code.'
-    );
-  }
-
-  const otpData = otpDocSnap.data();
-
-  // Check expiration (10 min)
-  const expiresAt = otpData.expiresAt?.toDate ? otpData.expiresAt.toDate().getTime() : (otpData.expiresAt || 0);
-  if (Date.now() > expiresAt) {
-    await otpDocRef.delete();
-    throw new functions.https.HttpsError(
-      'deadline-exceeded',
-      'This verification code has expired. Please request a new one.'
-    );
-  }
-
-  // Check attempt limit (max 5)
-  const attemptsLeft = otpData.attemptsLeft !== undefined ? otpData.attemptsLeft : 5;
-  if (attemptsLeft <= 0) {
-    await otpDocRef.delete();
-    throw new functions.https.HttpsError(
-      'resource-exhausted',
-      'Maximum verification attempts exceeded. Please request a new code.'
-    );
-  }
-
-  // Compare hash
-  const inputHash = hashOtp(code);
-  if (inputHash !== otpData.hashedCode) {
-    const remaining = attemptsLeft - 1;
-    await otpDocRef.update({ attemptsLeft: remaining });
-
-    if (remaining <= 0) {
-      await otpDocRef.delete();
+  try {
+    step = 'validate_input';
+    if (!email || !code || code.length !== 6) {
+      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=bad_format`);
       throw new functions.https.HttpsError(
-        'resource-exhausted',
-        'Invalid code. Maximum attempts exceeded. Please request a new code.'
+        'invalid-argument',
+        'Please enter the full 6-digit verification code.'
       );
     }
 
+    step = 'fetch_otp_record';
+    const db = getOtpDb();
+    const otpDocRef = db.collection('emailOtps').doc(email);
+    const otpDocSnap = await otpDocRef.get();
+
+    if (!otpDocSnap.exists) {
+      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=no_active_code`);
+      throw new functions.https.HttpsError(
+        'not-found',
+        'No active verification code found for this email. Please request a new code.'
+      );
+    }
+
+    const otpData = otpDocSnap.data() || {};
+    const now = Date.now();
+
+    step = 'check_lockout';
+    const lockedUntil = parseTimestampMs(otpData.lockedUntil);
+    if (lockedUntil > now) {
+      const remainingMinutes = Math.ceil((lockedUntil - now) / 60000);
+      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=locked`);
+      throw new functions.https.HttpsError(
+        'resource-exhausted',
+        `Account is locked due to too many failed attempts. Please wait ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`
+      );
+    }
+
+    step = 'check_expiration';
+    const expiresAt = parseTimestampMs(otpData.expiresAt);
+    if (expiresAt > 0 && now > expiresAt) {
+      await otpDocRef.delete();
+      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=expired`);
+      throw new functions.https.HttpsError(
+        'deadline-exceeded',
+        'This verification code has expired. Please request a new one.'
+      );
+    }
+
+    step = 'check_attempts';
+    const attemptsLeft = typeof otpData.attemptsLeft === 'number' ? otpData.attemptsLeft : 5;
+    if (attemptsLeft <= 0) {
+      const lockUntilDate = new Date(now + 15 * 60 * 1000);
+      await otpDocRef.update({
+        lockedUntil: admin.firestore.Timestamp.fromDate(lockUntilDate),
+        attemptsLeft: 0,
+      });
+      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=max_attempts_exceeded`);
+      throw new functions.https.HttpsError(
+        'resource-exhausted',
+        'Maximum verification attempts exceeded. Account is locked for 15 minutes.'
+      );
+    }
+
+    step = 'verify_hash';
+    const inputHash = hashOtp(code);
+    if (!otpData.hashedCode || inputHash !== otpData.hashedCode) {
+      const remaining = attemptsLeft - 1;
+      if (remaining <= 0) {
+        const lockUntilDate = new Date(now + 15 * 60 * 1000);
+        await otpDocRef.update({
+          lockedUntil: admin.firestore.Timestamp.fromDate(lockUntilDate),
+          attemptsLeft: 0,
+        });
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=wrong_code_locked`);
+        throw new functions.https.HttpsError(
+          'resource-exhausted',
+          'Incorrect code. Maximum attempts exceeded. Account is locked for 15 minutes.'
+        );
+      } else {
+        // Decrement attempts only on wrong code
+        await otpDocRef.update({ attemptsLeft: remaining });
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=wrong_code attemptsRemaining=${remaining}`);
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          `Incorrect code. You have ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining.`
+        );
+      }
+    }
+
+    step = 'mark_verified_server_side';
+    // Success: mark as verified in verifiedEmails collection for 30 minutes
+    const verifiedUntil = admin.firestore.Timestamp.fromDate(new Date(now + 30 * 60 * 1000));
+    await db.collection('verifiedEmails').doc(email).set({
+      email,
+      verified: true,
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      verifiedUntil,
+    });
+
+    // Delete the active OTP record so it cannot be reused
+    await otpDocRef.delete();
+
+    console.log(`[OTP TestMode] OTP verified for emailHash=${emailHash}`);
+
+    // Return { verified: true } only per specification
+    return {
+      verified: true,
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      throw err;
+    }
+    console.error(`[verifyEmailOtp] Unhandled error at step=${step} for emailHash=${emailHash}:`, err);
     throw new functions.https.HttpsError(
-      'invalid-argument',
-      `Incorrect code. You have ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining.`
+      'internal',
+      'Failed to verify code due to a server error. Please try again.'
     );
   }
-
-  // Success: mark as verified
-  const verifiedUntil = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 60 * 1000)); // 30 min window to finish registration
-  await otpDocRef.update({
-    verified: true,
-    verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-    verifiedUntil,
-    attemptsLeft: 0,
-  });
-
-  console.log(`[ReSellBD OTP Engine] Email verified successfully: ${email}`);
-
-  return {
-    success: true,
-    verified: true,
-    email,
-    message: 'Email address verified successfully!',
-  };
 });
 
 /**
@@ -754,24 +861,31 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
     // Atomic transaction to safely verify & reserve unique shop name and assign sequential reseller ID
     await firestore.runTransaction(async (t) => {
       // 0. Enforce server-side email OTP verification
+      const verifiedEmailRef = firestore.collection('verifiedEmails').doc(email);
+      const verifiedEmailSnap = await t.get(verifiedEmailRef);
       const emailOtpSnap = await t.get(emailOtpRef);
-      if (!emailOtpSnap.exists) {
+
+      const vData = verifiedEmailSnap.exists ? verifiedEmailSnap.data() : (emailOtpSnap.exists ? emailOtpSnap.data() : null);
+      if (!vData) {
         throw new functions.https.HttpsError(
           'failed-precondition',
           'Email verification is required before finalizing registration.'
         );
       }
-      const otpData = emailOtpSnap.data();
-      const verifiedUntil = otpData?.verifiedUntil?.toDate
-        ? otpData.verifiedUntil.toDate().getTime()
-        : (otpData?.verifiedUntil || 0);
+      const verifiedUntil = vData?.verifiedUntil?.toDate
+        ? vData.verifiedUntil.toDate().getTime()
+        : (vData?.verifiedUntil || 0);
 
-      if (!otpData?.verified || (verifiedUntil && Date.now() > verifiedUntil)) {
+      if (!vData?.verified || (verifiedUntil && Date.now() > verifiedUntil)) {
         throw new functions.https.HttpsError(
           'failed-precondition',
           'Email verification has expired or has not been completed. Please verify your email.'
         );
       }
+
+      // Consume OTP and verified email records so they cannot be re-used
+      if (verifiedEmailSnap.exists) t.delete(verifiedEmailRef);
+      if (emailOtpSnap.exists) t.delete(emailOtpRef);
 
       // 1. Enforce shop name uniqueness
       const shopNameSnap = await t.get(shopNameReservationRef);
@@ -784,9 +898,6 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
           );
         }
       }
-
-      // Consume OTP record so it cannot be re-used
-      t.delete(emailOtpRef);
 
       // 2. Increment sequential resellerId
       const counterDoc = await t.get(counterRef);

@@ -76,15 +76,26 @@ async function startServer() {
   // 1. Send Email OTP API
   app.post('/api/send-email-otp', async (req, res) => {
     try {
-      const email = (req.body?.email || '').trim().toLowerCase();
+      const email = String(req.body?.email || '').trim().toLowerCase();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!email || !emailRegex.test(email)) {
         return res.status(400).json({ error: 'Please provide a valid email address.' });
       }
 
-      // Check 60s cooldown
       const existing = otpStore.get(email);
       const now = Date.now();
+
+      // Check 15-minute lockout
+      if (existing && existing.lockedUntil && existing.lockedUntil > now) {
+        const remainingMinutes = Math.ceil((existing.lockedUntil - now) / 60000);
+        return res.status(429).json({
+          error: `Account is locked due to too many failed attempts. Please wait ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`,
+          isLocked: true,
+          remainingMinutes,
+        });
+      }
+
+      // Check 60s cooldown
       if (existing && existing.lastSentAt) {
         const elapsed = Math.floor((now - existing.lastSentAt) / 1000);
         if (elapsed < 60) {
@@ -96,10 +107,15 @@ async function startServer() {
         }
       }
 
-      // Generate 6-digit random code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      // Generate 6-digit string code
+      const numericVal = Math.floor(100000 + Math.random() * 900000);
+      const code = String(numericVal).padStart(6, '0');
       const hashedCode = hashOtp(code);
       const expiresAt = now + 10 * 60 * 1000; // 10 minutes validity
+
+      // Developer Test Mode logging (never logs the code itself)
+      const emailHash = crypto.createHash('sha256').update(email).digest('hex').substring(0, 10);
+      console.log(`[OTP TestMode] OTP sent for emailHash=${emailHash}`);
 
       // Send email via Gmail SMTP
       try {
@@ -126,7 +142,7 @@ async function startServer() {
             </div>
           `,
         });
-        console.log(`[Gmail OTP] Successfully dispatched verification email to: ${email}`);
+        console.log(`[Gmail OTP] Successfully dispatched verification email to emailHash=${emailHash}`);
       } catch (err: any) {
         console.error('[Gmail OTP] SMTP send error:', err);
         return res.status(500).json({
@@ -134,18 +150,19 @@ async function startServer() {
         });
       }
 
-      // Store hashed OTP only after successful send
+      // Store hashed OTP
       otpStore.set(email, {
         hashedCode,
         expiresAt,
         attemptsLeft: 5,
         lastSentAt: now,
         verified: false,
+        lockedUntil: null,
       });
 
       res.json({
         success: true,
-        message: `Verification code sent to ${email}. If not in Inbox, please check your Spam / Junk folder.`,
+        message: 'Verification code sent to your email address.',
         email,
         expiresInSeconds: 600,
         cooldownSeconds: 60,
@@ -161,28 +178,46 @@ async function startServer() {
   // 2. Verify Email OTP API
   app.post('/api/verify-email-otp', (req, res) => {
     try {
-      const email = (req.body?.email || '').trim().toLowerCase();
-      const code = (req.body?.code || '').trim();
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const rawCode = String(req.body?.code || '').trim();
+      const code = rawCode.replace(/\D/g, '');
+      const emailHash = crypto.createHash('sha256').update(email).digest('hex').substring(0, 10);
 
       if (!email || !code || code.length !== 6) {
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=bad_format`);
         return res.status(400).json({ error: 'Please enter the full 6-digit verification code.' });
       }
 
       const record = otpStore.get(email);
 
       if (!record) {
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=no_active_code`);
         return res.status(404).json({ error: 'No active verification code found for this email. Please request a new code.' });
       }
 
       const now = Date.now();
+
+      // Check 15-minute lock
+      if (record.lockedUntil && record.lockedUntil > now) {
+        const remainingMinutes = Math.ceil((record.lockedUntil - now) / 60000);
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=locked`);
+        return res.status(429).json({
+          error: `Account is locked due to too many failed attempts. Please wait ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`,
+          isLocked: true,
+          remainingMinutes,
+        });
+      }
+
       if (now > record.expiresAt) {
         otpStore.delete(email);
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=expired`);
         return res.status(410).json({ error: 'Verification code has expired. Please request a new code.' });
       }
 
       if (record.attemptsLeft <= 0) {
-        otpStore.delete(email);
-        return res.status(429).json({ error: 'Maximum verification attempts exceeded. Please request a new code.' });
+        record.lockedUntil = now + 15 * 60 * 1000;
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=max_attempts_exceeded`);
+        return res.status(429).json({ error: 'Maximum verification attempts exceeded. Account is locked for 15 minutes.' });
       }
 
       const inputHash = hashOtp(code);
@@ -191,29 +226,27 @@ async function startServer() {
       if (!isMatch) {
         record.attemptsLeft -= 1;
         if (record.attemptsLeft <= 0) {
-          otpStore.delete(email);
-          return res.status(429).json({ error: 'Incorrect code. Maximum attempts exceeded. Please request a new code.' });
+          record.lockedUntil = now + 15 * 60 * 1000;
+          console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=wrong_code_locked`);
+          return res.status(429).json({ error: 'Incorrect code. Maximum attempts exceeded. Account is locked for 15 minutes.' });
         }
-        return res.status(400).json({
+        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=wrong_code attemptsRemaining=${record.attemptsLeft}`);
+        return res.status(403).json({
           error: `Incorrect code. ${record.attemptsLeft} ${record.attemptsLeft === 1 ? 'attempt' : 'attempts'} remaining.`,
           attemptsLeft: record.attemptsLeft,
         });
       }
 
-      // Success - record verification with a 30-minute validity window for registration finalization
-      record.verified = true;
-      record.verifiedUntil = now + 30 * 60 * 1000;
-      record.attemptsLeft = 0;
+      // Success: delete active OTP code to prevent reuse
+      otpStore.delete(email);
+      console.log(`[OTP TestMode] OTP verified for emailHash=${emailHash}`);
 
       res.json({
-        success: true,
         verified: true,
-        email,
-        message: 'Email address verified successfully!',
       });
     } catch (err: any) {
       console.error('[Gmail OTP] Verify error:', err);
-      res.status(500).json({ error: err.message || 'Failed to verify code.' });
+      res.status(500).json({ error: 'Failed to verify code due to a server error. Please try again.' });
     }
   });
 

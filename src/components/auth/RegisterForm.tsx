@@ -1390,56 +1390,21 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
                   transition={{ duration: 0.22 }}
                   className="space-y-4"
                 >
-                  <div className={`space-y-1.5 ${shakeFields.has('email') ? 'animate-shake' : ''}`}>
-                    <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-[#0E9AA7]" /> Email Address <span className="text-[#3DD055]">*</span>
-                      </span>
-                      {isResubmit ? (
-                        <span className="text-[10px] text-amber-300 font-bold flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-                          <Lock className="w-3 h-3" /> Account Email (Cannot be changed)
-                        </span>
-                      ) : formData.emailVerified ? (
-                        <span className="text-[10px] text-[#3DD055] font-bold flex items-center gap-0.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#3DD055]" /> Verified
-                        </span>
-                      ) : null}
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      disabled={isResubmit}
-                      placeholder="e.g. reseller@gmail.com"
-                      value={formData.email}
-                      onFocus={handleInputFocus}
-                      onChange={(e) => {
-                        if (isResubmit) return;
-                        const newEmail = e.target.value;
-                        setFormData({ 
-                          ...formData, 
-                          email: newEmail,
-                          emailVerified: false 
-                        });
-                      }}
-                      className={`w-full min-h-[50px] px-4 py-3 backdrop-blur-[24px] border rounded-2xl text-white placeholder-slate-400 text-sm font-semibold outline-none transition-all ${
-                        isResubmit 
-                          ? 'bg-white/[0.04] border-white/10 opacity-75 cursor-not-allowed text-slate-300' 
-                          : 'bg-white/[0.08] border-white/20 focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/60 focus:shadow-[0_0_15px_rgba(14,154,167,0.35)]'
-                      }`}
-                    />
-                  </div>
-
-                  {!isResubmit && (
-                    <div className={`space-y-2 p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 ${shakeFields.has('emailOtp') ? 'animate-shake' : ''}`}>
-                      <OtpVerificationInput
-                        email={formData.email}
-                        isVerified={formData.emailVerified}
-                        onVerifiedChange={(verified) => {
-                          setFormData((prev) => ({ ...prev, emailVerified: verified }));
-                        }}
-                      />
-                    </div>
-                  )}
+                  <OtpVerificationInput
+                    email={formData.email}
+                    isVerified={formData.emailVerified}
+                    onVerifiedChange={(verified) => {
+                      setFormData((prev) => ({ ...prev, emailVerified: verified }));
+                    }}
+                    onEmailChange={(newEmail) => {
+                      if (isResubmit) return;
+                      setFormData((prev) => ({ ...prev, email: newEmail, emailVerified: false }));
+                    }}
+                    disabled={isResubmit}
+                    isResubmit={isResubmit}
+                    shakeField={shakeFields.has('email') || shakeFields.has('emailOtp')}
+                    onFocus={handleInputFocus}
+                  />
 
                   <div className={`space-y-1.5 ${shakeFields.has('mobile') ? 'animate-shake' : ''}`}>
                     <label className="text-xs font-bold text-slate-200 flex items-center justify-between">

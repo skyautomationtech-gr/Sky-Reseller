@@ -1,55 +1,37 @@
-import React, { useState } from 'react';
-import { sendEmailOtpCall, verifyEmailOtpCall } from '../../../lib/emailOtpService';
+import React from 'react';
+import { OtpVerificationInput } from '../register/OtpVerificationInput';
 
 export const ContactInfoStep = ({ data, update }: any) => {
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'input' | 'verify'>('input');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const sendOtp = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      await sendEmailOtpCall(data.email);
-      setStep('verify');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send OTP');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const verifyOtp = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const res = await verifyEmailOtpCall(data.email, otp);
-      if (res.verified) {
-        update({ emailVerified: true });
-      }
-    } catch (err: any) {
-      setError(err.message || 'Verification failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
-      {step === 'input' ? (
-        <>
-          <input type="email" placeholder="Email Address" value={data.email} onChange={e => update({ email: e.target.value })} className="w-full p-4 rounded-full bg-white/10 text-white" />
-          <button onClick={sendOtp} className="w-full py-3 bg-cyan-600 text-white rounded-full">Send OTP</button>
-        </>
-      ) : (
-        <>
-          <input type="text" placeholder="Enter OTP" value={otp} onChange={e => setOtp(e.target.value)} className="w-full p-4 rounded-full bg-white/10 text-white" />
-          <button onClick={verifyOtp} className="w-full py-3 bg-cyan-600 text-white rounded-full">Verify OTP</button>
-        </>
-      )}
-      <input type="tel" placeholder="Mobile Number" value={data.mobile} onChange={e => update({ mobile: e.target.value })} className="w-full p-4 rounded-full bg-white/10 text-white" />
-      <input type="tel" placeholder="WhatsApp Number" value={data.whatsapp} onChange={e => update({ whatsapp: e.target.value })} className="w-full p-4 rounded-full bg-white/10 text-white" />
+      <OtpVerificationInput
+        email={data.email || ''}
+        isVerified={Boolean(data.emailVerified)}
+        onVerifiedChange={(verified) => update({ emailVerified: verified })}
+        onEmailChange={(email) => update({ email, emailVerified: false })}
+      />
+      
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-200">Mobile Number (মোবাইল নম্বর)</label>
+        <input 
+          type="tel" 
+          placeholder="e.g. 01712345678" 
+          value={data.mobile || ''} 
+          onChange={(e) => update({ mobile: e.target.value })} 
+          className="w-full min-h-[48px] px-3.5 py-2.5 rounded-xl bg-white/[0.08] backdrop-blur-[24px] border border-white/20 text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/50" 
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-200">WhatsApp Number (হোয়াটসঅ্যাপ নম্বর)</label>
+        <input 
+          type="tel" 
+          placeholder="e.g. 01712345678" 
+          value={data.whatsapp || ''} 
+          onChange={(e) => update({ whatsapp: e.target.value })} 
+          className="w-full min-h-[48px] px-3.5 py-2.5 rounded-xl bg-white/[0.08] backdrop-blur-[24px] border border-white/20 text-white placeholder-slate-400 text-sm font-semibold outline-none focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/50" 
+        />
+      </div>
     </div>
   );
 };

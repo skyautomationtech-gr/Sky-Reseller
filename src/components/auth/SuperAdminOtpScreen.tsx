@@ -11,6 +11,7 @@ import {
   startSuperAdminLoginCall, 
   verifySuperAdminOtpCall 
 } from '../../lib/superAdminAuth';
+import { maskEmail, formatOtpErrorMessage } from '../../lib/emailOtpService';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { 
   SUPER_ADMIN_OTP_EXPIRY_SECONDS, 
@@ -40,6 +41,7 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
   const [isLocked, setIsLocked] = useState(false);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
   const [hasInitiated, setHasInitiated] = useState(false);
+  const [isShaking, setIsShaking] = useState(false);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -113,13 +115,14 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
       setDigits(['', '', '', '', '', '']);
       setTimeout(() => {
         inputRefs.current[0]?.focus();
-      }, 100);
+      }, 120);
     } catch (err: any) {
       console.error('[SuperAdminOtp] Send error:', err);
-      if (err.message?.includes('locked') || err.message?.includes('15 minutes')) {
+      const formatted = formatOtpErrorMessage(err);
+      if (formatted.isLocked || err.message?.includes('locked') || err.message?.includes('15 minutes')) {
         handleLockoutTrigger();
       } else {
-        setErrorMessage(err.message || 'Could not send the verification email. Please try again later.');
+        setErrorMessage(formatted.message);
       }
     } finally {
       setIsSending(false);
@@ -189,7 +192,7 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
     if (code.length !== 6 || isVerifying || isLocked) return;
 
     if (expiresIn <= 0) {
-      setErrorMessage('Verification code has expired. Please click "Resend Code".');
+      setErrorMessage('কোডের মেয়াদ শেষ হয়ে গেছে। দয়া করে নতুন কোড পাঠান। (Verification code has expired)');
       return;
     }
 
@@ -218,20 +221,29 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
       }
     } catch (err: any) {
       console.error('[SuperAdminOtp] Verify error:', err);
-      const remaining = attemptsLeft - 1;
-      setAttemptsLeft(remaining);
+      const formatted = formatOtpErrorMessage(err);
 
-      if (remaining <= 0 || err.message?.includes('locked') || err.message?.includes('15 minutes')) {
-        handleLockoutTrigger();
-      } else {
-        setErrorMessage(
-          err.message || `ভুল কোড। আপনার আর ${remaining}টি সুযোগ বাকি রয়েছে। (Incorrect code. ${remaining} attempts remaining)`
-        );
-        triggerHaptic('light');
-        // Clear digits for next attempt
-        setDigits(['', '', '', '', '', '']);
-        setTimeout(() => inputRefs.current[0]?.focus(), 50);
+      // Decrement attempts ONLY on genuine wrong code (not on server errors)
+      if (formatted.isWrongCode) {
+        const remaining = attemptsLeft - 1;
+        setAttemptsLeft(remaining);
+
+        // Shake and turn red briefly
+        setIsShaking(true);
+        triggerHaptic('heavy');
+        setTimeout(() => {
+          setIsShaking(false);
+          setDigits(['', '', '', '', '', '']);
+          inputRefs.current[0]?.focus();
+        }, 650);
+
+        if (remaining <= 0 || formatted.isLocked || err.message?.includes('locked') || err.message?.includes('15 minutes')) {
+          handleLockoutTrigger();
+          return;
+        }
       }
+
+      setErrorMessage(formatted.message);
     } finally {
       setIsVerifying(false);
     }
@@ -243,7 +255,7 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const maskedEmail = user.email ? user.email.replace(/(.{2})(.*)(?=@)/, (_, a, b) => a + '*'.repeat(Math.max(b.length, 3))) : 'your email';
+  const maskedEmail = maskEmail(user.email || '');
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-[#050B1A] relative overflow-hidden">
@@ -251,39 +263,33 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-[#0E9AA7]/15 to-[#3DD055]/15 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute -bottom-20 -right-20 w-[450px] h-[450px] bg-[#0E9AA7]/10 rounded-full blur-[100px] pointer-events-none" />
 
-      {/* Main Glass Modal Card */}
+      {/* Main Glass Modal Card - Single Flat Block */}
       <motion.div
         initial={{ opacity: 0, scale: 0.94, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="w-full max-w-md relative z-10 rounded-3xl bg-slate-900/60 border border-white/15 p-6 sm:p-8 backdrop-blur-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] text-white space-y-6"
+        className="w-full max-w-md relative z-10 rounded-3xl bg-slate-900/60 border border-white/15 p-6 sm:p-8 backdrop-blur-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] text-white space-y-5"
       >
         {/* Shield Icon Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#0E9AA7]/20 to-[#3DD055]/20 border border-[#3DD055]/30 shadow-lg shadow-[#3DD055]/10 mb-1">
-            <ShieldCheck className="w-8 h-8 text-[#3DD055]" />
+        <div className="text-center space-y-1.5">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#0E9AA7]/20 to-[#3DD055]/20 border border-[#3DD055]/30 shadow-lg shadow-[#3DD055]/10 mb-1">
+            <ShieldCheck className="w-7 h-7 text-[#3DD055]" />
           </div>
-          <h2 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
-            <span>Verify it&apos;s you</span>
+          <h2 className="text-xl font-black tracking-tight text-white">
+            Verify it&apos;s you
           </h2>
-          <p className="text-xs font-semibold text-[#0E9AA7] uppercase tracking-wider">
-            Super Admin Two-Step Verification (দ্বি-স্তরীয় নিরাপত্তা)
-          </p>
-          <p className="text-xs text-slate-300 leading-relaxed max-w-xs mx-auto pt-1">
-            We sent a secure 6-digit verification code to your Super Admin email:{' '}
-            <span className="font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded-md inline-block mt-1">
-              {maskedEmail}
-            </span>
+          <p className="text-[11px] font-bold text-[#0E9AA7] uppercase tracking-wider">
+            Super Admin Two-Step Verification
           </p>
         </div>
 
         {/* Locked Out Alert */}
         {isLocked && (
-          <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-200 flex items-start gap-3 text-xs animate-in fade-in">
-            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-            <div className="space-y-1">
+          <div className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-200 flex items-start gap-2.5 text-xs animate-in fade-in">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
               <p className="font-bold text-white">অ্যাকাউন্ট সাময়িকভাবে লক করা হয়েছে</p>
-              <p className="text-rose-200/90 leading-relaxed">
+              <p className="text-rose-200/90 leading-relaxed text-[11px]">
                 Too many failed attempts. For your security, this account is locked for{' '}
                 <strong>{formatTimer(lockoutRemaining)}</strong>. Signing out now...
               </p>
@@ -291,87 +297,86 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
           </div>
         )}
 
-        {/* 6-Digit OTP Boxes */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2 px-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Enter 6-Digit Code
-            </span>
-            {expiresIn > 0 && !isLocked && (
-              <span className="text-[11px] font-mono text-slate-300 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-[#3DD055]" />
-                Expires in <strong className="text-white">{formatTimer(expiresIn)}</strong>
-              </span>
-            )}
-          </div>
+        {/* Compact Info Row: Masked Email + Spam/Junk Reminder */}
+        <div className="flex items-center justify-between text-[11px] flex-wrap gap-1 px-1">
+          <span className="font-semibold text-slate-200">
+            Code sent to <span className="font-mono text-[#3DD055] font-bold">{maskedEmail}</span>
+          </span>
+          <span className="text-amber-300 font-medium">
+            Check Spam/Junk if you don't see it
+          </span>
+        </div>
 
-          <div className="grid grid-cols-6 gap-2 sm:gap-2.5" onPaste={handlePaste}>
+        {/* 6-Digit OTP Boxes - Never overflows 320-430px */}
+        <div className="space-y-2.5">
+          <div className={`flex items-center justify-center gap-2 w-full max-w-[340px] mx-auto py-1 ${isShaking ? 'animate-shake' : ''}`} onPaste={handlePaste}>
             {digits.map((digit, idx) => (
               <input
                 key={idx}
                 ref={(el) => { inputRefs.current[idx] = el; }}
                 type="text"
                 inputMode="numeric"
+                autoComplete="one-time-code"
                 pattern="[0-9]*"
                 maxLength={1}
                 value={digit}
                 disabled={isLocked || isVerifying}
                 onChange={(e) => handleDigitChange(idx, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(idx, e)}
-                className={`w-full h-14 sm:h-16 text-center text-2xl font-mono font-black rounded-2xl transition-all outline-hidden ${
-                  digit
-                    ? 'bg-white/15 border-2 border-[#3DD055] text-white shadow-lg shadow-[#3DD055]/20'
-                    : 'bg-white/[0.06] border border-white/20 text-white placeholder-slate-600 focus:border-[#0E9AA7] focus:ring-2 focus:ring-[#0E9AA7]/30'
+                className={`w-[calc((100%-40px)/6)] max-w-[46px] min-w-[36px] h-[52px] rounded-xl text-center text-[20px] font-black outline-none transition-all tabular-nums ${
+                  isShaking
+                    ? 'border-2 border-rose-500 bg-rose-500/20 text-rose-300'
+                    : digit
+                    ? 'border-2 border-[#3DD055] bg-white/[0.12] text-white'
+                    : 'border border-white/20 bg-white/[0.08] text-white focus:border-[#3DD055] focus:ring-2 focus:ring-[#0E9AA7]/50'
                 } ${isLocked ? 'opacity-40 cursor-not-allowed' : ''}`}
                 placeholder="•"
-                autoComplete="one-time-code"
               />
             ))}
           </div>
 
-          {/* Attempt counter info */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-0.5">
-            <span>
-              Attempts remaining:{' '}
-              <strong className={attemptsLeft <= 2 ? 'text-rose-400' : 'text-slate-200'}>
-                {attemptsLeft} / {SUPER_ADMIN_OTP_MAX_ATTEMPTS}
-              </strong>
-            </span>
-            {isVerifying && (
-              <span className="text-[#3DD055] flex items-center gap-1 font-semibold animate-pulse">
-                <RotateCw className="w-3 h-3 animate-spin" /> Verifying...
-              </span>
-            )}
+          {/* Row Under Boxes: Resend Timer / Link, Attempts Counter, Expiration */}
+          <div className="flex items-center justify-between text-[11px] text-slate-300 px-1 pt-0.5">
+            <div>
+              {cooldown > 0 ? (
+                <span className="text-slate-400 font-medium">Resend in {cooldown}s</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={sendOtpCode}
+                  disabled={isSending || isLocked}
+                  className="font-bold text-[#0E9AA7] hover:text-[#3DD055] underline cursor-pointer transition-colors"
+                >
+                  Resend code
+                </button>
+              )}
+            </div>
+
+            <div className="text-[10px] text-slate-400 font-medium">
+              {attemptsLeft} attempts left
+            </div>
+
+            <div className="font-mono text-slate-300 text-[11px]">
+              Expires in <strong className="text-white">{formatTimer(expiresIn)}</strong>
+            </div>
           </div>
         </div>
 
-        {/* Error Alert */}
+        {/* Error Feedback */}
         {errorMessage && !isLocked && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
             <p className="leading-snug">{errorMessage}</p>
           </div>
         )}
 
-        {/* Spam / Junk Folder Hint */}
-        <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-200/90 text-[11px] flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <p className="font-bold text-white">ইনবক্সে কোড না পেলে Spam / Junk ফোল্ডার চেক করুন</p>
-            <p className="text-slate-300">
-              Transactional security code is delivered via Gmail SMTP. Check your Spam or Promotions folder if it takes a moment to appear.
-            </p>
-          </div>
-        </div>
-
-        {/* Actions Bar */}
-        <div className="space-y-3 pt-2">
-          {/* Verify Button (for manual trigger if needed) */}
+        {/* Full-width 44px Verify Button */}
+        <div className="space-y-3 pt-1">
           <button
             type="button"
             disabled={digits.join('').length !== 6 || isVerifying || isLocked}
             onClick={() => executeVerification()}
-            className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm tracking-wide bg-gradient-to-r from-[#0E9AA7] via-[#2cb895] to-[#3DD055] text-white shadow-xl shadow-[#3DD055]/20 hover:brightness-110 active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full h-[44px] rounded-xl text-[13px] font-bold text-white bg-gradient-to-r from-[#0E9AA7] to-[#3DD055] hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
           >
             {isVerifying ? (
               <>
@@ -381,48 +386,17 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
             ) : (
               <>
                 <KeyRound className="w-4 h-4" />
-                <span>Verify & Open Super Admin Dashboard</span>
+                <span>Verify & Enter Dashboard</span>
               </>
             )}
           </button>
 
-          {/* Resend OTP Button */}
-          <div className="flex items-center justify-center">
-            <button
-              type="button"
-              disabled={isSending || cooldown > 0 || isLocked}
-              onClick={sendOtpCode}
-              className={`text-xs font-semibold tracking-wide transition-all flex items-center gap-1.5 py-1.5 px-3 rounded-lg ${
-                cooldown > 0 || isLocked
-                  ? 'text-slate-500 cursor-not-allowed'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer'
-              }`}
-            >
-              {isSending ? (
-                <>
-                  <RotateCw className="w-3.5 h-3.5 animate-spin text-[#3DD055]" />
-                  <span>Sending code...</span>
-                </>
-              ) : cooldown > 0 ? (
-                <>
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Resend code in {cooldown}s</span>
-                </>
-              ) : (
-                <>
-                  <RotateCw className="w-3.5 h-3.5 text-[#3DD055]" />
-                  <span>Resend Verification Code (পুনরায় কোড পাঠান)</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="border-t border-white/10 pt-3">
-            {/* Cancel / Sign Out Button */}
+          {/* Cancel / Sign Out Link */}
+          <div className="border-t border-white/10 pt-2.5">
             <button
               type="button"
               onClick={onCancelSignOut}
-              className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Cancel & Sign Out (লগআউট)</span>
