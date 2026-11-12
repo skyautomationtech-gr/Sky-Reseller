@@ -117,9 +117,23 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
         inputRefs.current[0]?.focus();
       }, 120);
     } catch (err: any) {
-      console.error('[SuperAdminOtp] Send error:', err);
+      const msg = err?.message || '';
+      console.warn('[SuperAdminOtp] Send note:', msg);
+
+      // Check if this is a 60s resend cooldown message
+      const cooldownMatch = msg.match(/wait (\d+) second/i);
+      if (cooldownMatch && cooldownMatch[1]) {
+        setCooldown(parseInt(cooldownMatch[1], 10));
+        return;
+      }
+
+      if (msg.toLowerCase().includes('wait')) {
+        setCooldown(60);
+        return;
+      }
+
       const formatted = formatOtpErrorMessage(err);
-      if (formatted.isLocked || err.message?.includes('locked') || err.message?.includes('15 minutes')) {
+      if (formatted.isLocked || msg.includes('locked') || msg.includes('15 minutes')) {
         handleLockoutTrigger();
       } else {
         setErrorMessage(formatted.message);

@@ -147,7 +147,13 @@ export async function startSuperAdminLoginCall(email?: string): Promise<StartSup
     }
   } catch (fnErr: any) {
     if (fnErr.code === 'resource-exhausted' || fnErr.message?.includes('wait')) {
-      throw new Error(fnErr.message || 'Please wait before requesting a new code.');
+      const cooldownMatch = (fnErr.message || '').match(/wait (\d+) second/i);
+      const remaining = cooldownMatch && cooldownMatch[1] ? parseInt(cooldownMatch[1], 10) : 60;
+      return {
+        success: true,
+        message: fnErr.message || 'Please wait before requesting a new code.',
+        cooldownSeconds: remaining,
+      };
     }
     if (fnErr.code === 'permission-denied' && (fnErr.message?.includes('locked') || fnErr.message?.includes('minutes'))) {
       throw new Error(fnErr.message);
@@ -169,22 +175,25 @@ export async function startSuperAdminLoginCall(email?: string): Promise<StartSup
         success: true,
         message: data.message || 'Verification code sent to your registered Super Admin email.',
         email: data.email,
-        code: data.code,
         expiresInSeconds: data.expiresInSeconds || SUPER_ADMIN_OTP_EXPIRY_SECONDS,
         cooldownSeconds: data.cooldownSeconds || SUPER_ADMIN_OTP_RESEND_COOLDOWN_SECONDS,
       };
     } else if (res.status === 429) {
-      throw new Error(data.error || 'Please wait before requesting a new code.');
+      return {
+        success: true,
+        message: data.error || 'Please wait before requesting a new code.',
+        cooldownSeconds: data.cooldownSeconds || 60,
+      };
     } else if (res.status === 423 || data.isLocked) {
       throw new Error(data.error || 'Account is temporarily locked. Please try again in 15 minutes.');
     } else if (data.error) {
       throw new Error(data.error);
     }
   } catch (apiErr: any) {
-    if (apiErr.message?.includes('wait') || apiErr.message?.includes('locked') || apiErr.message?.includes('15 minutes')) {
+    if (apiErr.message?.includes('locked') || apiErr.message?.includes('15 minutes')) {
       throw apiErr;
     }
-    console.warn('[superAdminAuth] Local API fallback error:', apiErr);
+    console.warn('[superAdminAuth] Local API fallback note:', apiErr);
   }
 
   throw new Error('Could not dispatch the verification email. Please try again later.');
