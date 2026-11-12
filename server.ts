@@ -5,8 +5,17 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getApps, getApp, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+
+const admin = {
+  get apps() { return getApps(); },
+  initializeApp: (...args: any[]) => (initializeApp as any)(...args),
+  app: () => getApp(),
+  auth: () => getAuth(),
+  firestore: Object.assign(() => getFirestore(), { FieldValue }),
+};
 
 if (!admin.apps.length) {
   try {
