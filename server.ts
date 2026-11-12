@@ -5,6 +5,17 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
+
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp();
+  } catch (initErr: any) {
+    console.warn('[Server] Firebase Admin initialization note:', initErr?.message || initErr);
+  }
+}
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -491,6 +502,423 @@ async function startServer() {
     }
     res.json({ isVerified: false });
   });
+
+  // ==========================================================
+  // SECURE ADMIN MANAGEMENT SYSTEM (SUPER ADMIN ONLY)
+  // ==========================================================
+  const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-5b67ed85-eca9-4578-81ec-a8f1bfd7298e';
+
+  function getOtpDb() {
+    try {
+      if (FIRESTORE_DATABASE_ID && FIRESTORE_DATABASE_ID !== '(default)') {
+        return getFirestore(admin.app(), FIRESTORE_DATABASE_ID);
+      }
+    } catch (err: any) {
+      console.warn('[Server] Fallback to default firestore instance:', err?.message);
+    }
+    return admin.firestore();
+  }
+
+  const ALLOWED_ADMIN_PERMISSIONS = [
+    'approve_resellers',
+    'handle_support',
+    'manage_products',
+    'manage_orders',
+    'manage_wallet',
+    'manage_commission',
+    'view_reports',
+    'send_notifications',
+    'manage_banners',
+  ];
+
+  const MAX_ADMINS_LIMIT = 10;
+
+  function isValidPassword(pwd: string): boolean {
+    if (!pwd || typeof pwd !== 'string' || pwd.length < 8) return false;
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasLower = /[a-z]/.test(pwd);
+    const hasNumber = /[0-9]/.test(pwd);
+    const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd);
+    return hasUpper && hasLower && hasNumber && hasSymbol;
+  }
+
+  async function sendAdminWelcomeEmail(toEmail: string, fullName: string, adminId: string, resetLink: string) {
+    const appLoginUrl = 'https://skyautomationtech.com';
+    return gmailTransporter.sendMail({
+      from: `"ReSellBD Administration" <${GMAIL_USER}>`,
+      to: toEmail,
+      subject: `Welcome to ReSellBD Management Team (${adminId})`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 28px; background: #050B1A; color: #ffffff; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #3DD055; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">ReSellBD</h1>
+            <p style="color: #0E9AA7; font-size: 13px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1.5px;">Administrative Management Portal</p>
+          </div>
+
+          <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+            <h2 style="margin: 0 0 12px 0; color: #ffffff; font-size: 18px; font-weight: 700;">স্বাগতম, ${fullName}!</h2>
+            <p style="margin: 0 0 16px 0; color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+              সুপার অ্যাডমিন আপনাকে <strong>ReSellBD</strong> প্ল্যাটফর্মের অ্যাডমিনিস্ট্রেটর হিসেবে অনুমোদন ও যুক্ত করেছেন।
+              Your official administrator credentials have been created.
+            </p>
+
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13px;">
+              <tr>
+                <td style="padding: 8px 0; color: #94a3b8; width: 140px;">Admin ID / আইডি:</td>
+                <td style="padding: 8px 0; color: #3DD055; font-weight: 700; font-family: monospace; font-size: 14px;">${adminId}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #94a3b8;">Role / পদবী:</td>
+                <td style="padding: 8px 0; color: #ffffff; font-weight: 600;">System Administrator (অ্যাডমিন)</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #94a3b8;">Login Email / ইমেইল:</td>
+                <td style="padding: 8px 0; color: #ffffff; font-weight: 600;">${toEmail}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #94a3b8;">Login Portal / পোর্টাল:</td>
+                <td style="padding: 8px 0;"><a href="${appLoginUrl}" style="color: #0E9AA7; text-decoration: none; font-weight: 600;">ReSellBD Login Portal</a></td>
+              </tr>
+            </table>
+
+            <div style="background: rgba(14,154,167,0.12); border: 1px solid rgba(14,154,167,0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+              <p style="margin: 0 0 6px 0; color: #3DD055; font-size: 13px; font-weight: 700;">নিরাপত্তা নির্দেশিকা (Security Note):</p>
+              <p style="margin: 0; color: #e2e8f0; font-size: 12px; line-height: 1.5;">
+                আপনার প্রাথমিক অস্থায়ী পাসওয়ার্ডটি সুপার অ্যাডমিন আপনাকে ব্যক্তিগতভাবে প্রদান করেছেন (নিরাপত্তার স্বার্থে ইমেইলে পাঠানো হয় না)। অনুগ্রহ করে নিচের বাটনে ক্লিক করে সরাসরি আপনার নিজস্ব পাসওয়ার্ড সেট করুন অথবা লগইন করে প্রথমবারে পরিবর্তন করে নিন।
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 24px 0 12px 0;">
+              <a href="${resetLink}" style="display: inline-block; background: linear-gradient(135deg, #0E9AA7, #3DD055); color: #ffffff; text-decoration: none; font-weight: 700; font-size: 14px; padding: 14px 28px; border-radius: 12px; box-shadow: 0 4px 15px rgba(61,208,85,0.3);">
+                Set Your Own Password (পাসওয়ার্ড সেট করুন)
+              </a>
+            </div>
+            <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 8px 0 0 0;">
+              This secure password link is valid for a limited time.
+            </p>
+          </div>
+
+          <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0; line-height: 1.5;">
+            Sky Automation Tech • ReSellBD Administrator Network<br/>
+            This is an automated operational notification. Never share your credentials with anyone.
+          </p>
+        </div>
+      `,
+    });
+  }
+
+  // 1. Create Admin API (Express Fallback / Preview Endpoint)
+  app.post('/api/admin/create-admin', async (req, res) => {
+    try {
+      const { fullName, email, mobile, password, permissions = [], profilePhotoUrl = '', internalNote = '' } = req.body || {};
+      const cleanName = String(fullName || '').trim();
+      const cleanEmail = String(email || '').toLowerCase().trim();
+      const cleanMobile = String(mobile || '').trim();
+      const cleanPassword = String(password || '');
+
+      if (!cleanName || cleanName.length < 2) {
+        return res.status(400).json({ error: 'Please provide a valid full name.' });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+        return res.status(400).json({ error: 'Please provide a valid email address.' });
+      }
+
+      const bdMobileRegex = /^01[3-9]\d{8}$/;
+      if (!cleanMobile || !bdMobileRegex.test(cleanMobile)) {
+        return res.status(400).json({ error: 'Please provide a valid Bangladeshi mobile number (01[3-9]XXXXXXXX).' });
+      }
+
+      if (!isValidPassword(cleanPassword)) {
+        return res.status(400).json({
+          error: 'Password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.',
+        });
+      }
+
+      const sanitizedPerms = (Array.isArray(permissions) ? permissions : []).filter((p: string) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
+      if (sanitizedPerms.length === 0) {
+        return res.status(400).json({ error: 'At least one operational permission must be selected.' });
+      }
+
+      const db = getOtpDb();
+
+      // Enforce MAX_ADMINS limit
+      const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
+      let activeCount = 0;
+      adminsSnap.forEach((d) => {
+        if (d.data()?.status !== 'deleted') activeCount++;
+      });
+
+      if (activeCount >= MAX_ADMINS_LIMIT) {
+        return res.status(429).json({
+          error: `Administrator limit reached (${MAX_ADMINS_LIMIT} active admins). Please suspend or remove an existing admin.`,
+        });
+      }
+
+      // Check duplicate email
+      const existingDoc = await db.collection('users').where('email', '==', cleanEmail).limit(1).get();
+      if (!existingDoc.empty) {
+        return res.status(409).json({ error: 'An account with this email address already exists.' });
+      }
+
+      // Create Auth user via Admin SDK
+      let newAuthUser;
+      try {
+        newAuthUser = await admin.auth().createUser({
+          email: cleanEmail,
+          password: cleanPassword,
+          displayName: cleanName,
+          emailVerified: false,
+        });
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/email-already-exists') {
+          return res.status(409).json({ error: 'An account with this email address already exists in Authentication.' });
+        }
+        return res.status(400).json({ error: authErr.message || 'Failed to create user in Firebase Auth.' });
+      }
+
+      const newUid = newAuthUser.uid;
+      let assignedAdminId = 'ADM-0001';
+
+      try {
+        await db.runTransaction(async (t) => {
+          const counterRef = db.collection('counters').doc('adminId');
+          const counterDoc = await t.get(counterRef);
+          let nextCount = 1;
+          if (counterDoc.exists) {
+            nextCount = (counterDoc.data()?.lastCount || 0) + 1;
+          }
+          assignedAdminId = `ADM-${String(nextCount).padStart(4, '0')}`;
+
+          t.set(counterRef, {
+            lastCount: nextCount,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          const newAdminRef = db.collection('users').doc(newUid);
+          t.set(newAdminRef, {
+            uid: newUid,
+            adminId: assignedAdminId,
+            fullName: cleanName,
+            email: cleanEmail,
+            mobile: cleanMobile,
+            role: 'admin',
+            status: 'approved',
+            permissions: sanitizedPerms,
+            createdBy: 'super_admin_portal',
+            createdByName: 'Super Admin',
+            mustChangePassword: true,
+            emailVerified: false,
+            profilePhotoUrl: profilePhotoUrl || '',
+            internalNote: internalNote || '',
+            shopName: 'ReSellBD HQ',
+            division: 'Dhaka',
+            district: 'Dhaka',
+            upazila: 'Tejgaon',
+            address: 'Headquarters, Dhaka',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+      } catch (txErr: any) {
+        console.error('[API createAdmin] Transaction failed. Rolling back:', txErr);
+        await admin.auth().deleteUser(newUid).catch(() => {});
+        return res.status(500).json({ error: 'Database transaction failed. Auth user rolled back.' });
+      }
+
+      // Audit Log
+      try {
+        await db.collection('auditLogs').add({
+          action: 'admin_created',
+          actor: 'super_admin',
+          targetUid: newUid,
+          targetEmail: cleanEmail,
+          adminId: assignedAdminId,
+          permissions: sanitizedPerms,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+
+      // Generate reset link & send email
+      let resetLink = 'https://skyautomationtech.com';
+      try {
+        resetLink = await admin.auth().generatePasswordResetLink(cleanEmail);
+      } catch (_) {}
+
+      try {
+        await sendAdminWelcomeEmail(cleanEmail, cleanName, assignedAdminId, resetLink);
+        console.log(`[API createAdmin] Welcome email dispatched to ${cleanEmail}`);
+      } catch (mailErr) {
+        console.warn('[API createAdmin] Email send error:', mailErr);
+      }
+
+      res.json({
+        success: true,
+        adminId: assignedAdminId,
+        uid: newUid,
+        email: cleanEmail,
+        fullName: cleanName,
+        message: `Admin account (${assignedAdminId}) successfully created for ${cleanName}. Welcome email sent.`,
+      });
+    } catch (err: any) {
+      console.error('[API createAdmin] Server error:', err);
+      res.status(500).json({ error: err.message || 'Failed to create admin account.' });
+    }
+  });
+
+  // 2. Resend Admin Welcome Email API
+  app.post('/api/admin/resend-welcome-email', async (req, res) => {
+    try {
+      const { adminUid } = req.body || {};
+      if (!adminUid) {
+        return res.status(400).json({ error: 'adminUid is required.' });
+      }
+
+      const db = getOtpDb();
+      const targetDoc = await db.collection('users').doc(adminUid).get();
+      if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+        return res.status(404).json({ error: 'Admin profile not found.' });
+      }
+
+      const targetData = targetDoc.data() || {};
+      const resetLink = await admin.auth().generatePasswordResetLink(targetData.email);
+      await sendAdminWelcomeEmail(targetData.email, targetData.fullName, targetData.adminId || 'Admin', resetLink);
+
+      res.json({
+        success: true,
+        message: `Welcome email successfully resent to ${targetData.email}.`,
+      });
+    } catch (err: any) {
+      console.error('[API resendAdminWelcomeEmail] Error:', err);
+      res.status(500).json({ error: err.message || 'Failed to resend welcome email.' });
+    }
+  });
+
+  // 3. Admin Change Password API (First Login / Forced Password Change)
+  app.post('/api/admin/change-password', async (req, res) => {
+    try {
+      const { newPassword, adminUid, email } = req.body || {};
+      if (!isValidPassword(newPassword)) {
+        return res.status(400).json({
+          error: 'Password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.',
+        });
+      }
+
+      const db = getOtpDb();
+      let targetUid = adminUid;
+
+      if (!targetUid && email) {
+        const uSnap = await db.collection('users').where('email', '==', email.toLowerCase().trim()).limit(1).get();
+        if (!uSnap.empty) {
+          targetUid = uSnap.docs[0].id;
+        }
+      }
+
+      if (!targetUid) {
+        return res.status(400).json({ error: 'Target admin could not be resolved.' });
+      }
+
+      const targetRef = db.collection('users').doc(targetUid);
+      const targetDoc = await targetRef.get();
+      if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+        return res.status(403).json({ error: 'Only admin accounts can use this endpoint.' });
+      }
+
+      await admin.auth().updateUser(targetUid, { password: newPassword });
+      await targetRef.update({
+        mustChangePassword: false,
+        passwordChangedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      const userData = targetDoc.data() || {};
+      try {
+        await db.collection('notifications').add({
+          title: 'Admin First Login & Password Updated',
+          message: `Admin ${userData.fullName} (${userData.adminId || userData.email}) has set their personal password and logged in.`,
+          type: 'admin_security_alert',
+          targetRole: 'super_admin',
+          userId: targetUid,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+
+      res.json({
+        success: true,
+        message: 'Password successfully updated. You may now access the administrative portal.',
+      });
+    } catch (err: any) {
+      console.error('[API changeAdminPassword] Error:', err);
+      res.status(500).json({ error: err.message || 'Failed to update admin password.' });
+    }
+  });
+
+  // 4. Toggle Admin Status API (Suspend / Activate)
+  app.post('/api/admin/toggle-status', async (req, res) => {
+    try {
+      const { adminUid, status, reason = '' } = req.body || {};
+      if (!adminUid) return res.status(400).json({ error: 'adminUid is required.' });
+
+      const db = getOtpDb();
+      const targetRef = db.collection('users').doc(adminUid);
+      const targetDoc = await targetRef.get();
+      if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+        return res.status(404).json({ error: 'Admin account not found.' });
+      }
+
+      const newStatus = status === 'suspended' ? 'suspended' : 'approved';
+      if (newStatus === 'suspended') {
+        await admin.auth().revokeRefreshTokens(adminUid).catch(() => {});
+      }
+
+      await targetRef.update({
+        status: newStatus,
+        suspensionReason: newStatus === 'suspended' ? (reason || 'Administrative suspension by Super Admin') : null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      res.json({
+        success: true,
+        status: newStatus,
+        message: `Admin account has been ${newStatus === 'suspended' ? 'suspended' : 'activated'}.`,
+      });
+    } catch (err: any) {
+      console.error('[API toggleAdminStatus] Error:', err);
+      res.status(500).json({ error: err.message || 'Failed to update admin status.' });
+    }
+  });
+
+  // 5. Update Admin Permissions API
+  app.post('/api/admin/update-permissions', async (req, res) => {
+    try {
+      const { adminUid, permissions = [] } = req.body || {};
+      if (!adminUid) return res.status(400).json({ error: 'adminUid is required.' });
+
+      const sanitizedPerms = (Array.isArray(permissions) ? permissions : []).filter((p: string) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
+      const db = getOtpDb();
+      const targetRef = db.collection('users').doc(adminUid);
+      const targetDoc = await targetRef.get();
+      if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+        return res.status(404).json({ error: 'Admin account not found.' });
+      }
+
+      await targetRef.update({
+        permissions: sanitizedPerms,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      res.json({
+        success: true,
+        permissions: sanitizedPerms,
+        message: 'Admin permissions updated successfully.',
+      });
+    } catch (err: any) {
+      console.error('[API updateAdminPermissions] Error:', err);
+      res.status(500).json({ error: err.message || 'Failed to update admin permissions.' });
+    }
+  });
+
 
   // Shop Name Availability Checking & Rate Limiting
   const checkShopRateLimits = new Map<string, { count: number; resetAt: number }>();

@@ -736,15 +736,16 @@ export async function verifyCurrentDeviceSession(userId: string): Promise<{
       throw err;
     }
 
-    // If record is missing (deleted on remote logout), and we are past the 10-second grace period:
+    // If record is missing, auto-heal and register device session rather than assuming remote logout
     if (!devSnap.exists()) {
-      console.warn('[AuthDebug] Device record was deleted from server (remote logout). Forcing sign-out...');
-      return { valid: false, reason: 'You were signed out from another device' };
+      console.log('[AuthDebug] Device record does not exist on server. Auto-registering active device session now...');
+      recordLoginHistory(userId).catch((regErr) => console.warn('[AuthDebug] Could not auto-register device session:', regErr));
+      return { valid: true };
     }
 
     const data = devSnap.data();
-    // Only sign out if the server document says status 'signed_out' AND activeSessionId differs from our current local sessionId
-    if (data.status === 'signed_out' && data.activeSessionId !== localSessionId) {
+    // Only sign out if the server document explicitly confirms status 'signed_out' AND activeSessionId differs from our current local sessionId
+    if (data.status === 'signed_out' && data.activeSessionId && data.activeSessionId !== localSessionId) {
       console.warn('[AuthDebug] Server confirms device signed_out for session:', { serverSession: data.activeSessionId, localSessionId });
       return { valid: false, reason: 'You were signed out from another device' };
     }

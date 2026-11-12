@@ -6,7 +6,8 @@ import { Sidebar } from '../common/Sidebar';
 import { Navbar } from '../common/Navbar';
 import { ApprovalList } from '../admin/ApprovalList';
 import { AllResellersList } from '../admin/AllResellersList';
-import { AddAdminModal } from '../admin/AddAdminModal';
+import { CreateAdminModal } from '../admin/CreateAdminModal';
+import { AdminManagementView } from '../admin/AdminManagementView';
 import { ProductManagement } from '../inventory/ProductManagement';
 import { CategoryManagement } from '../inventory/CategoryManagement';
 import { BrandManagement } from '../inventory/BrandManagement';
@@ -34,7 +35,7 @@ interface SuperAdminDashboardProps {
 
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
+  const [isCreateAdminOpen, setIsCreateAdminOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Real Stats States
@@ -237,24 +238,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
       case 'audit':
         return <SecurityPage user={user} />;
       case 'admin':
-        return (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Admin Management</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Create and manage administrative accounts for Sky Automation Tech.</p>
-              </div>
-              <button
-                onClick={() => setIsAddAdminOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-md flex items-center gap-2"
-              >
-                <Shield className="w-4 h-4" />
-                <span>Add New Admin</span>
-              </button>
-            </div>
-            <AllResellersList user={user} />
-          </div>
-        );
+        return <AdminManagementView user={user} onOpenCreateAdmin={() => setIsCreateAdminOpen(true)} />;
       case 'dashboard':
         return (
           <div className="space-y-6">
@@ -567,7 +551,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onLogout={onLogout}
-        onOpenAddAdmin={() => setIsAddAdminOpen(true)}
+        onOpenAddAdmin={() => setIsCreateAdminOpen(true)}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
@@ -584,11 +568,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, 
         </main>
       </div>
 
-      <AddAdminModal
-        isOpen={isAddAdminOpen}
-        onClose={() => setIsAddAdminOpen(false)}
+      <CreateAdminModal
+        isOpen={isCreateAdminOpen}
+        onClose={() => setIsCreateAdminOpen(false)}
         onAdminCreated={() => {
-          setActiveTab('resellers');
+          setActiveTab('admin');
+          fetchDashboardMetrics();
         }}
       />
     </div>

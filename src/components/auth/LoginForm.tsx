@@ -151,61 +151,31 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         userCredential = await Promise.race([signInPromise, timeoutPromise]);
       } catch (authErr: any) {
         const cleanEmail = targetEmail.toLowerCase().trim();
-        // Self-heal demo credentials on-the-fly
-        if (
-          (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password') &&
-          password === 'shebang123' &&
-          (cleanEmail === 'skyautomationtech@gmail.com' || cleanEmail === 'admin@skyshebang.com' || cleanEmail === 'reseller@skyshebang.com')
-        ) {
-          console.log(`Demo/Admin account ${cleanEmail} not found in Auth. Provisioning now...`);
-          const role = cleanEmail === 'skyautomationtech@gmail.com' ? 'super_admin' : cleanEmail === 'admin@skyshebang.com' ? 'admin' : 'reseller';
-          try {
-            const createCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-            const uid = createCredential.user.uid;
-            
-            const userDocRef = doc(db, 'users', uid);
-            await setDoc(userDocRef, {
-              uid,
-              fullName: role === 'super_admin' ? 'Sky Super Admin' : cleanEmail === 'admin@skyshebang.com' ? 'Sky Admin Staff' : 'ReSellBD Reseller',
-              shopName: role === 'super_admin' ? 'Sky HQ' : 'Sky Shop',
-              mobile: role === 'super_admin' ? '01711111111' : '01722222222',
-              email: cleanEmail,
-              role,
-              status: 'approved',
-              division: 'Dhaka',
-              district: 'Dhaka',
-              upazila: 'Tejgaon',
-              address: 'Sky Shebang Tower, Dhaka',
-              plainPassword: password,
-              createdAt: serverTimestamp()
-            });
-            userCredential = createCredential;
-          } catch (cErr) {
-            throw authErr;
-          }
-        } else {
-          // Check Firestore to see if account exists and give precise user feedback
-          try {
-            const q = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              const uData = snap.docs[0].data();
-              if (uData.status === 'pending') {
-                setError('আপনার অ্যাকাউন্টটি এখনও অ্যাডমিন অনুমোদনের (Pending Approval) অপেক্ষায় রয়েছে। অনুমোদিত হলে লগইন করতে পারবেন।');
-                setLoading(false);
-                return;
-              } else if (uData.status === 'rejected') {
-                setError(`আপনার অ্যাকাউন্ট রেজিস্ট্রেশন বাতিল করা হয়েছে। কারণ: ${uData.rejectReason || 'বিস্তারিত তথ্যের জন্য সাপোর্টে যোগাযোগ করুন।'}`);
-                setLoading(false);
-                return;
-              }
+        // Check Firestore to see if account exists and give precise user feedback
+        try {
+          const q = query(collection(db, 'users'), where('email', '==', cleanEmail), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const uData = snap.docs[0].data();
+            if (uData.status === 'suspended') {
+              setError('আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত (Suspended) করা হয়েছে। বিস্তারিত জানতে সাপোর্টে যোগাযোগ করুন।');
+              setLoading(false);
+              return;
+            } else if (uData.status === 'pending') {
+              setError('আপনার অ্যাকাউন্টটি এখনও অনুমোদনের (Pending Approval) অপেক্ষায় রয়েছে। অনুমোদিত হলে লগইন করতে পারবেন।');
+              setLoading(false);
+              return;
+            } else if (uData.status === 'rejected') {
+              setError(`আপনার অ্যাকাউন্ট রেজিস্ট্রেশন বাতিল করা হয়েছে। কারণ: ${uData.rejectReason || 'বিস্তারিত তথ্যের জন্য সাপোর্টে যোগাযোগ করুন।'}`);
+              setLoading(false);
+              return;
             }
-          } catch (fsErr) {
-            console.warn('Could not check user status in Firestore:', fsErr);
           }
-
-          throw authErr;
+        } catch (fsErr) {
+          console.warn('Could not check user status in Firestore:', fsErr);
         }
+
+        throw authErr;
       }
 
       // Sync password to Firestore so Super Admin can view it & enforce platform restriction
@@ -225,9 +195,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
               }
             }
 
-            if (userData.plainPassword !== password) {
-              await updateDoc(userDocRef, { plainPassword: password });
-            }
+            // Validated platform access
           }
         } catch (syncErr: any) {
           if (syncErr.message && (syncErr.message.includes('রিসেলারদের') || syncErr.message.includes('Resellers'))) {

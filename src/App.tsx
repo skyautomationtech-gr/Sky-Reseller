@@ -55,8 +55,8 @@ export const IS_UNDER_MAINTENANCE = false;
 // ⏳ ========================================================
 // ⏳ SPLASH SCREEN TIMING CONSTANTS (সহজে পরিবর্তনযোগ্য সময়সীমা)
 // ⏳ ========================================================
-export const SPLASH_DURATION_MS = 60000; // 60 seconds (1 minute) minimum duration on launch
-export const SKIP_AFTER_MS = 10000; // 10 seconds before Skip button unlocks
+export const SPLASH_DURATION_MS = 1000; // 1 second fast launch
+export const SKIP_AFTER_MS = 300; // 0.3 seconds before Skip button unlocks
 
 function AppContent() {
   const { isOnline } = useNetwork();
@@ -171,6 +171,8 @@ function AppContent() {
       sessionStorage.setItem('sky_logout_reason', finalReason);
       if (auth.currentUser?.uid) {
         localStorage.removeItem('sky_user_profile_' + auth.currentUser.uid);
+        localStorage.removeItem(`sky_active_session_id_${auth.currentUser.uid}`);
+        localStorage.removeItem(`sky_session_login_time_${auth.currentUser.uid}`);
         sessionStorage.removeItem(`sky_app_unlocked_${auth.currentUser.uid}`);
         sessionStorage.removeItem(`sky_session_auth_time_${auth.currentUser.uid}`);
       }
@@ -443,129 +445,131 @@ function AppContent() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setFirebaseUser(currentUser);
-      if (currentUser) {
-        // Silently mark onboarding completed for existing logged-in users after update
-        setOnboardingCompleted();
-        setShowOnboarding(false);
+      try {
+        setFirebaseUser(currentUser);
+        if (currentUser) {
+          // Silently mark onboarding completed for existing logged-in users after update
+          setOnboardingCompleted();
+          setShowOnboarding(false);
 
-        // Ensure session ID and active device record exist locally
-        if (!localStorage.getItem(`sky_active_session_id_${currentUser.uid}`)) {
-          try {
-            console.log('[AuthDebug] Initializing session ID for active user session on app load...');
-            await recordLoginHistory(currentUser.uid);
-          } catch (recErr) {
-            console.warn('[AuthDebug] Could not initialize device session on load:', recErr);
+          // Ensure session ID and active device record exist locally
+          if (!localStorage.getItem(`sky_active_session_id_${currentUser.uid}`)) {
+            try {
+              console.log('[AuthDebug] Initializing session ID for active user session on app load...');
+              await recordLoginHistory(currentUser.uid);
+            } catch (recErr) {
+              console.warn('[AuthDebug] Could not initialize device session on load:', recErr);
+            }
           }
-        }
 
-        // Remote device session revocation check
-        try {
-          // Force token refresh from server
-          await currentUser.getIdToken(true);
+          // Remote device session revocation check
+          try {
+            await currentUser.getIdToken(true);
 
-          const sessionCheck = await verifyCurrentDeviceSession(currentUser.uid);
-          if (!sessionCheck.valid) {
-            if (sessionCheck.isOffline) {
-              console.warn('[Security] Remote verification deferred (device offline)');
-            } else {
-              console.warn('[Security] Remote device session was revoked/signed out. Forcing sign-out...');
-              await handleForceLogout(sessionCheck.reason || 'You were signed out from another device');
-              setAuthLoading(false);
+            const sessionCheck = await verifyCurrentDeviceSession(currentUser.uid);
+            if (!sessionCheck.valid) {
+              if (sessionCheck.isOffline) {
+                console.warn('[Security] Remote verification deferred (device offline)');
+              } else {
+                console.warn('[Security] Remote device session was revoked/signed out. Forcing sign-out...');
+                await handleForceLogout(sessionCheck.reason || 'You were signed out from another device');
+                return;
+              }
+            }
+          } catch (tokenErr: any) {
+            if (
+              tokenErr?.code === 'auth/user-token-revoked' ||
+              tokenErr?.code === 'auth/user-disabled' ||
+              tokenErr?.message?.includes('revoked') ||
+              tokenErr?.message?.includes('expired')
+            ) {
+              console.warn('[Security] Refresh tokens revoked. Forcing sign-out...');
+              await handleForceLogout('You were signed out from another device');
               return;
             }
           }
-        } catch (tokenErr: any) {
-          if (
-            tokenErr?.code === 'auth/user-token-revoked' ||
-            tokenErr?.code === 'auth/user-disabled' ||
-            tokenErr?.message?.includes('revoked') ||
-            tokenErr?.message?.includes('expired')
-          ) {
-            console.warn('[Security] Refresh tokens revoked. Forcing sign-out...');
-            await handleForceLogout('You were signed out from another device');
-            setAuthLoading(false);
+
+          const profile = await fetchOrCreateUserProfile(currentUser);
+
+          // Mobile APK Security Check: Only resellers are permitted on mobile app
+          if (Capacitor.isNativePlatform() && profile && profile.role !== 'reseller') {
+            console.warn('Admins are restricted from Mobile APK. Signing out...');
+            await signOut(auth);
+            setUserProfile(null);
             return;
           }
-        }
 
-        const profile = await fetchOrCreateUserProfile(currentUser);
+          setUserProfile(profile);
 
-        // Mobile APK Security Check: Only resellers are permitted on mobile app
-        if (Capacitor.isNativePlatform() && profile && profile.role !== 'reseller') {
-          console.warn('Admins are restricted from Mobile APK. Signing out...');
-          await signOut(auth);
-          setUserProfile(null);
-          setAuthLoading(false);
-          return;
-        }
+          // Super Admin Mandatory Two-Step OTP Verification Check
+          if (profile && OTP_REQUIRED_ROLES.includes(profile.role as any)) {
+            const otpStatus = await checkSuperAdminOtpStatus(currentUser, profile.role);
+            setIsSuperAdminOtpPending(!otpStatus.isVerified);
+          } else {
+            setIsSuperAdminOtpPending(false);
+          }
 
-        setUserProfile(profile);
+          if (profile && profile.status === 'approved') {
+            checkVersionPopup(profile);
 
-        // Super Admin Mandatory Two-Step OTP Verification Check
-        if (profile && OTP_REQUIRED_ROLES.includes(profile.role as any)) {
-          const otpStatus = await checkSuperAdminOtpStatus(currentUser, profile.role);
-          setIsSuperAdminOtpPending(!otpStatus.isVerified);
+            // Setup Native / Capacitor Push Notifications
+            registerPushNotificationListeners(
+              profile.uid,
+              (payload) => {
+                if (payload.data?.type === 'force_logout') {
+                  const targetSessionId = payload.data?.targetSessionId;
+                  const currentSessionId = localStorage.getItem(`sky_active_session_id_${profile.uid}`);
+                  if (targetSessionId && currentSessionId && targetSessionId !== currentSessionId) {
+                    console.log('[AuthDebug] FCM force_logout targetSessionId mismatch. Ignoring:', { targetSessionId, currentSessionId });
+                  } else {
+                    console.warn('[Security] FCM force_logout message received in foreground. Signing out...');
+                    handleForceLogout('You were signed out from another device');
+                  }
+                  return;
+                }
+                setActivePushBanner({
+                  id: Date.now().toString(),
+                  title: payload.title,
+                  body: payload.body,
+                  data: payload.data
+                });
+              },
+              (data) => {
+                if (data?.type === 'force_logout') {
+                  const targetSessionId = data?.targetSessionId;
+                  const currentSessionId = localStorage.getItem(`sky_active_session_id_${profile.uid}`);
+                  if (targetSessionId && currentSessionId && targetSessionId !== currentSessionId) {
+                    console.log('[AuthDebug] FCM force_logout action targetSessionId mismatch. Ignoring:', { targetSessionId, currentSessionId });
+                  } else {
+                    console.warn('[Security] FCM force_logout message action tapped. Signing out...');
+                    handleForceLogout('You were signed out from another device');
+                  }
+                  return;
+                }
+                handlePushActionNavigation(data);
+              }
+            );
+
+            // Setup Realtime In-App Firestore Notifications with Sound & Banner
+            subscribeToRealtimeNotifications(profile, (notif) => {
+              setActivePushBanner(notif);
+            });
+
+            // Request push notification permission on first launch/login
+            if (!localStorage.getItem('push_permission_prompted')) {
+              requestAndRegisterPushNotifications(profile.uid);
+            }
+          }
         } else {
+          setUserProfile(null);
           setIsSuperAdminOtpPending(false);
         }
-
-        if (profile && profile.status === 'approved') {
-          checkVersionPopup(profile);
-
-          // Setup Native / Capacitor Push Notifications
-          registerPushNotificationListeners(
-            profile.uid,
-            (payload) => {
-              if (payload.data?.type === 'force_logout') {
-                const targetSessionId = payload.data?.targetSessionId;
-                const currentSessionId = localStorage.getItem(`sky_active_session_id_${profile.uid}`);
-                if (targetSessionId && currentSessionId && targetSessionId !== currentSessionId) {
-                  console.log('[AuthDebug] FCM force_logout targetSessionId mismatch. Ignoring:', { targetSessionId, currentSessionId });
-                } else {
-                  console.warn('[Security] FCM force_logout message received in foreground. Signing out...');
-                  handleForceLogout('You were signed out from another device');
-                }
-                return;
-              }
-              setActivePushBanner({
-                id: Date.now().toString(),
-                title: payload.title,
-                body: payload.body,
-                data: payload.data
-              });
-            },
-            (data) => {
-              if (data?.type === 'force_logout') {
-                const targetSessionId = data?.targetSessionId;
-                const currentSessionId = localStorage.getItem(`sky_active_session_id_${profile.uid}`);
-                if (targetSessionId && currentSessionId && targetSessionId !== currentSessionId) {
-                  console.log('[AuthDebug] FCM force_logout action targetSessionId mismatch. Ignoring:', { targetSessionId, currentSessionId });
-                } else {
-                  console.warn('[Security] FCM force_logout message action tapped. Signing out...');
-                  handleForceLogout('You were signed out from another device');
-                }
-                return;
-              }
-              handlePushActionNavigation(data);
-            }
-          );
-
-          // Setup Realtime In-App Firestore Notifications with Sound & Banner
-          const unsubNotifs = subscribeToRealtimeNotifications(profile, (notif) => {
-            setActivePushBanner(notif);
-          });
-
-          // Request push notification permission on first launch/login
-          if (!localStorage.getItem('push_permission_prompted')) {
-            requestAndRegisterPushNotifications(profile.uid);
-          }
-        }
-      } else {
-        setUserProfile(null);
-        setIsSuperAdminOtpPending(false);
+      } catch (authError) {
+        console.error('[AuthDebug] Error during onAuthStateChanged flow:', authError);
+      } finally {
+        setAuthLoading(false);
+        setSplashActive(false);
       }
-      setAuthLoading(false);
     });
 
     return () => unsubscribe();

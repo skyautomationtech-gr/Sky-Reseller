@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
 import resellbdLogo from '../../assets/images/logo.png';
 
-export const SPLASH_DURATION_MS = 60000;
-export const SKIP_AFTER_MS = 10000;
+export const SPLASH_DURATION_MS = 1000;
+export const SKIP_AFTER_MS = 300;
 
 interface SplashLoadingScreenProps {
   onSkip?: () => void;

@@ -34,11 +34,4 @@ export const db = firestoreInstance;
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
-// Secondary app for creating admin accounts without logging out super_admin
-export function createSecondaryAppForAdmin() {
-  const secondaryName = 'secondaryAdminApp-' + Date.now();
-  const secondaryApp = initializeApp(firebaseConfig, secondaryName);
-  return {
-    secondaryAuth: getAuth(secondaryApp),
-  };
-}
+

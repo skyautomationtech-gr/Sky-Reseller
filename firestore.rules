@@ -84,46 +84,46 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, list: if isSignedIn();
 
-      // Creating users: Resellers can self-register as pending; Admins can create resellers; Super Admin manages admins
-      allow create: if isSignedIn() && (
-        isSuperAdminEmail() ||
-        (
-          request.resource.data.role in ['admin', 'super_admin'] ? isSuperAdmin() : isAdmin()
+      // Creating users:
+      // Admins and Super Admins can NEVER be created directly by client SDK (only Cloud Functions / Admin SDK).
+      // Only standard self-registration as 'reseller' or 'customer' with initial 'pending' status is permitted.
+      // Critical fields (role, status, permissions, createdBy, mustChangePassword, adminId) cannot be forged.
+      allow create: if isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.role == 'reseller' &&
+        request.resource.data.status == 'pending' &&
+        !('permissions' in request.resource.data) &&
+        !('createdBy' in request.resource.data) &&
+        !('mustChangePassword' in request.resource.data) &&
+        !('adminId' in request.resource.data) &&
+        !('rejectReason' in request.resource.data) &&
+        !('suspensionType' in request.resource.data) &&
+        !('approvedAt' in request.resource.data) &&
+        !('sessionsValidFrom' in request.resource.data);
+
+      // Updating users:
+      // Clients can NEVER modify: role, status, permissions, createdBy, mustChangePassword, adminId.
+      // The Super Admin account (skyautomationtech@gmail.com) is permanently protected from alteration by non-owner.
+      allow update: if isSignedIn() && isSessionValid() && (
+        // Super Admin (owner with OTP session) updating operational profile data
+        (isSuperAdmin() &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+           'role', 'adminId', 'createdBy'
+         ]) &&
+         // Prevent demoting or modifying the sole Super Admin account
+         (resource.data.email.lower() != 'skyautomationtech@gmail.com' || request.auth.token.email.lower() == 'skyautomationtech@gmail.com')
         ) ||
-        (
-          request.auth.uid == userId &&
-          request.resource.data.role in ['reseller', 'customer'] &&
-          request.resource.data.status == 'pending' &&
-          !request.resource.data.keys().hasAny([
-            'rejectReason', 'suspensionType', 'approvedAt', 'sessionsValidFrom'
-          ])
+        // User updating their own non-privileged profile details
+        (request.auth.uid == userId &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+           'role', 'status', 'permissions', 'createdBy', 'mustChangePassword', 'adminId',
+           'resellerId', 'emailVerified', 'rejectReason', 'suspensionType', 'approvedAt', 'sessionsValidFrom'
+         ])
         )
       );
 
-      // Updating users: Super Admin can update all; Admins can update resellers; Resellers can update basic profile
-      // sessionsValidFrom is strictly immutable from the client (only Cloud Functions/Admin Auth can set it)
-      allow update: if isSignedIn() && (
-        (isSuperAdmin() && isSessionValid()) ||
-        (request.auth.uid == userId && isSuperAdminEmail()) ||
-        (
-          isAdmin() &&
-          isSessionValid() &&
-          resource.data.role != 'admin' &&
-          resource.data.role != 'super_admin' &&
-          request.resource.data.role != 'admin' &&
-          request.resource.data.role != 'super_admin'
-        ) ||
-        (
-          request.auth.uid == userId &&
-          isSessionValid() &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'role', 'status', 'resellerId', 'emailVerified', 'rejectReason', 'suspensionType', 'approvedAt', 'sessionsValidFrom'
-          ])
-        )
-      );
-
-      // Deleting users is strictly restricted to verified Super Admin
-      allow delete: if isSignedIn() && isSuperAdmin();
+      // Deleting users: Super Admin document can NEVER be deleted by anyone from client. Other accounts only by Super Admin with OTP.
+      allow delete: if isSignedIn() && isSuperAdmin() && resource.data.email.lower() != 'skyautomationtech@gmail.com';
 
       // Login History subcollection
       match /loginHistory/{historyId} {
@@ -133,7 +133,6 @@ service cloud.firestore {
       }
 
       // Devices subcollection: user can manage their devices, Admin can view/revoke
-      // Client cannot alter other users' device records
       match /devices/{deviceId} {
         allow read, list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
         allow create, update, delete: if isSignedIn() && (

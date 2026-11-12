@@ -103,6 +103,13 @@ export interface UserProfile {
   }>;
   slaNotified?: boolean;
   resellerId?: string;
+  adminId?: string;
+  permissions?: string[];
+  createdBy?: string;
+  createdByName?: string;
+  mustChangePassword?: boolean;
+  passwordChangedAt?: any;
+  internalNote?: string;
   plainPassword?: string;
   lastSeenVersion?: string;
   appLockEnabled?: boolean;

@@ -1872,4 +1872,571 @@ exports.logoutAllDevices = functions.https.onCall(async (data, context) => {
 exports.revokeSingleDeviceSession = exports.logoutDevice;
 exports.revokeAllUserSessions = exports.logoutAllDevices;
 
+// =========================================================================
+// 8. SECURE ADMIN MANAGEMENT SYSTEM (Super Admin Exclusive)
+// =========================================================================
+
+const ALLOWED_ADMIN_PERMISSIONS = [
+  'approve_resellers',
+  'handle_support',
+  'manage_products',
+  'manage_orders',
+  'manage_wallet',
+  'manage_commission',
+  'view_reports',
+  'send_notifications',
+  'manage_banners',
+];
+
+const MAX_ADMINS_LIMIT = 10;
+
+/**
+ * Validates password meets security rules:
+ * Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 symbol
+ */
+function isValidPassword(pwd) {
+  if (typeof pwd !== 'string' || pwd.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasLower = /[a-z]/.test(pwd);
+  const hasNumber = /[0-9]/.test(pwd);
+  const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd);
+  return hasUpper && hasLower && hasNumber && hasSymbol;
+}
+
+/**
+ * Sends branded HTML welcome email to the newly created admin.
+ * Does NOT include the temporary password.
+ */
+async function sendAdminWelcomeEmailHtml(email, fullName, adminId, resetLink) {
+  const nodemailer = require('nodemailer');
+  const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: gmailUser,
+      pass: gmailPass,
+    },
+  });
+
+  const appLoginUrl = process.env.APP_URL || 'https://ais-dev-6hdag5jt6lsfpxduigdl4r-698042614411.asia-southeast1.run.app';
+
+  await transporter.sendMail({
+    from: `"ReSellBD Security" <${gmailUser}>`,
+    to: email,
+    subject: `আপনার ReSellBD Admin অ্যাকাউন্ট তৈরি হয়েছে / Your ReSellBD Admin account is ready`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 28px; background: #050B1A; color: #ffffff; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h1 style="color: #3DD055; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">ReSellBD</h1>
+          <p style="color: #0E9AA7; font-size: 13px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1.5px;">Administrative Management Portal</p>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+          <h2 style="margin: 0 0 12px 0; color: #ffffff; font-size: 18px; font-weight: 700;">স্বাগতম, ${fullName}!</h2>
+          <p style="margin: 0 0 16px 0; color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+            সুপার অ্যাডমিন আপনাকে <strong>ReSellBD</strong> প্ল্যাটফর্মের অ্যাডমিনিস্ট্রেটর হিসেবে অনুমোদন ও যুক্ত করেছেন।
+            Your official administrator credentials have been created.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13px;">
+            <tr>
+              <td style="padding: 8px 0; color: #94a3b8; width: 140px;">Admin ID / আইডি:</td>
+              <td style="padding: 8px 0; color: #3DD055; font-weight: 700; font-family: monospace; font-size: 14px;">${adminId}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #94a3b8;">Role / পদবী:</td>
+              <td style="padding: 8px 0; color: #ffffff; font-weight: 600;">System Administrator (অ্যাডমিন)</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #94a3b8;">Login Email / ইমেইল:</td>
+              <td style="padding: 8px 0; color: #ffffff; font-weight: 600;">${email}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #94a3b8;">Login Portal / পোর্টাল:</td>
+              <td style="padding: 8px 0;"><a href="${appLoginUrl}" style="color: #0E9AA7; text-decoration: none; font-weight: 600;">ReSellBD Login Portal</a></td>
+            </tr>
+          </table>
+
+          <div style="background: rgba(14,154,167,0.12); border: 1px solid rgba(14,154,167,0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+            <p style="margin: 0 0 6px 0; color: #3DD055; font-size: 13px; font-weight: 700;">নিরাপত্তা নির্দেশিকা (Security Note):</p>
+            <p style="margin: 0; color: #e2e8f0; font-size: 12px; line-height: 1.5;">
+              আপনার প্রাথমিক অস্থায়ী পাসওয়ার্ডটি সুপার অ্যাডমিন আপনাকে ব্যক্তিগতভাবে প্রদান করেছেন (নিরাপত্তার স্বার্থে ইমেইলে পাঠানো হয় না)। অনুগ্রহ করে নিচের বাটনে ক্লিক করে সরাসরি আপনার নিজস্ব পাসওয়ার্ড সেট করুন অথবা লগইন করে প্রথমবারে পরিবর্তন করে নিন।
+            </p>
+          </div>
+
+          <div style="text-align: center; margin: 24px 0 12px 0;">
+            <a href="${resetLink}" style="display: inline-block; background: linear-gradient(135deg, #0E9AA7, #3DD055); color: #ffffff; text-decoration: none; font-weight: 700; font-size: 14px; padding: 14px 28px; border-radius: 12px; box-shadow: 0 4px 15px rgba(61,208,85,0.3);">
+              Set Your Own Password (পাসওয়ার্ড সেট করুন)
+            </a>
+          </div>
+          <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 8px 0 0 0;">
+            This secure password link is valid for a limited time.
+          </p>
+        </div>
+
+        <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0; line-height: 1.5;">
+          Sky Automation Tech • ReSellBD Administrator Network<br/>
+          This is an automated operational notification. Never share your credentials with anyone.
+        </p>
+      </div>
+    `,
+  });
+}
+
+/**
+ * 8.1 Create Admin (Super Admin Only)
+ */
+exports.createAdmin = functions.https.onCall(async (data, context) => {
+  // 1. Check caller is authenticated
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required to create an admin.');
+  }
+
+  const callerUid = context.auth.uid;
+  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
+
+  // 2. Validate caller role strictly from Firestore database (never rely on client payload)
+  const db = getOtpDb();
+  const callerDoc = await db.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists) {
+    throw new functions.https.HttpsError('permission-denied', 'Caller account profile not found.');
+  }
+
+  const callerData = callerDoc.data() || {};
+  const isSoleSuperAdmin = callerEmail === 'skyautomationtech@gmail.com' && callerData.role === 'super_admin';
+  if (!isSoleSuperAdmin) {
+    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin (owner) can create Admin accounts.');
+  }
+
+  // 3. Validate input parameters
+  const fullName = String(data?.fullName || '').trim();
+  const email = String(data?.email || '').toLowerCase().trim();
+  const mobile = String(data?.mobile || '').trim();
+  const password = String(data?.password || '');
+  const requestedPermissions = Array.isArray(data?.permissions) ? data.permissions : [];
+  const profilePhotoUrl = String(data?.profilePhotoUrl || '').trim();
+  const internalNote = String(data?.internalNote || '').trim();
+
+  if (!fullName || fullName.length < 2 || fullName.length > 100) {
+    throw new functions.https.HttpsError('invalid-argument', 'Please provide a valid full name (2-100 characters).');
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailRegex.test(email)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Please provide a valid email address.');
+  }
+
+  const bdMobileRegex = /^01[3-9]\d{8}$/;
+  if (!mobile || !bdMobileRegex.test(mobile)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Please provide a valid Bangladeshi mobile number (01[3-9]XXXXXXXX).');
+  }
+
+  if (!isValidPassword(password)) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.'
+    );
+  }
+
+  // Sanitize permissions - allow ONLY allowed administrative permissions
+  const sanitizedPermissions = requestedPermissions.filter((p) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
+  if (sanitizedPermissions.length === 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'At least one operational permission must be selected.');
+  }
+
+  // 4. Enforce MAX_ADMINS limit
+  const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
+  let activeAdminCount = 0;
+  adminsSnap.forEach((doc) => {
+    if (doc.data()?.status !== 'deleted') {
+      activeAdminCount++;
+    }
+  });
+
+  if (activeAdminCount >= MAX_ADMINS_LIMIT) {
+    throw new functions.https.HttpsError(
+      'resource-exhausted',
+      `Administrator limit reached (maximum ${MAX_ADMINS_LIMIT} active admins allowed). Please suspend or remove an existing admin.`
+    );
+  }
+
+  // 5. Check if email already in use
+  const existingFsUser = await db.collection('users').where('email', '==', email).limit(1).get();
+  if (!existingFsUser.empty) {
+    throw new functions.https.HttpsError('already-exists', 'An account with this email address already exists in the system.');
+  }
+
+  try {
+    const existingAuth = await admin.auth().getUserByEmail(email);
+    if (existingAuth) {
+      throw new functions.https.HttpsError('already-exists', 'An account with this email address already exists in Firebase Authentication.');
+    }
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') {
+      if (err instanceof functions.https.HttpsError) throw err;
+    }
+  }
+
+  // 6. Create Firebase Auth user using Admin SDK (keeps Super Admin signed in)
+  let newAuthUser;
+  try {
+    newAuthUser = await admin.auth().createUser({
+      email,
+      password,
+      displayName: fullName,
+      emailVerified: false,
+    });
+  } catch (authCreateErr) {
+    console.error('[createAdmin] Auth user creation error:', authCreateErr);
+    if (authCreateErr.code === 'auth/email-already-exists') {
+      throw new functions.https.HttpsError('already-exists', 'An account with this email address already exists.');
+    }
+    throw new functions.https.HttpsError('invalid-argument', authCreateErr.message || 'Failed to create auth user.');
+  }
+
+  const newUid = newAuthUser.uid;
+  let assignedAdminId = 'ADM-0001';
+
+  // 7. Atomic transaction to allocate sequential adminId and write profile
+  try {
+    await db.runTransaction(async (t) => {
+      const counterRef = db.collection('counters').doc('adminId');
+      const counterDoc = await t.get(counterRef);
+      let nextCount = 1;
+      if (counterDoc.exists) {
+        nextCount = (counterDoc.data()?.lastCount || 0) + 1;
+      }
+      assignedAdminId = `ADM-${String(nextCount).padStart(4, '0')}`;
+
+      t.set(counterRef, {
+        lastCount: nextCount,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      const newAdminRef = db.collection('users').doc(newUid);
+      t.set(newAdminRef, {
+        uid: newUid,
+        adminId: assignedAdminId,
+        fullName,
+        email,
+        mobile,
+        role: 'admin', // Strictly refused to create any other role
+        status: 'approved',
+        permissions: sanitizedPermissions,
+        createdBy: callerUid,
+        createdByName: callerData.fullName || 'Super Admin',
+        mustChangePassword: true,
+        emailVerified: false,
+        profilePhotoUrl: profilePhotoUrl || '',
+        internalNote: internalNote || '',
+        shopName: 'ReSellBD HQ',
+        division: 'Dhaka',
+        district: 'Dhaka',
+        upazila: 'Tejgaon',
+        address: 'Headquarters, Dhaka',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (txErr) {
+    console.error('[createAdmin] Transaction failed. Rolling back Auth user:', txErr);
+    await admin.auth().deleteUser(newUid).catch((delErr) => console.error('Rollback deleteUser failed:', delErr));
+    throw new functions.https.HttpsError('internal', 'Database error creating admin record. Rolled back successfully.');
+  }
+
+  // 8. Write audit log entry
+  try {
+    await db.collection('auditLogs').add({
+      action: 'admin_created',
+      actorUid: callerUid,
+      actorEmail: callerEmail,
+      targetUid: newUid,
+      targetEmail: email,
+      adminId: assignedAdminId,
+      permissions: sanitizedPermissions,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (auditErr) {
+    console.warn('[createAdmin] Could not record audit log:', auditErr);
+  }
+
+  // 9. Generate password reset link & send welcome email
+  let resetLink = '';
+  try {
+    resetLink = await admin.auth().generatePasswordResetLink(email);
+  } catch (linkErr) {
+    console.warn('[createAdmin] Could not generate reset link:', linkErr);
+    resetLink = 'https://skyautomationtech.com';
+  }
+
+  try {
+    await sendAdminWelcomeEmailHtml(email, fullName, assignedAdminId, resetLink);
+    console.log(`[createAdmin] Dispatched welcome email to ${email}`);
+  } catch (emailErr) {
+    console.error('[createAdmin] Welcome email send error:', emailErr);
+  }
+
+  return {
+    success: true,
+    adminId: assignedAdminId,
+    uid: newUid,
+    email,
+    fullName,
+    message: `Admin account (${assignedAdminId}) successfully created for ${fullName}. Welcome email sent.`,
+  };
+});
+
+/**
+ * 8.2 Resend Admin Welcome Email (Super Admin Only)
+ */
+exports.resendAdminWelcomeEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
+  }
+
+  const callerUid = context.auth.uid;
+  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
+  const db = getOtpDb();
+
+  const callerDoc = await db.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin can resend welcome emails.');
+  }
+
+  const adminUid = String(data?.adminUid || '').trim();
+  if (!adminUid) {
+    throw new functions.https.HttpsError('invalid-argument', 'Target admin UID is required.');
+  }
+
+  const targetDoc = await db.collection('users').doc(adminUid).get();
+  if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+    throw new functions.https.HttpsError('not-found', 'Admin profile not found.');
+  }
+
+  const targetData = targetDoc.data();
+  const resetLink = await admin.auth().generatePasswordResetLink(targetData.email);
+
+  await sendAdminWelcomeEmailHtml(
+    targetData.email,
+    targetData.fullName,
+    targetData.adminId || 'Admin',
+    resetLink
+  );
+
+  await db.collection('auditLogs').add({
+    action: 'admin_welcome_email_resent',
+    actorUid: callerUid,
+    actorEmail: callerEmail,
+    targetUid: adminUid,
+    targetEmail: targetData.email,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    success: true,
+    message: `Welcome email successfully resent to ${targetData.email}.`,
+  };
+});
+
+/**
+ * 8.3 Change Admin Password (First Login / Forced Password Change)
+ */
+exports.changeAdminPassword = functions.https.onCall(async (data, context) => {
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
+  }
+
+  const uid = context.auth.uid;
+  const db = getOtpDb();
+  const userDocRef = db.collection('users').doc(uid);
+  const userDoc = await userDocRef.get();
+
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'User profile not found.');
+  }
+
+  const userData = userDoc.data() || {};
+  if (userData.role !== 'admin') {
+    throw new functions.https.HttpsError('permission-denied', 'This function is only for admin accounts.');
+  }
+
+  const newPassword = String(data?.newPassword || '');
+  if (!isValidPassword(newPassword)) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'New password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.'
+    );
+  }
+
+  // Update password in Firebase Auth
+  try {
+    await admin.auth().updateUser(uid, { password: newPassword });
+  } catch (pErr) {
+    console.error('[changeAdminPassword] Error updating Auth password:', pErr);
+    throw new functions.https.HttpsError('internal', 'Could not update password. Please try again.');
+  }
+
+  // Clear mustChangePassword flag
+  await userDocRef.update({
+    mustChangePassword: false,
+    passwordChangedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  // Audit log
+  await db.collection('auditLogs').add({
+    action: 'admin_first_login_password_changed',
+    actorUid: uid,
+    actorEmail: userData.email,
+    adminId: userData.adminId || 'Admin',
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  // Notify Super Admin (in-app notification + FCM push)
+  try {
+    await db.collection('notifications').add({
+      title: 'Admin First Login & Password Updated',
+      message: `Admin ${userData.fullName} (${userData.adminId || userData.email}) has completed their first login and set their personal password.`,
+      type: 'admin_security_alert',
+      targetRole: 'super_admin',
+      userId: uid,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // FCM push notification to Super Admin devices
+    const superAdminSnap = await db.collection('users').where('role', '==', 'super_admin').get();
+    const tokens = [];
+    superAdminSnap.forEach((d) => {
+      const u = d.data();
+      if (Array.isArray(u.fcmTokens)) tokens.push(...u.fcmTokens);
+    });
+    const uniqueTokens = [...new Set(tokens)];
+    if (uniqueTokens.length > 0) {
+      await admin.messaging().sendToDevice(uniqueTokens, {
+        notification: {
+          title: 'Admin Password Set',
+          body: `Admin ${userData.fullName} has updated their password and accessed the portal.`,
+        },
+      });
+    }
+  } catch (notifErr) {
+    console.warn('[changeAdminPassword] Notification error:', notifErr);
+  }
+
+  return {
+    success: true,
+    message: 'Your personal password has been successfully updated. You may now access the administrative portal.',
+  };
+});
+
+/**
+ * 8.4 Toggle Admin Status (Suspend / Activate - Super Admin Only)
+ */
+exports.toggleAdminStatus = functions.https.onCall(async (data, context) => {
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
+  }
+
+  const callerUid = context.auth.uid;
+  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
+  const db = getOtpDb();
+
+  const callerDoc = await db.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin can suspend or activate admin accounts.');
+  }
+
+  const adminUid = String(data?.adminUid || '').trim();
+  const newStatus = data?.status === 'suspended' ? 'suspended' : 'approved';
+  const reason = String(data?.reason || '').trim();
+
+  const targetDoc = await db.collection('users').doc(adminUid).get();
+  if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+    throw new functions.https.HttpsError('not-found', 'Admin profile not found.');
+  }
+
+  const targetData = targetDoc.data();
+  // Prevent any action on Super Admin
+  if (targetData.email?.toLowerCase() === 'skyautomationtech@gmail.com' || targetData.role === 'super_admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Super Admin account cannot be suspended or modified.');
+  }
+
+  // If suspending, revoke refresh tokens so their session expires immediately
+  if (newStatus === 'suspended') {
+    await admin.auth().revokeRefreshTokens(adminUid).catch((rErr) => console.warn('Could not revoke refresh tokens:', rErr));
+  }
+
+  await db.collection('users').doc(adminUid).update({
+    status: newStatus,
+    suspensionReason: newStatus === 'suspended' ? (reason || 'Administrative suspension by Super Admin') : null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await db.collection('auditLogs').add({
+    action: newStatus === 'suspended' ? 'admin_suspended' : 'admin_activated',
+    actorUid: callerUid,
+    actorEmail: callerEmail,
+    targetUid: adminUid,
+    targetEmail: targetData.email,
+    reason,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    success: true,
+    status: newStatus,
+    message: `Admin account has been ${newStatus === 'suspended' ? 'suspended' : 'activated'}.`,
+  };
+});
+
+/**
+ * 8.5 Update Admin Permissions (Super Admin Only)
+ */
+exports.updateAdminPermissions = functions.https.onCall(async (data, context) => {
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
+  }
+
+  const callerUid = context.auth.uid;
+  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
+  const db = getOtpDb();
+
+  const callerDoc = await db.collection('users').doc(callerUid).get();
+  if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin can update admin permissions.');
+  }
+
+  const adminUid = String(data?.adminUid || '').trim();
+  const requestedPermissions = Array.isArray(data?.permissions) ? data.permissions : [];
+  const sanitizedPermissions = requestedPermissions.filter((p) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
+
+  const targetDoc = await db.collection('users').doc(adminUid).get();
+  if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+    throw new functions.https.HttpsError('not-found', 'Admin profile not found.');
+  }
+
+  await db.collection('users').doc(adminUid).update({
+    permissions: sanitizedPermissions,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await db.collection('auditLogs').add({
+    action: 'admin_permissions_updated',
+    actorUid: callerUid,
+    actorEmail: callerEmail,
+    targetUid: adminUid,
+    permissions: sanitizedPermissions,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    success: true,
+    permissions: sanitizedPermissions,
+    message: 'Admin permissions updated successfully.',
+  };
+});
+
+
 
