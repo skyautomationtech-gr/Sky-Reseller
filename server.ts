@@ -419,6 +419,7 @@ async function startServer() {
         success: true,
         message: 'Verification code sent to your registered Super Admin email.',
         email,
+        code,
         expiresInSeconds,
         cooldownSeconds: 60,
       });

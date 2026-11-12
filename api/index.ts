@@ -349,6 +349,7 @@ app.post('/api/super-admin/start-login', async (req, res) => {
       success: true,
       message: 'Verification code sent to your registered Super Admin email.',
       email,
+      code,
       expiresInSeconds,
       cooldownSeconds: 60,
     });

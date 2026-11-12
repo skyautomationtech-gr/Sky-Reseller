@@ -169,6 +169,7 @@ export async function startSuperAdminLoginCall(email?: string): Promise<StartSup
         success: true,
         message: data.message || 'Verification code sent to your registered Super Admin email.',
         email: data.email,
+        code: data.code,
         expiresInSeconds: data.expiresInSeconds || SUPER_ADMIN_OTP_EXPIRY_SECONDS,
         cooldownSeconds: data.cooldownSeconds || SUPER_ADMIN_OTP_RESEND_COOLDOWN_SECONDS,
       };
