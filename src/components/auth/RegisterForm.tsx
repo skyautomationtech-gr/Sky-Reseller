@@ -382,23 +382,29 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
     }
   }, [formData.divisionId]);
 
-  // Load Upazilas when district changes
+  // Load Upazilas & Thanas when district changes
   useEffect(() => {
     if (formData.districtId) {
-      getUpazilas(formData.districtId).then(setUpazilasList);
+      getUpazilasAndThanas(formData.districtId).then(setUpazilasList);
     } else {
       setUpazilasList([]);
     }
   }, [formData.districtId]);
 
-  // Load Unions when upazila changes
+  // Load Unions or City Wards when upazila / thana changes
   useEffect(() => {
-    if (formData.upazilaId) {
-      getUnions(formData.upazilaId).then(setUnionsList);
+    const targetId = formData.upazilaId || formData.thanaId;
+    if (targetId) {
+      getUnionsOrWards({
+        id: targetId,
+        isCity: formData.isCity,
+        cityCorpId: formData.cityCorpId,
+        district_id: formData.districtId,
+      }).then(setUnionsList);
     } else {
       setUnionsList([]);
     }
-  }, [formData.upazilaId]);
+  }, [formData.upazilaId, formData.thanaId, formData.isCity, formData.cityCorpId, formData.districtId]);
 
   // Format Helpers
   const normalizeBdPhone = (input: string): string => {
@@ -1497,13 +1503,26 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
                           ...formData,
                           division: opt.name,
                           divisionId: opt.id,
+                          divisionBn: opt.bn_name || '',
                           customDivision: '',
                           district: '',
                           districtId: '',
+                          districtBn: '',
                           upazila: '',
+                          upazilaThana: '',
                           upazilaId: '',
+                          thanaId: '',
+                          upazilaThanaBn: '',
+                          isCity: false,
+                          cityCorpId: '',
                           union: '',
                           unionId: '',
+                          unionBn: '',
+                          ward: '',
+                          wardId: '',
+                          wardBn: '',
+                          postOffice: '',
+                          postalCode: '',
                         });
                       } else if (customText !== undefined) {
                         setFormData({ ...formData, customDivision: customText, division: customText });
@@ -1526,11 +1545,23 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
                           ...formData,
                           district: opt.name,
                           districtId: opt.id,
+                          districtBn: opt.bn_name || '',
                           customDistrict: '',
                           upazila: '',
+                          upazilaThana: '',
                           upazilaId: '',
+                          thanaId: '',
+                          upazilaThanaBn: '',
+                          isCity: false,
+                          cityCorpId: '',
                           union: '',
                           unionId: '',
+                          unionBn: '',
+                          ward: '',
+                          wardId: '',
+                          wardBn: '',
+                          postOffice: '',
+                          postalCode: '',
                         });
                       } else if (customText !== undefined) {
                         setFormData({ ...formData, customDistrict: customText, district: customText });
@@ -1543,49 +1574,118 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
                     required
                     disabled={!formData.district && !formData.customDistrict}
                     placeholder={formData.district ? "Select Upazila / Thana..." : "Select District first..."}
-                    options={upazilasList.map((u) => ({ id: u.id, name: u.name, bn_name: u.bn_name }))}
-                    value={formData.upazila}
+                    options={upazilasList.map((u) => ({
+                      id: u.id,
+                      name: u.name,
+                      bn_name: u.bn_name,
+                      badge: u.isCity ? 'City' : undefined,
+                      isCity: u.isCity,
+                      cityCorpId: u.cityCorpId,
+                    }))}
+                    value={formData.upazila || formData.upazilaThana}
                     customValue={formData.customUpazila}
-                    onCustomChange={(val) => setFormData({ ...formData, customUpazila: val, upazila: val })}
+                    onCustomChange={(val) => setFormData({ ...formData, customUpazila: val, upazila: val, upazilaThana: val })}
                     onChange={(opt, customText) => {
                       if (opt) {
+                        const isCity = !!opt.isCity;
                         setFormData({
                           ...formData,
                           upazila: opt.name,
+                          upazilaThana: opt.name,
                           upazilaId: opt.id,
+                          thanaId: opt.id,
+                          upazilaThanaBn: opt.bn_name || '',
+                          isCity,
+                          cityCorpId: opt.cityCorpId || '',
                           customUpazila: '',
                           union: '',
                           unionId: '',
+                          unionBn: '',
+                          ward: '',
+                          wardId: '',
+                          wardBn: '',
+                          postOffice: '',
+                          postalCode: '',
                         });
                       } else if (customText !== undefined) {
-                        setFormData({ ...formData, customUpazila: customText, upazila: customText });
+                        setFormData({ ...formData, customUpazila: customText, upazila: customText, upazilaThana: customText });
                       }
                     }}
                   />
 
                   <SearchableSelect
-                    label="Union / Ward (ইউনিয়ন / ওয়ার্ড)"
+                    label={formData.isCity ? "City Corporation Ward (সিটি কর্পোরেশন ওয়ার্ড)" : "Union (ইউনিয়ন)"}
                     disabled={!formData.upazila && !formData.customUpazila}
-                    placeholder={formData.upazila ? "Select Union (Optional)..." : "Select Upazila first..."}
-                    options={unionsList.map((u) => ({ id: u.id, name: u.name, bn_name: u.bn_name }))}
-                    value={formData.union}
+                    placeholder={
+                      !formData.upazila
+                        ? "Select Upazila / Thana first..."
+                        : formData.isCity
+                        ? "Select City Ward..."
+                        : "Select Union (Optional)..."
+                    }
+                    options={unionsList.map((u) => ({
+                      id: u.id,
+                      name: u.name,
+                      bn_name: u.bn_name,
+                      postOffice: u.postOffice,
+                      postalCode: u.postalCode,
+                      subtitle: u.postOffice ? `Post Office: ${u.postOffice} (${u.postalCode})` : undefined,
+                    }))}
+                    value={formData.isCity ? formData.ward : formData.union}
                     customValue={formData.customUnion}
-                    onCustomChange={(val) => setFormData({ ...formData, customUnion: val, union: val })}
+                    onCustomChange={(val) =>
+                      setFormData({
+                        ...formData,
+                        customUnion: val,
+                        union: formData.isCity ? '' : val,
+                        ward: formData.isCity ? val : formData.ward,
+                      })
+                    }
                     onChange={(opt, customText) => {
                       if (opt) {
-                        setFormData({
-                          ...formData,
-                          union: opt.name,
-                          unionId: opt.id,
-                          customUnion: '',
-                        });
+                        if (formData.isCity) {
+                          setFormData({
+                            ...formData,
+                            ward: opt.name,
+                            wardId: opt.id,
+                            wardBn: opt.bn_name || '',
+                            union: '',
+                            unionId: '',
+                            unionBn: '',
+                            customUnion: '',
+                            postalCode: opt.postalCode || formData.postalCode || '',
+                          });
+                        } else {
+                          setFormData({
+                            ...formData,
+                            union: opt.name,
+                            unionId: opt.id,
+                            unionBn: opt.bn_name || '',
+                            postOffice: opt.postOffice || '',
+                            postalCode: opt.postalCode || formData.postalCode || '',
+                            ward: '',
+                            wardId: '',
+                            wardBn: '',
+                            customUnion: '',
+                          });
+                        }
                       } else if (customText !== undefined) {
-                        setFormData({ ...formData, customUnion: customText, union: customText });
+                        if (formData.isCity) {
+                          setFormData({ ...formData, customUnion: customText, ward: customText });
+                        } else {
+                          setFormData({ ...formData, customUnion: customText, union: customText });
+                        }
                       }
                     }}
                   />
 
-                  {formData.union && (
+                  {formData.postOffice && !formData.isCity && (
+                    <p className="text-[11px] text-[#3DD055] font-semibold flex items-center gap-1 pl-1">
+                      <span>📮</span> Post Office: {formData.postOffice}
+                    </p>
+                  )}
+
+                  {!formData.isCity && formData.union && (
                     <div className="space-y-1.5 animate-in fade-in">
                       <label className="text-xs font-bold text-slate-200">
                         Ward No. (Optional: 1 - 9)

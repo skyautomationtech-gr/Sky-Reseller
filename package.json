@@ -25,6 +25,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@types/nodemailer": "^8.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "bangladesh-geo-data": "^4.0.9",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",

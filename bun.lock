@@ -18,11 +18,13 @@
         "@tailwindcss/vite": "^4.1.14",
         "@types/nodemailer": "^8.0.2",
         "@vitejs/plugin-react": "^4.3.4",
+        "bangladesh-geo-data": "^4.0.9",
         "bcryptjs": "^3.0.3",
         "dotenv": "^17.2.3",
         "express": "^4.21.2",
         "firebase": "^12.17.0",
         "firebase-admin": "^14.5.0",
+        "framer-motion": "^12.23.24",
         "html2canvas": "^1.4.1",
         "html2canvas-pro": "^2.4.0",
         "html5-qrcode": "^2.3.8",
@@ -594,6 +596,8 @@
     "babel-plugin-polyfill-regenerator": ["babel-plugin-polyfill-regenerator@0.6.8", "", { "dependencies": { "@babel/helper-define-polyfill-provider": "^0.6.8" }, "peerDependencies": { "@babel/core": "^7.4.0 || ^8.0.0-0 <8.0.0" } }, "sha512-M762rNHfSF1EV3SLtnCJXFoQbbIIz0OyRwnCmV0KPC7qosSfCO0QLTSuJX3ayAebubhE6oYBAYPrBA5ljowaZg=="],
 
     "balanced-match": ["balanced-match@4.0.4", "", {}, "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA=="],
+
+    "bangladesh-geo-data": ["bangladesh-geo-data@4.0.9", "", {}, "sha512-YQFR9SrV7Xu89guE8PsmKroUP/lRhrVBoR6/I81EBzDulWOIC/lswKcj31KdhH8drngsZtPCE/gDDnJz/pmmYg=="],
 
     "base64-arraybuffer": ["base64-arraybuffer@1.0.2", "", {}, ""],
 

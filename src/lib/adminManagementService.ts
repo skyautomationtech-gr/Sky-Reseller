@@ -183,44 +183,20 @@ export function evaluatePasswordStrength(password: string): PasswordStrengthResu
 }
 
 /**
- * Creates an admin account via server-authoritative Cloud Function / API
+ * Creates an admin account via server-authoritative Cloud Function (createAdmin)
  */
 export async function createAdminCall(payload: CreateAdminPayload): Promise<CreateAdminResponse> {
-  // 1. Try Firebase Callable Cloud Function first
   try {
     const fn = httpsCallable<CreateAdminPayload, CreateAdminResponse>(functions, 'createAdmin');
     const res = await fn(payload);
     if (res.data && res.data.success) {
       return res.data;
     }
+    throw new Error('Failed to create admin account.');
   } catch (fnErr: any) {
-    // If it's a specific functional error, rethrow cleanly
-    if (
-      fnErr.code === 'already-exists' ||
-      fnErr.code === 'permission-denied' ||
-      fnErr.code === 'invalid-argument' ||
-      fnErr.code === 'resource-exhausted'
-    ) {
-      throw new Error(fnErr.message);
-    }
-    console.warn('[adminManagementService] Cloud Function createAdmin failed or not deployed, trying server endpoint:', fnErr?.message || fnErr);
-  }
-
-  // 2. Try server Express API fallback
-  try {
-    const res = await fetch('/api/admin/create-admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to create admin account.');
-  } catch (apiErr: any) {
-    throw new Error(apiErr.message || 'Could not create admin account. Please try again.');
+    console.error('[adminManagementService] Cloud Function createAdmin error:', fnErr);
+    const msg = fnErr?.message || fnErr?.details || 'Failed to create admin account (এডমিন অ্যাকাউন্ট তৈরি করতে ব্যর্থ হয়েছে)।';
+    throw new Error(msg);
   }
 }
 
@@ -234,23 +210,11 @@ export async function resendAdminWelcomeEmailCall(adminUid: string): Promise<{ s
     if (res.data && res.data.success) {
       return res.data;
     }
+    throw new Error('Failed to resend welcome email.');
   } catch (fnErr: any) {
-    console.warn('[adminManagementService] Cloud Function resendAdminWelcomeEmail failed, trying server API:', fnErr?.message || fnErr);
-  }
-
-  try {
-    const res = await fetch('/api/admin/resend-welcome-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUid }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to resend welcome email.');
-  } catch (apiErr: any) {
-    throw new Error(apiErr.message || 'Could not resend welcome email. Please try again.');
+    console.error('[adminManagementService] Cloud Function resendAdminWelcomeEmail error:', fnErr);
+    const msg = fnErr?.message || fnErr?.details || 'Failed to resend welcome email (ওয়েলকাম ইমেইল পুনরায় পাঠানো সম্ভব হয়নি)।';
+    throw new Error(msg);
   }
 }
 
@@ -264,23 +228,11 @@ export async function changeAdminPasswordCall(newPassword: string, currentPasswo
     if (res.data && res.data.success) {
       return res.data;
     }
+    throw new Error('Failed to update admin password.');
   } catch (fnErr: any) {
-    console.warn('[adminManagementService] Cloud Function changeAdminPassword failed, trying server API:', fnErr?.message || fnErr);
-  }
-
-  try {
-    const res = await fetch('/api/admin/change-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ newPassword, currentPassword }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to update admin password.');
-  } catch (apiErr: any) {
-    throw new Error(apiErr.message || 'Could not update password. Please check your current password and try again.');
+    console.error('[adminManagementService] Cloud Function changeAdminPassword error:', fnErr);
+    const msg = fnErr?.message || fnErr?.details || 'Failed to update password (পাসওয়ার্ড আপডেট করা সম্ভব হয়নি)।';
+    throw new Error(msg);
   }
 }
 
@@ -294,23 +246,11 @@ export async function toggleAdminStatusCall(adminUid: string, status: 'approved'
     if (res.data && res.data.success) {
       return res.data;
     }
+    throw new Error('Failed to update admin status.');
   } catch (fnErr: any) {
-    console.warn('[adminManagementService] Cloud Function toggleAdminStatus failed, trying server API:', fnErr?.message || fnErr);
-  }
-
-  try {
-    const res = await fetch('/api/admin/toggle-status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUid, status, reason }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to update admin status.');
-  } catch (apiErr: any) {
-    throw new Error(apiErr.message || 'Failed to update admin status.');
+    console.error('[adminManagementService] Cloud Function toggleAdminStatus error:', fnErr);
+    const msg = fnErr?.message || fnErr?.details || 'Failed to update admin status (এডমিন স্ট্যাটাস পরিবর্তন করা সম্ভব হয়নি)।';
+    throw new Error(msg);
   }
 }
 
@@ -324,22 +264,11 @@ export async function updateAdminPermissionsCall(adminUid: string, permissions: 
     if (res.data && res.data.success) {
       return res.data;
     }
+    throw new Error('Failed to update admin permissions.');
   } catch (fnErr: any) {
-    console.warn('[adminManagementService] Cloud Function updateAdminPermissions failed, trying server API:', fnErr?.message || fnErr);
-  }
-
-  try {
-    const res = await fetch('/api/admin/update-permissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUid, permissions }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return data;
-    }
-    throw new Error(data.error || 'Failed to update admin permissions.');
-  } catch (apiErr: any) {
-    throw new Error(apiErr.message || 'Failed to update admin permissions.');
+    console.error('[adminManagementService] Cloud Function updateAdminPermissions error:', fnErr);
+    const msg = fnErr?.message || fnErr?.details || 'Failed to update admin permissions (এডমিন পারমিশন আপডেট করা সম্ভব হয়নি)।';
+    throw new Error(msg);
   }
 }
+

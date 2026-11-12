@@ -6,6 +6,12 @@ export interface SelectOption {
   id: string;
   name: string;
   bn_name?: string;
+  badge?: string;
+  subtitle?: string;
+  postOffice?: string;
+  postalCode?: string;
+  isCity?: boolean;
+  cityCorpId?: string;
 }
 
 interface SearchableSelectProps {
@@ -72,14 +78,16 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
   const filteredOptions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return options.slice(0, 50); // limit to top 50 for max speed
+    if (!q) return options.slice(0, 100);
     return options
       .filter((opt) => {
         const en = (opt.name || '').toLowerCase();
         const bn = (opt.bn_name || '').toLowerCase();
-        return en.includes(q) || bn.includes(q);
+        const po = (opt.postOffice || '').toLowerCase();
+        const pc = (opt.postalCode || '').toLowerCase();
+        return en.includes(q) || bn.includes(q) || po.includes(q) || pc.includes(q);
       })
-      .slice(0, 50);
+      .slice(0, 100);
   }, [options, searchQuery]);
 
   const selectedOption = useMemo(() => {
@@ -154,6 +162,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   {selectedOption.bn_name && (
                     <span className="text-slate-400 ml-1.5 font-normal text-xs">({selectedOption.bn_name})</span>
                   )}
+                  {selectedOption.badge && (
+                    <span className="ml-2 text-[10px] bg-cyan-500/25 text-cyan-300 px-1.5 py-0.5 rounded font-bold border border-cyan-400/30">
+                      {selectedOption.badge}
+                    </span>
+                  )}
                 </>
               ) : value ? (
                 value
@@ -223,10 +236,20 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                           : 'text-slate-200 hover:bg-white/[0.08] hover:text-white font-medium'
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate pr-2">
-                        <span>{opt.name}</span>
-                        {opt.bn_name && (
-                          <span className="text-slate-400 text-xs">({opt.bn_name})</span>
+                      <div className="flex flex-col truncate pr-2">
+                        <div className="flex items-center gap-2">
+                          <span>{opt.name}</span>
+                          {opt.bn_name && (
+                            <span className="text-slate-400 text-xs font-normal">({opt.bn_name})</span>
+                          )}
+                          {opt.badge && (
+                            <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-bold border border-cyan-400/30">
+                              {opt.badge}
+                            </span>
+                          )}
+                        </div>
+                        {opt.subtitle && (
+                          <span className="text-[11px] text-slate-400 font-normal mt-0.5">{opt.subtitle}</span>
                         )}
                       </div>
                       {isSelected && <Check className="w-4 h-4 text-[#3DD055] shrink-0" />}
