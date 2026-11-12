@@ -4,7 +4,7 @@ import {
   ShieldCheck, Lock, AlertCircle, Clock, RotateCw, 
   LogOut, CheckCircle2, AlertTriangle, KeyRound
 } from 'lucide-react';
-import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { UserProfile } from '../../types';
 import { 
@@ -42,7 +42,6 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
   const [hasInitiated, setHasInitiated] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
-  const [latestCode, setLatestCode] = useState<string>('');
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -53,22 +52,6 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
       sendOtpCode();
     }
   }, [hasInitiated]);
-
-  // Subscribe to real-time generated OTP from systemSettings for instant recovery / preview display
-  useEffect(() => {
-    if (!user?.email) return;
-    const unsub = onSnapshot(doc(db, 'systemSettings', 'superAdminOtp'), (snap) => {
-      if (snap.exists()) {
-        const d = snap.data();
-        if (d.code && (d.email?.toLowerCase() === user.email?.toLowerCase())) {
-          setLatestCode(String(d.code));
-        }
-      }
-    }, (err) => {
-      console.warn('[SuperAdminOtpScreen] systemSettings sub note:', err);
-    });
-    return () => unsub();
-  }, [user?.email]);
 
   // Resend Cooldown Countdown (60s)
   useEffect(() => {
@@ -126,9 +109,6 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
 
     try {
       const res = await startSuperAdminLoginCall(user.email);
-      if (res.code) {
-        setLatestCode(res.code);
-      }
       setCooldown(res.cooldownSeconds || SUPER_ADMIN_OTP_RESEND_COOLDOWN_SECONDS);
       setExpiresIn(res.expiresInSeconds || SUPER_ADMIN_OTP_EXPIRY_SECONDS);
       setAttemptsLeft(SUPER_ADMIN_OTP_MAX_ATTEMPTS);
@@ -317,31 +297,6 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
           </div>
         )}
 
-        {/* Instant OTP Recovery Box for Preview / SMTP Backup */}
-        {latestCode && !isLocked && (
-          <div className="p-3 rounded-2xl bg-gradient-to-r from-[#0E9AA7]/20 to-[#3DD055]/20 border border-[#3DD055]/40 text-emerald-200 flex items-center justify-between text-xs animate-in fade-in shadow-lg gap-2">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <KeyRound className="w-4 h-4 text-[#3DD055] shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider truncate">Your OTP Code:</p>
-                <p className="font-mono text-[#3DD055] font-black text-base tracking-widest leading-none">{latestCode}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const arr = latestCode.split('');
-                if (arr.length === 6) {
-                  setDigits(arr);
-                  executeVerification(latestCode);
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-[#3DD055] text-slate-950 font-extrabold text-[11px] hover:bg-[#3DD055]/90 active:scale-95 transition-all cursor-pointer shrink-0 shadow-md"
-            >
-              Auto Fill & Verify
-            </button>
-          </div>
-        )}
 
         {/* Compact Info Row: Masked Email + Spam/Junk Reminder */}
         <div className="flex items-center justify-between text-[11px] flex-wrap gap-1 px-1">

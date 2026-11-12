@@ -280,18 +280,33 @@ app.post('/api/super-admin/start-login', async (req, res) => {
 
     superAdminSessions.delete(email);
 
-    const existing = superAdminOtpStore.get(email);
-    if (existing && existing.lockedUntil && now < existing.lockedUntil) {
-      const remainingMinutes = Math.ceil((existing.lockedUntil - now) / 60000);
+    const docUrl = `https://firestore.googleapis.com/v1/projects/sky-automation-reseller/databases/ai-studio-5b67ed85-eca9-4578-81ec-a8f1bfd7298e/documents/systemSettings/superAdminOtp?key=AIzaSyBXbIRN0gBpQvP2l5ReztrUkC054PBwZIE`;
+
+    let existingDoc: any = null;
+    try {
+      const fsRes = await fetch(docUrl);
+      if (fsRes.ok) {
+        const fsData = await fsRes.json();
+        const f = fsData.fields || {};
+        existingDoc = {
+          email: f.email?.stringValue || '',
+          lastSentAt: Number(f.lastSentAt?.integerValue || 0),
+          lockedUntil: Number(f.lockedUntil?.integerValue || 0),
+        };
+      }
+    } catch (_) {}
+
+    if (existingDoc && existingDoc.email === email && existingDoc.lockedUntil && now < existingDoc.lockedUntil) {
+      const remainingMinutes = Math.ceil((existingDoc.lockedUntil - now) / 60000);
       return res.status(423).json({
         error: `অতিরিক্ত ভুল চেষ্টার কারণে অ্যাকাউন্টটি সাময়িকভাবে লক করা হয়েছে। দয়া করে ${remainingMinutes} মিনিট পর আবার চেষ্টা করুন। (Account locked for 15 minutes)`,
         isLocked: true,
-        lockedUntil: existing.lockedUntil,
+        lockedUntil: existingDoc.lockedUntil,
       });
     }
 
-    if (existing && existing.lastSentAt) {
-      const elapsed = Math.floor((now - existing.lastSentAt) / 1000);
+    if (existingDoc && existingDoc.email === email && existingDoc.lastSentAt) {
+      const elapsed = Math.floor((now - existingDoc.lastSentAt) / 1000);
       if (elapsed < 60) {
         const waitTime = 60 - elapsed;
         return res.status(429).json({
@@ -305,6 +320,23 @@ app.post('/api/super-admin/start-login', async (req, res) => {
     const hashedCode = hashOtp(code);
     const expiresInSeconds = 300; // 5 minutes
     const expiresAt = now + expiresInSeconds * 1000;
+
+    // Persist OTP record in Firestore so Vercel Serverless instances share state
+    await fetch(docUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          email: { stringValue: email },
+          code: { stringValue: code },
+          hashedCode: { stringValue: hashedCode },
+          expiresAt: { integerValue: String(expiresAt) },
+          lastSentAt: { integerValue: String(now) },
+          attemptsLeft: { integerValue: '5' },
+          lockedUntil: { integerValue: '0' },
+        },
+      }),
+    }).catch((err) => console.warn('[Vercel OTP] Firestore REST write note:', err));
 
     superAdminOtpStore.set(email, {
       hashedCode,
@@ -349,7 +381,6 @@ app.post('/api/super-admin/start-login', async (req, res) => {
       success: true,
       message: 'Verification code sent to your registered Super Admin email.',
       email,
-      code,
       expiresInSeconds,
       cooldownSeconds: 60,
     });
@@ -360,19 +391,55 @@ app.post('/api/super-admin/start-login', async (req, res) => {
 });
 
 // Verify Super Admin OTP
-app.post('/api/super-admin/verify-otp', (req, res) => {
+app.post('/api/super-admin/verify-otp', async (req, res) => {
   try {
     const email = (req.body?.email || 'skyautomationtech@gmail.com').trim().toLowerCase();
-    const code = (req.body?.code || '').trim();
+    const rawCode = (req.body?.code || '').trim();
+    const code = rawCode.replace(/\D/g, '');
 
     if (!code || code.length !== 6) {
       return res.status(400).json({ error: 'Please enter the full 6-digit code.' });
     }
 
     const now = Date.now();
-    const record = superAdminOtpStore.get(email);
+    const docUrl = `https://firestore.googleapis.com/v1/projects/sky-automation-reseller/databases/ai-studio-5b67ed85-eca9-4578-81ec-a8f1bfd7298e/documents/systemSettings/superAdminOtp?key=AIzaSyBXbIRN0gBpQvP2l5ReztrUkC054PBwZIE`;
 
-    if (!record) {
+    let record: any = null;
+    let rawFsFields: any = null;
+
+    try {
+      const fsRes = await fetch(docUrl);
+      if (fsRes.ok) {
+        const fsData = await fsRes.json();
+        rawFsFields = fsData.fields || {};
+        record = {
+          email: rawFsFields.email?.stringValue || '',
+          code: rawFsFields.code?.stringValue || '',
+          hashedCode: rawFsFields.hashedCode?.stringValue || '',
+          expiresAt: Number(rawFsFields.expiresAt?.integerValue || 0),
+          attemptsLeft: Number(rawFsFields.attemptsLeft?.integerValue || 5),
+          lockedUntil: Number(rawFsFields.lockedUntil?.integerValue || 0),
+        };
+      }
+    } catch (fsErr) {
+      console.warn('[Vercel OTP] Firestore REST read note:', fsErr);
+    }
+
+    if (!record || !record.email || record.email !== email) {
+      const memRecord = superAdminOtpStore.get(email);
+      if (memRecord) {
+        record = {
+          email,
+          code: '',
+          hashedCode: memRecord.hashedCode,
+          expiresAt: memRecord.expiresAt,
+          attemptsLeft: memRecord.attemptsLeft,
+          lockedUntil: memRecord.lockedUntil || 0,
+        };
+      }
+    }
+
+    if (!record || !record.email || record.email !== email) {
       return res.status(404).json({ error: 'No active verification code found. Please request a new code.' });
     }
 
@@ -390,22 +457,62 @@ app.post('/api/super-admin/verify-otp', (req, res) => {
     }
 
     const inputHash = hashOtp(code);
-    if (inputHash !== record.hashedCode) {
-      record.attemptsLeft -= 1;
-      if (record.attemptsLeft <= 0) {
-        record.lockedUntil = now + 15 * 60 * 1000;
+    const isMatch = (record.code && code === record.code) || (record.hashedCode && inputHash === record.hashedCode);
+
+    if (!isMatch) {
+      const remaining = (record.attemptsLeft || 5) - 1;
+      if (remaining <= 0) {
+        const lockedUntil = now + 15 * 60 * 1000;
+        await fetch(docUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              ...rawFsFields,
+              lockedUntil: { integerValue: String(lockedUntil) },
+              attemptsLeft: { integerValue: '0' },
+            },
+          }),
+        }).catch(() => {});
+
         return res.status(423).json({
           error: 'অতিরিক্ত ভুল চেষ্টার কারণে অ্যাকাউন্টটি সাময়িকভাবে ১৫ মিনিটের জন্য লক করা হয়েছে। (Account locked for 15 minutes)',
           isLocked: true,
         });
       }
+
+      await fetch(docUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            ...rawFsFields,
+            attemptsLeft: { integerValue: String(remaining) },
+          },
+        }),
+      }).catch(() => {});
+
       return res.status(400).json({
-        error: `ভুল কোড। আপনার আর ${record.attemptsLeft}টি সুযোগ বাকি রয়েছে। (Incorrect code. ${record.attemptsLeft} attempts remaining)`,
-        attemptsLeft: record.attemptsLeft,
+        error: `ভুল কোড। আপনার আর ${remaining}টি সুযোগ বাকি রয়েছে। (Incorrect code. ${remaining} attempts remaining)`,
+        attemptsLeft: remaining,
       });
     }
 
+    // Success! Clear OTP record
     superAdminOtpStore.delete(email);
+    await fetch(docUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          email: { stringValue: '' },
+          code: { stringValue: '' },
+          hashedCode: { stringValue: '' },
+          expiresAt: { integerValue: '0' },
+        },
+      }),
+    }).catch(() => {});
+
     const sessionId = crypto.randomUUID();
     const sessionExpiresAt = now + 12 * 60 * 60 * 1000;
 
@@ -418,6 +525,7 @@ app.post('/api/super-admin/verify-otp', (req, res) => {
       success: true,
       verified: true,
       expiresAt: sessionExpiresAt,
+      sessionId,
       message: 'Two-step verification successful!',
     });
   } catch (err: any) {
