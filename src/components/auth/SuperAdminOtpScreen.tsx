@@ -239,7 +239,10 @@ export const SuperAdminOtpScreen: React.FC<SuperAdminOtpScreenProps> = ({
 
       // Decrement attempts ONLY on genuine wrong code (not on server errors)
       if (formatted.isWrongCode) {
-        const remaining = attemptsLeft - 1;
+        const remaining =
+          typeof formatted.attemptsLeft === 'number'
+            ? formatted.attemptsLeft
+            : Math.max(0, attemptsLeft - 1);
         setAttemptsLeft(remaining);
 
         // Shake and turn red briefly

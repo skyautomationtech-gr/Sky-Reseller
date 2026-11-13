@@ -87,6 +87,22 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["resellerId", "reason", "status"]
+    },
+    "EmailOtp": {
+      "title": "EmailOtp",
+      "description": "Server-only hashed email OTP verification record",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "type": { "type": "string", "enum": ["reseller_registration", "super_admin_login"] },
+        "uid": { "type": "string" },
+        "hashedCode": { "type": "string" },
+        "expiresAt": { "type": "timestamp" },
+        "attemptsLeft": { "type": "number" },
+        "lastSentAt": { "type": "timestamp" },
+        "lockedUntil": { "type": "timestamp" }
+      },
+      "required": ["email", "type", "hashedCode", "expiresAt", "attemptsLeft", "lastSentAt"]
     }
   },
   "firestore": {
@@ -97,6 +113,10 @@
     "/shopNames/{shopNameKey}": {
       "schema": "ShopNameReservation",
       "description": "Unique shop name reservations collection, Cloud Functions / server only"
+    },
+    "/emailOtps/{docId}": {
+      "schema": "EmailOtp",
+      "description": "Hashed email OTP records, Cloud Functions only (clients denied)"
     },
     "/phone_change_requests/{requestId}": {
       "schema": "PhoneChangeRequest",

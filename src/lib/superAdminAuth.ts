@@ -1,12 +1,9 @@
 import { httpsCallable } from 'firebase/functions';
 import { User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { functions, db } from './firebase';
-import {
-  OTP_REQUIRED_ROLES,
-  SUPER_ADMIN_OTP_EXPIRY_SECONDS,
-  SUPER_ADMIN_OTP_RESEND_COOLDOWN_SECONDS,
-} from '../config/authSecurity';
+import { functions, db, auth } from './firebase';
+import { formatOtpErrorMessage } from './emailOtpService';
+import { OTP_REQUIRED_ROLES } from '../config/authSecurity';
 
 export interface StartSuperAdminLoginResponse {
   success: boolean;
@@ -25,7 +22,7 @@ export interface VerifySuperAdminOtpResponse {
 
 /**
  * Checks whether the current user is required to undergo 2-Step OTP,
- * and if their current session custom claim or verified server session is active.
+ * and if their Firebase Auth custom claim or active Firestore adminSessions doc is valid.
  */
 export async function checkSuperAdminOtpStatus(
   firebaseUser: User | null,
@@ -35,7 +32,9 @@ export async function checkSuperAdminOtpStatus(
     return { isRequired: false, isVerified: false };
   }
 
-  const effectiveRole = role || (firebaseUser.email?.toLowerCase() === 'skyautomationtech@gmail.com' ? 'super_admin' : 'reseller');
+  const effectiveRole =
+    role ||
+    (firebaseUser.email?.toLowerCase() === 'skyautomationtech@gmail.com' ? 'super_admin' : 'reseller');
   const isRequired = OTP_REQUIRED_ROLES.includes(effectiveRole as any);
 
   if (!isRequired) {
@@ -43,10 +42,9 @@ export async function checkSuperAdminOtpStatus(
   }
 
   const now = Date.now();
-  const cleanEmail = (firebaseUser.email || '').toLowerCase().trim();
 
   try {
-    // 1. Check Firebase token claims (Production Cloud Function custom claims)
+    // 1. Check Firebase ID token custom claims set by verifySuperAdminOtp Cloud Function
     const tokenResult = await firebaseUser.getIdTokenResult(false);
     const claims = tokenResult.claims;
     const otpSession = claims.otpSession as string | undefined;
@@ -66,12 +64,6 @@ export async function checkSuperAdminOtpStatus(
       if (sessionDocSnap.exists()) {
         const sData = sessionDocSnap.data();
         if (sData.verified && sData.expiresAt && sData.expiresAt > now) {
-          if (cleanEmail) {
-            sessionStorage.setItem(`sky_super_admin_session_${cleanEmail}`, JSON.stringify({
-              sessionId: 'firestore_session_' + firebaseUser.uid,
-              expiresAt: sData.expiresAt,
-            }));
-          }
           return {
             isRequired: true,
             isVerified: true,
@@ -80,42 +72,6 @@ export async function checkSuperAdminOtpStatus(
         }
       }
     } catch (_) {}
-
-    // 3. Check local preview session storage (for local dev server / preview persistence)
-    if (cleanEmail) {
-      const localSessionRaw = sessionStorage.getItem(`sky_super_admin_session_${cleanEmail}`);
-      if (localSessionRaw) {
-        try {
-          const localSession = JSON.parse(localSessionRaw);
-          if (localSession.sessionId && localSession.expiresAt && localSession.expiresAt > now) {
-            return {
-              isRequired: true,
-              isVerified: true,
-              expiresAt: localSession.expiresAt,
-            };
-          }
-        } catch (_) {}
-      }
-
-      // 3. Check server dev session status
-      try {
-        const res = await fetch(`/api/super-admin/check-session/${encodeURIComponent(cleanEmail)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.isVerified && data.expiresAt > now) {
-            sessionStorage.setItem(`sky_super_admin_session_${cleanEmail}`, JSON.stringify({
-              sessionId: data.sessionId || 'session_' + now,
-              expiresAt: data.expiresAt,
-            }));
-            return {
-              isRequired: true,
-              isVerified: true,
-              expiresAt: data.expiresAt,
-            };
-          }
-        }
-      } catch (_) {}
-    }
 
     return {
       isRequired: true,
@@ -129,13 +85,12 @@ export async function checkSuperAdminOtpStatus(
 }
 
 /**
- * Initiates the 2-step Super Admin login flow:
- * Clears any previous session custom claim, generates an OTP on the server, and emails it.
+ * Initiates the 2-step Super Admin login flow exclusively via the Firebase Cloud Function 'startSuperAdminLogin' (asia-south1).
+ * Never uses local/in-memory API fallbacks or returns fake success on failure.
  */
 export async function startSuperAdminLoginCall(email?: string): Promise<StartSuperAdminLoginResponse> {
-  const cleanEmail = (email || '').toLowerCase().trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
 
-  // 1. Try Firebase Cloud Function callable first
   try {
     const startCallable = httpsCallable<{ email?: string }, StartSuperAdminLoginResponse>(
       functions,
@@ -145,76 +100,48 @@ export async function startSuperAdminLoginCall(email?: string): Promise<StartSup
     if (result.data && result.data.success) {
       return result.data;
     }
+    throw new Error('Could not send Super Admin verification email.');
   } catch (fnErr: any) {
-    if (fnErr.code === 'resource-exhausted' || fnErr.message?.includes('wait')) {
-      const cooldownMatch = (fnErr.message || '').match(/wait (\d+) second/i);
+    const rawCode = String(fnErr?.code || '').toLowerCase();
+    const rawMsg = String(fnErr?.message || '');
+
+    // Preserve active 60-second cooldown cleanly without flagging as an error
+    if (
+      (rawCode.includes('resource-exhausted') || rawMsg.toLowerCase().includes('wait')) &&
+      rawMsg.toLowerCase().includes('second')
+    ) {
+      const cooldownMatch = rawMsg.match(/wait\s+(\d+)\s+second/i);
       const remaining = cooldownMatch && cooldownMatch[1] ? parseInt(cooldownMatch[1], 10) : 60;
       return {
         success: true,
-        message: fnErr.message || 'Please wait before requesting a new code.',
+        message: rawMsg,
         cooldownSeconds: remaining,
       };
     }
-    if (fnErr.code === 'permission-denied' && (fnErr.message?.includes('locked') || fnErr.message?.includes('minutes'))) {
-      throw new Error(fnErr.message);
-    }
-    console.warn('[superAdminAuth] Cloud Function startSuperAdminLogin unavailable, using server endpoint:', fnErr?.message || fnErr);
+
+    const formatted = formatOtpErrorMessage(fnErr);
+    const customErr: any = new Error(formatted.message);
+    customErr.isLocked = formatted.isLocked;
+    customErr.code = formatted.code;
+    throw customErr;
   }
-
-  // 2. Try Server Express API fallback
-  try {
-    const res = await fetch('/api/super-admin/start-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cleanEmail }),
-    });
-
-    const data = await res.json();
-    if (res.ok && data.success) {
-      return {
-        success: true,
-        message: data.message || 'Verification code sent to your registered Super Admin email.',
-        email: data.email,
-        expiresInSeconds: data.expiresInSeconds || SUPER_ADMIN_OTP_EXPIRY_SECONDS,
-        cooldownSeconds: data.cooldownSeconds || SUPER_ADMIN_OTP_RESEND_COOLDOWN_SECONDS,
-      };
-    } else if (res.status === 429) {
-      return {
-        success: true,
-        message: data.error || 'Please wait before requesting a new code.',
-        cooldownSeconds: data.cooldownSeconds || 60,
-      };
-    } else if (res.status === 423 || data.isLocked) {
-      throw new Error(data.error || 'Account is temporarily locked. Please try again in 15 minutes.');
-    } else if (data.error) {
-      throw new Error(data.error);
-    }
-  } catch (apiErr: any) {
-    if (apiErr.message?.includes('locked') || apiErr.message?.includes('15 minutes')) {
-      throw apiErr;
-    }
-    console.warn('[superAdminAuth] Local API fallback note:', apiErr);
-  }
-
-  throw new Error('Could not dispatch the verification email. Please try again later.');
 }
 
 /**
- * Verifies the 6-digit Super Admin OTP on the server.
- * Sets the otpSession custom claim on success with a 12-hour expiration window.
+ * Verifies the 6-digit Super Admin OTP exclusively via the Firebase Cloud Function 'verifySuperAdminOtp' (asia-south1).
+ * Refreshes the Firebase ID token on success so custom claims take effect immediately.
  */
 export async function verifySuperAdminOtpCall(
   code: string,
   email?: string
 ): Promise<VerifySuperAdminOtpResponse> {
-  const cleanCode = code.trim();
-  const cleanEmail = (email || '').toLowerCase().trim();
+  const cleanCode = String(code || '').trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
 
-  if (cleanCode.length !== 6) {
-    throw new Error('Please enter the full 6-digit verification code.');
+  if (!/^\d{6}$/.test(cleanCode)) {
+    throw new Error('দয়া করে সম্পূর্ণ ৬ সংখ্যার কোডটি লিখুন। (Please enter the full 6-digit verification code.)');
   }
 
-  // 1. Try Firebase Cloud Function callable first
   try {
     const verifyCallable = httpsCallable<{ code: string; email?: string }, VerifySuperAdminOtpResponse>(
       functions,
@@ -222,89 +149,43 @@ export async function verifySuperAdminOtpCall(
     );
     const result = await verifyCallable({ code: cleanCode, email: cleanEmail });
     if (result.data && result.data.verified) {
-      if (cleanEmail) {
-        sessionStorage.setItem(`sky_super_admin_session_${cleanEmail}`, JSON.stringify({
-          sessionId: 'cf_session_' + Date.now(),
-          expiresAt: result.data.expiresAt,
-        }));
+      // Force refresh ID token so the new otpSession custom claims are available immediately
+      if (auth.currentUser) {
+        await auth.currentUser.getIdToken(true).catch(() => {});
       }
       return result.data;
     }
+    throw new Error('Verification did not succeed.');
   } catch (fnErr: any) {
-    // If account was explicitly locked by the server, rethrow immediately
-    if (fnErr.message?.includes('locked') || fnErr.message?.includes('15 minutes') || (fnErr.code === 'permission-denied' && fnErr.message?.includes('locked'))) {
-      throw new Error(fnErr.message || 'Account is temporarily locked for 15 minutes.');
-    }
-    // If it's a genuine invalid code error with attempt counter from Cloud Function
-    if (fnErr.code === 'invalid-argument' && fnErr.message?.includes('remaining')) {
-      throw new Error(fnErr.message);
-    }
-    // If it's an internal, network, or not-found error (e.g. Cloud Function not yet deployed on GCP), fall through to local server endpoint
-    console.warn('[superAdminAuth] Cloud Function verifySuperAdminOtp unavailable or internal error, falling back to server API:', fnErr?.message || fnErr);
-  }
-
-  // 2. Try Server Express API fallback
-  try {
-    const res = await fetch('/api/super-admin/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: cleanCode, email: cleanEmail }),
-    });
-
-    const data = await res.json();
-    if (res.ok && data.verified) {
-      const expiresAt = data.expiresAt || (Date.now() + 12 * 60 * 60 * 1000);
-      if (cleanEmail) {
-        sessionStorage.setItem(`sky_super_admin_session_${cleanEmail}`, JSON.stringify({
-          sessionId: data.sessionId || 'session_' + Date.now(),
-          expiresAt,
-        }));
-      }
-      return {
-        success: true,
-        verified: true,
-        expiresAt,
-        message: data.message || 'Two-step verification successful!',
-      };
-    }
-    if (res.status === 423 || data.isLocked) {
-      throw new Error(data.error || 'Account is temporarily locked for 15 minutes due to too many failed attempts.');
-    }
-    throw new Error(data.error || 'Incorrect code. Please try again.');
-  } catch (apiErr: any) {
-    throw new Error(apiErr.message || 'Verification failed. Please check the code.');
+    const formatted = formatOtpErrorMessage(fnErr);
+    const customErr: any = new Error(formatted.message);
+    customErr.isWrongCode = formatted.isWrongCode;
+    customErr.attemptsLeft = formatted.attemptsLeft;
+    customErr.isLocked = formatted.isLocked;
+    customErr.code = formatted.code;
+    throw customErr;
   }
 }
 
 /**
- * Clears the Super Admin OTP custom claim and server session on sign out.
+ * Clears the Super Admin OTP custom claims and Firestore session on sign out.
  */
 export async function clearSuperAdminOtpSessionCall(email?: string): Promise<void> {
-  const cleanEmail = (email || '').toLowerCase().trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
 
   if (cleanEmail) {
-    sessionStorage.removeItem(`sky_super_admin_session_${cleanEmail}`);
+    try {
+      sessionStorage.removeItem(`sky_super_admin_session_${cleanEmail}`);
+    } catch (_) {}
   }
 
-  // Try Cloud Function
   try {
     const clearCallable = httpsCallable<{ email?: string }, { success: boolean }>(
       functions,
       'clearSuperAdminOtpSession'
     );
     await clearCallable({ email: cleanEmail });
-  } catch (_) {
-    // Ignore
-  }
-
-  // Try Server API
-  try {
-    await fetch('/api/super-admin/clear-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: cleanEmail }),
-    });
-  } catch (_) {
-    // Ignore
+  } catch (err) {
+    console.warn('[superAdminAuth] Could not clear OTP session via Cloud Function:', err);
   }
 }

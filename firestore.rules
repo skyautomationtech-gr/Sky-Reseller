@@ -260,6 +260,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Verified email markers - strictly server-side / Cloud Functions only
+    match /verifiedEmails/{docId} {
+      allow read, write: if false;
+    }
+
     // Unique Shop Name Reservations - strictly server-side / Cloud Functions only
     match /shopNames/{shopNameKey} {
       allow read, write: if false;

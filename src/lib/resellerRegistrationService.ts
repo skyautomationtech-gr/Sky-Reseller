@@ -70,8 +70,7 @@ import { normalizeShopName } from '../utils/shopName';
 /**
  * Finalizes the reseller registration and assigns a sequential Reseller ID (RSB-000001, etc.)
  * inside an atomic Firestore transaction on counters/resellerId and shopNames/{shopNameKey}.
- * First tries the Cloud Function 'finalizeRegistration'. If Cloud Functions are unreachable,
- * falls back to the server API '/api/finalize-registration'.
+ * Calls the Firebase Cloud Function 'finalizeRegistration' (asia-south1).
  */
 export async function finalizeResellerRegistration(
   input: FinalizeRegistrationInput
@@ -102,47 +101,21 @@ export async function finalizeResellerRegistration(
       return res.data;
     }
   } catch (fnErr: any) {
-    if (fnErr.message?.includes('already taken') || fnErr.code === 'already-exists') {
+    if (
+      fnErr.message?.includes('already taken') ||
+      fnErr.code === 'already-exists' ||
+      fnErr.code === 'functions/already-exists'
+    ) {
       throw new Error('This shop name is already taken. Please choose a different name.');
     }
-    if (fnErr.code === 'failed-precondition' || fnErr.message?.includes('verification is required')) {
+    if (
+      fnErr.code === 'failed-precondition' ||
+      fnErr.code === 'functions/failed-precondition' ||
+      fnErr.message?.includes('verification is required')
+    ) {
       throw new Error(fnErr.message || 'Email verification is required before finalizing registration.');
     }
-    console.warn('Cloud Function finalizeRegistration not available, trying server API fallback:', fnErr);
-  }
-
-  // 2. Attempt Express Server API fallback
-  try {
-    const response = await fetch('/api/finalize-registration', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        uid,
-        email,
-        formData: {
-          ...formData,
-          shopName: rawShopName,
-          shopNameKey,
-        },
-        termsVersion,
-      }),
-    });
-
-    const data = await response.json();
-    if (response.ok && data.success) {
-      return data;
-    }
-    if (response.status === 409 || data.error?.includes('already taken')) {
-      throw new Error('This shop name is already taken. Please choose a different name.');
-    }
-    if (response.status === 403 || data.error?.includes('verification is required')) {
-      throw new Error(data.error || 'Email verification is required before finalizing registration.');
-    }
-  } catch (apiErr: any) {
-    if (apiErr.message?.includes('already taken') || apiErr.message?.includes('verification is required')) {
-      throw apiErr;
-    }
-    console.warn('Server API fallback failed, attempting local client transaction:', apiErr);
+    console.warn('Cloud Function finalizeRegistration not available, attempting local client transaction:', fnErr);
   }
 
   // 3. Direct Firestore transaction fallback

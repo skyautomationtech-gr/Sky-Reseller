@@ -94,7 +94,7 @@ export async function updateShopNameAtomic(
     throw new Error('Shop name must be at least 2 characters long.');
   }
 
-  // 1. Try Cloud Function
+  // Call Cloud Function 'updateShopName'
   try {
     const updateCallable = httpsCallable<
       { newShopName: string; targetUid?: string },
@@ -105,26 +105,13 @@ export async function updateShopNameAtomic(
     if (res.data?.success) {
       return res.data;
     }
+    throw new Error('Failed to update shop name.');
   } catch (fnErr: any) {
-    console.warn('Cloud Function updateShopName not reachable, trying server endpoint:', fnErr?.message || fnErr);
     if (fnErr.message?.includes('already taken') || fnErr.code === 'already-exists') {
       throw new Error('This shop name is already taken. Please choose a different name.');
     }
+    throw new Error(fnErr?.message || 'Failed to update shop name.');
   }
-
-  // 2. Try server Express API fallback
-  const res = await fetch('/api/update-shop-name', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ newShopName: cleanName, targetUid }),
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || data.message || 'Failed to update shop name.');
-  }
-
-  return data;
 }
 
 /**
@@ -141,37 +128,20 @@ export async function runShopNameMigration(): Promise<{
     resellers: Array<{ uid: string; resellerId: string; email: string; shopName: string }>;
   }>;
 }> {
-  // 1. Try Cloud Function
-  try {
-    const migrateCallable = httpsCallable<
-      void,
-      {
-        success: boolean;
-        totalResellers: number;
-        migratedCount: number;
-        duplicateCount: number;
-        duplicates: any[];
-      }
-    >(functions, 'migrateShopNames');
-
-    const res = await migrateCallable();
-    if (res.data?.success) {
-      return res.data;
+  const migrateCallable = httpsCallable<
+    void,
+    {
+      success: boolean;
+      totalResellers: number;
+      migratedCount: number;
+      duplicateCount: number;
+      duplicates: any[];
     }
-  } catch (fnErr: any) {
-    console.warn('Cloud Function migrateShopNames not available, calling server migration endpoint:', fnErr?.message || fnErr);
+  >(functions, 'migrateShopNames');
+
+  const res = await migrateCallable();
+  if (res.data?.success) {
+    return res.data;
   }
-
-  // 2. Try server Express API fallback
-  const res = await fetch('/api/admin/migrate-shop-names', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to run shop name migration.');
-  }
-
-  return data;
+  throw new Error('Failed to run shop name migration.');
 }

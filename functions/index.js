@@ -1,7 +1,136 @@
-const functions = require('firebase-functions');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const admin = require('firebase-admin');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { setGlobalOptions } = require('firebase-functions/v2');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { defineSecret } = require('firebase-functions/params');
 
 admin.initializeApp();
+
+const REGION = 'asia-south1';
+const FIRESTORE_DATABASE_ID =
+  process.env.FIRESTORE_DATABASE_ID || 'ai-studio-5b67ed85-eca9-4578-81ec-a8f1bfd7298e';
+
+setGlobalOptions({ region: REGION });
+
+// Firebase Secret Manager parameters (never hardcoded, never defaulted)
+const GMAIL_USER = defineSecret('GMAIL_USER');
+const GMAIL_APP_PASSWORD = defineSecret('GMAIL_APP_PASSWORD');
+const OTP_SECRET_SALT = defineSecret('OTP_SECRET_SALT');
+
+function getDb() {
+  if (FIRESTORE_DATABASE_ID && FIRESTORE_DATABASE_ID !== '(default)') {
+    return getFirestore(FIRESTORE_DATABASE_ID);
+  }
+  return getFirestore();
+}
+
+function getOtpSalt() {
+  const salt = String(OTP_SECRET_SALT.value() || '').trim();
+  if (!salt) {
+    console.error('[Config Error] Missing required Firebase secret: OTP_SECRET_SALT');
+    throw new HttpsError(
+      'failed-precondition',
+      'Server OTP configuration is missing. Please contact the administrator.'
+    );
+  }
+  return salt;
+}
+
+function getGmailConfig() {
+  const user = String(GMAIL_USER.value() || '').trim();
+  const pass = String(GMAIL_APP_PASSWORD.value() || '').replace(/\s+/g, '');
+  if (!user || !pass) {
+    console.error('[Config Error] Missing required Firebase secret(s): GMAIL_USER or GMAIL_APP_PASSWORD');
+    throw new HttpsError(
+      'failed-precondition',
+      'Email delivery configuration is missing. Please contact the administrator.'
+    );
+  }
+  return { user, pass };
+}
+
+function createGmailTransporter() {
+  const { user, pass } = getGmailConfig();
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+  return { transporter, gmailUser: user };
+}
+
+function hashOtp(code, salt) {
+  return crypto
+    .createHash('sha256')
+    .update(`${String(code).trim()}:${salt}`)
+    .digest('hex');
+}
+
+function hashEmailForLog(email) {
+  if (!email) return 'anonymous';
+  return crypto
+    .createHash('sha256')
+    .update(String(email).trim().toLowerCase())
+    .digest('hex')
+    .substring(0, 10);
+}
+
+function normalizeEmail(raw) {
+  return String(raw || '').trim().toLowerCase();
+}
+
+function parseTimestampMs(val) {
+  if (!val) return 0;
+  if (typeof val.toDate === 'function') return val.toDate().getTime();
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (typeof val === 'number') return val;
+  if (val instanceof Date) return val.getTime();
+  return new Date(val).getTime() || 0;
+}
+
+function generateSixDigitOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+async function sendPushToTokens(tokens, payload) {
+  const uniqueTokens = [...new Set((tokens || []).filter(Boolean))];
+  if (uniqueTokens.length === 0) return { successCount: 0, failureCount: 0 };
+
+  const stringData = {};
+  if (payload.data) {
+    for (const [k, v] of Object.entries(payload.data)) {
+      stringData[k] = String(v ?? '');
+    }
+  }
+
+  const message = {
+    tokens: uniqueTokens,
+    ...(payload.notification ? { notification: payload.notification } : {}),
+    ...(Object.keys(stringData).length > 0 ? { data: stringData } : {}),
+    android: {
+      priority: 'high',
+      ...(payload.sound ? { notification: { sound: payload.sound } } : {}),
+    },
+    apns: {
+      payload: {
+        aps: {
+          contentAvailable: true,
+          ...(payload.sound ? { sound: payload.sound } : {}),
+        },
+      },
+    },
+  };
+
+  return admin.messaging().sendEachForMulticast(message);
+}
 
 /**
  * Checks whether the current time falls within user's configured quiet hours.
@@ -12,7 +141,6 @@ function isWithinQuietHours(notifPref) {
     const start = notifPref.quietHoursStart || '22:00';
     const end = notifPref.quietHoursEnd || '07:00';
     const now = new Date();
-    // UTC to Bangladesh time (UTC+6)
     const bdHours = (now.getUTCHours() + 6) % 24;
     const currentMinutes = bdHours * 60 + now.getUTCMinutes();
 
@@ -24,147 +152,150 @@ function isWithinQuietHours(notifPref) {
 
     if (startMinutes <= endMinutes) {
       return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
-    } else {
-      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
     }
-  } catch (e) {
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  } catch (_e) {
     return false;
   }
 }
 
-/**
- * 1. New Order Notification (to Admin/Super Admin)
- */
-exports.sendNewOrderNotification = functions.firestore
-  .document('orders/{orderId}')
-  .onCreate(async (snap, context) => {
+// =========================================================================
+// 1. FIRESTORE PUSH NOTIFICATION TRIGGERS (2nd-Gen, asia-south1)
+// =========================================================================
+
+exports.sendNewOrderNotification = onDocumentCreated(
+  {
+    document: 'orders/{orderId}',
+    database: FIRESTORE_DATABASE_ID,
+    region: REGION,
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return null;
     const order = snap.data();
     if (!order) return null;
 
-    const orderNumber = order.orderNumber || context.params.orderId;
+    const orderNumber = order.orderNumber || event.params.orderId;
     const amount = order.totalAmount || order.payableAmount || 0;
     const resellerName = order.resellerName || order.customerName || 'Reseller';
 
-    // Find admins & super_admins
-    const usersSnap = await admin.firestore()
+    const db = getDb();
+    const usersSnap = await db
       .collection('users')
       .where('role', 'in', ['admin', 'super_admin'])
       .get();
 
     const tokens = [];
-    usersSnap.forEach((doc) => {
-      const userData = doc.data();
+    usersSnap.forEach((docSnap) => {
+      const userData = docSnap.data();
       const notifPref = userData.notificationPreferences || {};
       const orderAllowed = notifPref.orderUpdates !== false && notifPref.newOrder !== false;
-      if (orderAllowed && !isWithinQuietHours(notifPref) && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
+      if (
+        orderAllowed &&
+        !isWithinQuietHours(notifPref) &&
+        Array.isArray(userData.fcmTokens) &&
+        userData.fcmTokens.length > 0
+      ) {
         tokens.push(...userData.fcmTokens);
       }
     });
 
-    if (tokens.length === 0) {
-      console.log('No admin FCM tokens found for new order notification.');
-      return null;
-    }
-
-    const uniqueTokens = [...new Set(tokens)];
-    const payload = {
-      notification: {
-        title: 'New Order Received',
-        body: `Order #${orderNumber} - ৳${amount} from ${resellerName}`,
-      },
-      data: {
-        type: 'new_order',
-        orderId: context.params.orderId,
-        orderNumber: String(orderNumber),
-      },
-    };
+    if (tokens.length === 0) return null;
 
     try {
-      const response = await admin.messaging().sendToDevice(uniqueTokens, payload);
+      const response = await sendPushToTokens(tokens, {
+        notification: {
+          title: 'New Order Received',
+          body: `Order #${orderNumber} - ৳${amount} from ${resellerName}`,
+        },
+        data: {
+          type: 'new_order',
+          orderId: event.params.orderId,
+          orderNumber: String(orderNumber),
+        },
+      });
       console.log(`Successfully sent ${response.successCount} new order push notifications.`);
     } catch (error) {
       console.error('Error sending new order push notification:', error);
     }
     return null;
-  });
+  }
+);
 
-/**
- * 2. Order Status Update Notification (to Reseller)
- */
-exports.sendOrderStatusNotification = functions.firestore
-  .document('orders/{orderId}')
-  .onUpdate(async (change, context) => {
+exports.sendOrderStatusNotification = onDocumentUpdated(
+  {
+    document: 'orders/{orderId}',
+    database: FIRESTORE_DATABASE_ID,
+    region: REGION,
+  },
+  async (event) => {
+    const change = event.data;
+    if (!change) return null;
     const before = change.before.data();
     const after = change.after.data();
 
-    if (!before || !after) return null;
-    if (before.status === after.status) return null; // Status didn't change
+    if (!before || !after || before.status === after.status) return null;
 
     const resellerId = after.resellerId || after.userId;
     if (!resellerId) return null;
 
-    const userDoc = await admin.firestore().collection('users').doc(resellerId).get();
+    const db = getDb();
+    const userDoc = await db.collection('users').doc(resellerId).get();
     if (!userDoc.exists) return null;
 
     const userData = userDoc.data();
     const notifPref = userData.notificationPreferences || {};
-    
-    // Check both orderUpdates and orderStatus keys
     const orderAllowed = notifPref.orderUpdates !== false && notifPref.orderStatus !== false;
     if (!orderAllowed || !Array.isArray(userData.fcmTokens) || userData.fcmTokens.length === 0) {
       return null;
     }
 
-    if (isWithinQuietHours(notifPref)) {
-      console.log(`Silent/Quiet hours active for reseller ${resellerId}. Non-urgent order update skipped.`);
-      return null;
-    }
+    if (isWithinQuietHours(notifPref)) return null;
 
-    const orderNumber = after.orderNumber || context.params.orderId;
+    const orderNumber = after.orderNumber || event.params.orderId;
     const status = after.status || 'Updated';
 
-    const payload = {
-      notification: {
-        title: 'Order Status Updated',
-        body: `Your order #${orderNumber} is now ${status}`,
-        sound: notifPref.sound !== false ? 'default' : undefined,
-      },
-      data: {
-        type: 'order_status',
-        orderId: context.params.orderId,
-        status: String(status),
-      },
-    };
-
     try {
-      const response = await admin.messaging().sendToDevice(userData.fcmTokens, payload);
-      console.log(`Successfully sent order status notification to reseller ${resellerId}:`, response.successCount);
+      const response = await sendPushToTokens(userData.fcmTokens, {
+        notification: {
+          title: 'Order Status Updated',
+          body: `Your order #${orderNumber} is now ${status}`,
+        },
+        sound: notifPref.sound !== false ? 'default' : undefined,
+        data: {
+          type: 'order_status',
+          orderId: event.params.orderId,
+          status: String(status),
+        },
+      });
+      console.log(`Sent order status notification to reseller ${resellerId}:`, response.successCount);
     } catch (error) {
       console.error('Error sending order status notification:', error);
     }
     return null;
-  });
+  }
+);
 
-/**
- * 3. Commission/Payout/Wallet Notification (to Reseller)
- */
-exports.sendCommissionPayoutNotification = functions.firestore
-  .document('transactions/{txId}')
-  .onCreate(async (snap, context) => {
+exports.sendCommissionPayoutNotification = onDocumentCreated(
+  {
+    document: 'transactions/{txId}',
+    database: FIRESTORE_DATABASE_ID,
+    region: REGION,
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return null;
     const tx = snap.data();
     if (!tx || !tx.userId) return null;
 
-    const userDoc = await admin.firestore().collection('users').doc(tx.userId).get();
+    const db = getDb();
+    const userDoc = await db.collection('users').doc(tx.userId).get();
     if (!userDoc.exists) return null;
 
     const userData = userDoc.data();
     const notifPref = userData.notificationPreferences || {};
     if (!Array.isArray(userData.fcmTokens) || userData.fcmTokens.length === 0) return null;
-
-    if (isWithinQuietHours(notifPref)) {
-      console.log(`Quiet hours active for user ${tx.userId}. Wallet update push muted.`);
-      return null;
-    }
+    if (isWithinQuietHours(notifPref)) return null;
 
     let title = 'Wallet Update';
     let body = `৳${tx.amount || 0} wallet update recorded.`;
@@ -184,43 +315,43 @@ exports.sendCommissionPayoutNotification = functions.firestore
 
     if (!sendNotif) return null;
 
-    const payload = {
-      notification: { 
-        title, 
-        body,
-        sound: notifPref.sound !== false ? 'default' : undefined,
-      },
-      data: {
-        type: 'payout',
-        txId: context.params.txId,
-      },
-    };
-
     try {
-      await admin.messaging().sendToDevice(userData.fcmTokens, payload);
+      await sendPushToTokens(userData.fcmTokens, {
+        notification: { title, body },
+        sound: notifPref.sound !== false ? 'default' : undefined,
+        data: {
+          type: 'payout',
+          txId: event.params.txId,
+        },
+      });
     } catch (err) {
       console.error('Error sending commission/payout push:', err);
     }
     return null;
-  });
+  }
+);
 
-/**
- * 4. Important Notice Notification (to all or targeted users)
- */
-exports.sendImportantNoticeNotification = functions.firestore
-  .document('notices/{noticeId}')
-  .onCreate(async (snap, context) => {
+exports.sendImportantNoticeNotification = onDocumentCreated(
+  {
+    document: 'notices/{noticeId}',
+    database: FIRESTORE_DATABASE_ID,
+    region: REGION,
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return null;
     const notice = snap.data();
     if (!notice) return null;
 
     const title = notice.title || 'Important Notice';
     const body = notice.message || notice.content || notice.preview || 'New announcement published.';
 
-    const usersSnap = await admin.firestore().collection('users').get();
+    const db = getDb();
+    const usersSnap = await db.collection('users').get();
     const tokens = [];
 
-    usersSnap.forEach((doc) => {
-      const userData = doc.data();
+    usersSnap.forEach((docSnap) => {
+      const userData = docSnap.data();
       const notifPref = userData.notificationPreferences || {};
       const noticeAllowed = notifPref.importantNotices !== false && notifPref.importantNotice !== false;
       if (noticeAllowed && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
@@ -229,83 +360,85 @@ exports.sendImportantNoticeNotification = functions.firestore
     });
 
     if (tokens.length === 0) return null;
-    const uniqueTokens = [...new Set(tokens)];
-
-    const payload = {
-      notification: { title, body },
-      data: {
-        type: 'important_notice',
-        noticeId: context.params.noticeId,
-      },
-    };
 
     try {
-      await admin.messaging().sendToDevice(uniqueTokens, payload);
-      console.log('Sent notice notification to', uniqueTokens.length, 'devices.');
+      await sendPushToTokens(tokens, {
+        notification: { title, body },
+        data: {
+          type: 'important_notice',
+          noticeId: event.params.noticeId,
+        },
+      });
     } catch (err) {
       console.error('Error sending notice push notification:', err);
     }
     return null;
-  });
+  }
+);
 
-/**
- * 5. App Update Notification (to all)
- */
-exports.sendAppUpdateNotification = functions.firestore
-  .document('appVersions/{versionId}')
-  .onCreate(async (snap, context) => {
+exports.sendAppUpdateNotification = onDocumentCreated(
+  {
+    document: 'appVersions/{versionId}',
+    database: FIRESTORE_DATABASE_ID,
+    region: REGION,
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return null;
     const versionData = snap.data();
     if (!versionData) return null;
 
     const versionNum = versionData.version || '1.0.0';
     const releaseTitle = versionData.title || versionData.changelog || 'New Features & Bug Fixes';
 
-    const usersSnap = await admin.firestore().collection('users').get();
+    const db = getDb();
+    const usersSnap = await db.collection('users').get();
     const tokens = [];
 
-    usersSnap.forEach((doc) => {
-      const userData = doc.data();
+    usersSnap.forEach((docSnap) => {
+      const userData = docSnap.data();
       const notifPref = userData.notificationPreferences || {};
       const appUpdateAllowed = notifPref.appUpdates !== false && notifPref.appUpdate !== false;
-      if (appUpdateAllowed && !isWithinQuietHours(notifPref) && Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
+      if (
+        appUpdateAllowed &&
+        !isWithinQuietHours(notifPref) &&
+        Array.isArray(userData.fcmTokens) &&
+        userData.fcmTokens.length > 0
+      ) {
         tokens.push(...userData.fcmTokens);
       }
     });
 
     if (tokens.length === 0) return null;
-    const uniqueTokens = [...new Set(tokens)];
-
-    const payload = {
-      notification: {
-        title: 'App Update Available',
-        body: `Version ${versionNum} is now available - ${releaseTitle}`,
-      },
-      data: {
-        type: 'app_update',
-        version: String(versionNum),
-      },
-    };
 
     try {
-      await admin.messaging().sendToDevice(uniqueTokens, payload);
+      await sendPushToTokens(tokens, {
+        notification: {
+          title: 'App Update Available',
+          body: `Version ${versionNum} is now available - ${releaseTitle}`,
+        },
+        data: {
+          type: 'app_update',
+          version: String(versionNum),
+        },
+      });
     } catch (err) {
       console.error('Error sending app update push notification:', err);
     }
     return null;
-  });
+  }
+);
 
-/**
- * 6. Callable: Send Test Push Notification
- */
-exports.sendTestPushNotification = functions.https.onCall(async (data, context) => {
-  const uid = context.auth ? context.auth.uid : data.userId;
+exports.sendTestPushNotification = onCall({ region: REGION, cors: true }, async (request) => {
+  const uid = request.auth ? request.auth.uid : request.data?.userId;
   if (!uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User authentication required.');
+    throw new HttpsError('unauthenticated', 'User authentication required.');
   }
 
-  const userDoc = await admin.firestore().collection('users').doc(uid).get();
+  const db = getDb();
+  const userDoc = await db.collection('users').doc(uid).get();
   if (!userDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'User profile not found.');
+    throw new HttpsError('not-found', 'User profile not found.');
   }
 
   const userData = userDoc.data();
@@ -314,373 +447,279 @@ exports.sendTestPushNotification = functions.https.onCall(async (data, context) 
     return { success: false, reason: 'no_tokens', message: 'No registered push devices found.' };
   }
 
-  const payload = {
-    notification: {
-      title: data.title || '🔔 ReSellBD Test Alert',
-      body: data.body || 'Push notifications are successfully configured!',
-    },
-    data: {
-      type: 'test_notification',
-      timestamp: String(Date.now()),
-    },
-  };
-
   try {
-    const res = await admin.messaging().sendToDevice(tokens, payload);
+    const res = await sendPushToTokens(tokens, {
+      notification: {
+        title: request.data?.title || 'ReSellBD Test Alert',
+        body: request.data?.body || 'Push notifications are successfully configured!',
+      },
+      data: {
+        type: 'test_notification',
+        timestamp: String(Date.now()),
+      },
+    });
     return { success: true, count: res.successCount };
   } catch (err) {
     console.error('Test notification failed:', err);
-    throw new functions.https.HttpsError('internal', err.message);
+    throw new HttpsError('internal', err.message || 'Failed to send test push notification.');
   }
 });
 
-/**
- * 6. Reseller Registration - Send Email OTP
- * Generates a cryptographically random 6-digit OTP, hashes it,
- * stores expiry (10 min) & attempt count in Firestore `emailOtps`,
- * and sends the transactional email.
- */
-const crypto = require('crypto');
-const { getFirestore } = require('firebase-admin/firestore');
+// =========================================================================
+// 2. RESELLER REGISTRATION EMAIL OTP (Firestore `emailOtps` only)
+// =========================================================================
 
-// Dedicated named database support for ai-studio instance
-const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || 'ai-studio-5b67ed85-eca9-4578-81ec-a8f1bfd7298e';
+exports.sendEmailOtp = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [GMAIL_USER, GMAIL_APP_PASSWORD, OTP_SECRET_SALT],
+  },
+  async (request) => {
+    const email = normalizeEmail(request.data?.email);
+    const emailHash = hashEmailForLog(email);
 
-function getOtpDb() {
-  try {
-    if (FIRESTORE_DATABASE_ID && FIRESTORE_DATABASE_ID !== '(default)') {
-      return getFirestore(FIRESTORE_DATABASE_ID);
-    }
-  } catch (err) {
-    console.warn('[OTP Engine] Fallback to default firestore instance:', err.message);
-  }
-  return admin.firestore();
-}
+    try {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !emailRegex.test(email)) {
+        throw new HttpsError('invalid-argument', 'Please provide a valid email address.');
+      }
 
-const OTP_SECRET_SALT = process.env.OTP_SECRET_SALT || 'resellbd_otp_secret_salt_2026';
+      // Validate all required secrets up front (fails cleanly if missing)
+      const otpSalt = getOtpSalt();
+      const { transporter, gmailUser } = createGmailTransporter();
 
-function hashOtp(code, salt = OTP_SECRET_SALT) {
-  const safeSalt = salt || 'resellbd_otp_secret_salt_2026';
-  return crypto.createHash('sha256').update(String(code).trim() + safeSalt).digest('hex');
-}
+      const db = getDb();
+      const existingUserSnap = await db
+        .collection('users')
+        .where('email', '==', email)
+        .limit(1)
+        .get();
 
-function hashEmailForLog(email) {
-  if (!email) return 'anonymous';
-  return crypto.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex').substring(0, 10);
-}
+      if (!existingUserSnap.empty) {
+        const existingUser = existingUserSnap.docs[0].data();
+        if (existingUser.status === 'approved') {
+          throw new HttpsError(
+            'already-exists',
+            'This email address is already registered and approved. Please sign in.'
+          );
+        }
+      }
 
-function parseTimestampMs(val) {
-  if (!val) return 0;
-  if (typeof val.toDate === 'function') return val.toDate().getTime();
-  if (typeof val.toMillis === 'function') return val.toMillis();
-  if (typeof val === 'number') return val;
-  if (val instanceof Date) return val.getTime();
-  return new Date(val).getTime() || 0;
-}
+      const otpDocRef = db.collection('emailOtps').doc(email);
+      const otpDocSnap = await otpDocRef.get();
+      const now = Date.now();
 
-/**
- * 6. Reseller Registration - Send Email OTP
- * Generates 6-digit code, hashes with SHA-256 + secret salt,
- * stores expiry (10 min) & attempt count in Firestore, and sends transactional email.
- */
-exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
-  let step = 'init';
-  const email = String(data?.email || '').trim().toLowerCase();
-  const emailHash = hashEmailForLog(email);
+      if (otpDocSnap.exists) {
+        const otpData = otpDocSnap.data() || {};
 
-  try {
-    step = 'validate_email';
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
-      throw new functions.https.HttpsError(
-        'invalid-argument',
-        'Please provide a valid email address.'
-      );
-    }
+        const lockedUntil = parseTimestampMs(otpData.lockedUntil);
+        if (lockedUntil > now) {
+          const remainingMinutes = Math.ceil((lockedUntil - now) / 60000);
+          throw new HttpsError(
+            'resource-exhausted',
+            `Too many failed attempts. Account is locked for ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`
+          );
+        }
 
-    step = 'check_existing_user';
-    const db = getOtpDb();
-    const existingUserSnap = await db
-      .collection('users')
-      .where('email', '==', email)
-      .limit(1)
-      .get();
+        const lastSent = parseTimestampMs(otpData.lastSentAt);
+        const elapsedSeconds = Math.floor((now - lastSent) / 1000);
+        if (lastSent > 0 && elapsedSeconds < 60) {
+          const waitTime = 60 - elapsedSeconds;
+          throw new HttpsError(
+            'resource-exhausted',
+            `Please wait ${waitTime} seconds before requesting a new OTP.`
+          );
+        }
+      }
 
-    if (!existingUserSnap.empty) {
-      const existingUser = existingUserSnap.docs[0].data();
-      if (existingUser.status === 'approved') {
-        throw new functions.https.HttpsError(
-          'already-exists',
-          'This email address is already registered and approved. Please sign in.'
+      const code = generateSixDigitOtp();
+      const hashedCode = hashOtp(code, otpSalt);
+      const expiresAt = Timestamp.fromDate(new Date(now + 10 * 60 * 1000)); // 10 minutes
+
+      // Replace any previous OTP record cleanly
+      await otpDocRef.set({
+        email,
+        type: 'reseller_registration',
+        hashedCode,
+        expiresAt,
+        attemptsLeft: 5,
+        lastSentAt: FieldValue.serverTimestamp(),
+        lockedUntil: null,
+      });
+
+      try {
+        await transporter.sendMail({
+          from: `"ReSellBD Verification" <${gmailUser}>`,
+          to: email,
+          subject: `${code} is your ReSellBD Reseller Verification Code`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050B1A; color: #ffffff; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #3DD055; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">ReSellBD</h1>
+                <p style="color: #0E9AA7; font-size: 13px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Reseller Portal Verification</p>
+              </div>
+              <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
+                <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit email verification code is:</p>
+                <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #3DD055; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px; display: inline-block; font-family: monospace;">
+                  ${code}
+                </div>
+                <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 12px;">This code will expire in <strong>10 minutes</strong>. If you do not see it in Inbox, check your <strong>Spam / Junk</strong> folder.</p>
+              </div>
+              <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
+                Sent automatically by ReSellBD. Do not share this code with anyone.
+              </p>
+            </div>
+          `,
+        });
+        console.log(`[sendEmailOtp] Dispatched OTP email for emailHash=${emailHash}`);
+      } catch (mailErr) {
+        console.error(`[sendEmailOtp] SMTP delivery failed for emailHash=${emailHash}:`, mailErr?.message || mailErr);
+        // Delete un-delivered OTP record so user can retry immediately without hitting 60s cooldown
+        await otpDocRef.delete().catch(() => {});
+        throw new HttpsError(
+          'internal',
+          'Could not deliver the verification email. Please verify your email address and try again.'
         );
       }
+
+      return {
+        success: true,
+        message: 'Verification code sent to your email address.',
+        email,
+        expiresInSeconds: 600,
+        cooldownSeconds: 60,
+      };
+    } catch (err) {
+      if (err instanceof HttpsError) {
+        throw err;
+      }
+      console.error(`[sendEmailOtp] Unhandled error for emailHash=${emailHash}:`, err);
+      throw new HttpsError('internal', 'Could not send verification email. Please try again later.');
     }
+  }
+);
 
-    step = 'check_cooldown_and_lock';
-    const otpDocRef = db.collection('emailOtps').doc(email);
-    const otpDocSnap = await otpDocRef.get();
-    const now = Date.now();
+exports.verifyEmailOtp = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [OTP_SECRET_SALT],
+  },
+  async (request) => {
+    const email = normalizeEmail(request.data?.email);
+    const code = String(request.data?.code ?? '').trim();
+    const emailHash = hashEmailForLog(email);
 
-    if (otpDocSnap.exists) {
+    try {
+      if (!email || !/^\d{6}$/.test(code)) {
+        throw new HttpsError('invalid-argument', 'Please enter the full 6-digit verification code.');
+      }
+
+      const otpSalt = getOtpSalt();
+      const db = getDb();
+      const otpDocRef = db.collection('emailOtps').doc(email);
+      const otpDocSnap = await otpDocRef.get();
+
+      if (!otpDocSnap.exists) {
+        throw new HttpsError(
+          'not-found',
+          'No active verification code found for this email. Please request a new code.'
+        );
+      }
+
       const otpData = otpDocSnap.data() || {};
+      const now = Date.now();
 
-      // 15-minute lock check
       const lockedUntil = parseTimestampMs(otpData.lockedUntil);
       if (lockedUntil > now) {
         const remainingMinutes = Math.ceil((lockedUntil - now) / 60000);
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'resource-exhausted',
-          `Too many failed attempts. Account is locked for ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`
+          `Account is locked due to too many failed attempts. Please wait ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`
         );
       }
 
-      // 60-second cooldown check
-      const lastSent = parseTimestampMs(otpData.lastSentAt);
-      const elapsedSeconds = Math.floor((now - lastSent) / 1000);
-      if (lastSent > 0 && elapsedSeconds < 60) {
-        const waitTime = 60 - elapsedSeconds;
-        throw new functions.https.HttpsError(
-          'resource-exhausted',
-          `Please wait ${waitTime} seconds before requesting a new OTP.`
+      const expiresAt = parseTimestampMs(otpData.expiresAt);
+      if (!expiresAt || now > expiresAt) {
+        await otpDocRef.delete();
+        throw new HttpsError(
+          'deadline-exceeded',
+          'This verification code has expired. Please request a new one.'
         );
       }
-    }
 
-    step = 'generate_code';
-    // Generate exactly 6-digit numeric string with leading zero protection
-    const numericVal = Math.floor(100000 + Math.random() * 900000);
-    const code = String(numericVal).padStart(6, '0');
-    const hashedCode = hashOtp(code);
-    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(now + 10 * 60 * 1000)); // 10 minutes
-
-    step = 'save_otp_record';
-    await otpDocRef.set({
-      hashedCode,
-      expiresAt,
-      attemptsLeft: 5,
-      lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-      verified: false,
-      lockedUntil: null,
-    });
-
-    // Developer test mode log (does NOT log the OTP code itself)
-    console.log(`[OTP TestMode] OTP sent for emailHash=${emailHash}`);
-
-    step = 'send_email';
-    try {
-      const nodemailer = require('nodemailer');
-      const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
-      const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
-
-      const gmailTransporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: gmailUser,
-          pass: gmailPass,
-        },
-      });
-
-      await gmailTransporter.sendMail({
-        from: `"ReSellBD Verification" <${gmailUser}>`,
-        to: email,
-        subject: `${code} is your ReSellBD Reseller Verification Code`,
-        html: `
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050B1A; color: #ffffff; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <h1 style="color: #3DD055; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">ReSellBD</h1>
-              <p style="color: #0E9AA7; font-size: 13px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Reseller Portal Verification</p>
-            </div>
-            <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
-              <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit email verification code is:</p>
-              <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #3DD055; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px; display: inline-block;">
-                ${code}
-              </div>
-              <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 12px;">This code will expire in <strong>10 minutes</strong>. Do not share this code with anyone.</p>
-            </div>
-            <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
-              Sent automatically by ReSellBD via Gmail SMTP (${gmailUser}).
-            </p>
-          </div>
-        `,
-      });
-      console.log(`[sendEmailOtp] Successfully dispatched email to emailHash=${emailHash}`);
-    } catch (mailErr) {
-      console.warn(`[sendEmailOtp] SMTP send note for emailHash=${emailHash}:`, mailErr?.message || mailErr);
-    }
-
-    return {
-      success: true,
-      message: 'Verification code sent to your email address.',
-      email,
-      expiresInSeconds: 600,
-      cooldownSeconds: 60,
-    };
-  } catch (err) {
-    if (err instanceof functions.https.HttpsError) {
-      console.warn(`[sendEmailOtp] Expected HttpsError at step=${step} for emailHash=${emailHash}:`, err.code, err.message);
-      throw err;
-    }
-    console.error(`[sendEmailOtp] Unhandled error at step=${step} for emailHash=${emailHash}:`, err);
-    throw new functions.https.HttpsError(
-      'internal',
-      'Could not send verification email. Please try again later.'
-    );
-  }
-});
-
-/**
- * 7. Reseller Registration - Verify Email OTP
- * Verifies the 6-digit code against stored SHA-256 hash,
- * decrements attempts only on wrong code, enforces 15-minute lock on lockout,
- * checks expiration, marks email verified server-side, deletes the OTP doc,
- * and returns { verified: true } only.
- */
-exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
-  let step = 'init';
-  const email = String(data?.email || '').trim().toLowerCase();
-  const rawCode = String(data?.code || '').trim();
-  const code = rawCode.replace(/\D/g, ''); // Extract only 6 digits
-  const emailHash = hashEmailForLog(email);
-
-  try {
-    step = 'validate_input';
-    if (!email || !code || code.length !== 6) {
-      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=bad_format`);
-      throw new functions.https.HttpsError(
-        'invalid-argument',
-        'Please enter the full 6-digit verification code.'
-      );
-    }
-
-    step = 'fetch_otp_record';
-    const db = getOtpDb();
-    const otpDocRef = db.collection('emailOtps').doc(email);
-    const otpDocSnap = await otpDocRef.get();
-
-    if (!otpDocSnap.exists) {
-      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=no_active_code`);
-      throw new functions.https.HttpsError(
-        'not-found',
-        'No active verification code found for this email. Please request a new code.'
-      );
-    }
-
-    const otpData = otpDocSnap.data() || {};
-    const now = Date.now();
-
-    step = 'check_lockout';
-    const lockedUntil = parseTimestampMs(otpData.lockedUntil);
-    if (lockedUntil > now) {
-      const remainingMinutes = Math.ceil((lockedUntil - now) / 60000);
-      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=locked`);
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        `Account is locked due to too many failed attempts. Please wait ${remainingMinutes} more minute${remainingMinutes === 1 ? '' : 's'}.`
-      );
-    }
-
-    step = 'check_expiration';
-    const expiresAt = parseTimestampMs(otpData.expiresAt);
-    if (expiresAt > 0 && now > expiresAt) {
-      await otpDocRef.delete();
-      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=expired`);
-      throw new functions.https.HttpsError(
-        'deadline-exceeded',
-        'This verification code has expired. Please request a new one.'
-      );
-    }
-
-    step = 'check_attempts';
-    const attemptsLeft = typeof otpData.attemptsLeft === 'number' ? otpData.attemptsLeft : 5;
-    if (attemptsLeft <= 0) {
-      const lockUntilDate = new Date(now + 15 * 60 * 1000);
-      await otpDocRef.update({
-        lockedUntil: admin.firestore.Timestamp.fromDate(lockUntilDate),
-        attemptsLeft: 0,
-      });
-      console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=max_attempts_exceeded`);
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        'Maximum verification attempts exceeded. Account is locked for 15 minutes.'
-      );
-    }
-
-    step = 'verify_hash';
-    const inputHash = hashOtp(code);
-    if (!otpData.hashedCode || inputHash !== otpData.hashedCode) {
-      const remaining = attemptsLeft - 1;
-      if (remaining <= 0) {
-        const lockUntilDate = new Date(now + 15 * 60 * 1000);
+      const attemptsLeft = typeof otpData.attemptsLeft === 'number' ? otpData.attemptsLeft : 5;
+      if (attemptsLeft <= 0) {
         await otpDocRef.update({
-          lockedUntil: admin.firestore.Timestamp.fromDate(lockUntilDate),
+          lockedUntil: Timestamp.fromDate(new Date(now + 15 * 60 * 1000)),
           attemptsLeft: 0,
         });
-        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=wrong_code_locked`);
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'resource-exhausted',
-          'Incorrect code. Maximum attempts exceeded. Account is locked for 15 minutes.'
+          'Maximum verification attempts exceeded. Account is locked for 15 minutes.'
         );
-      } else {
-        // Decrement attempts only on wrong code
+      }
+
+      const inputHash = hashOtp(code, otpSalt);
+      if (!otpData.hashedCode || inputHash !== otpData.hashedCode) {
+        const remaining = attemptsLeft - 1;
+        if (remaining <= 0) {
+          await otpDocRef.update({
+            lockedUntil: Timestamp.fromDate(new Date(now + 15 * 60 * 1000)),
+            attemptsLeft: 0,
+          });
+          throw new HttpsError(
+            'resource-exhausted',
+            'Incorrect code. Maximum attempts exceeded. Account is locked for 15 minutes.'
+          );
+        }
+
+        // Count attempt ONLY on wrong code
         await otpDocRef.update({ attemptsLeft: remaining });
-        console.log(`[OTP TestMode] OTP failed for emailHash=${emailHash} reason=wrong_code attemptsRemaining=${remaining}`);
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'permission-denied',
           `Incorrect code. You have ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining.`
         );
       }
+
+      // Verified: record short-lived server verification marker for finalizeRegistration, then delete OTP record
+      await db.collection('verifiedEmails').doc(email).set({
+        email,
+        verified: true,
+        verifiedAt: FieldValue.serverTimestamp(),
+        verifiedUntil: Timestamp.fromDate(new Date(now + 30 * 60 * 1000)),
+      });
+
+      await otpDocRef.delete();
+      console.log(`[verifyEmailOtp] OTP verified and deleted for emailHash=${emailHash}`);
+
+      return {
+        verified: true,
+      };
+    } catch (err) {
+      if (err instanceof HttpsError) {
+        throw err;
+      }
+      console.error(`[verifyEmailOtp] Unhandled error for emailHash=${emailHash}:`, err);
+      throw new HttpsError('internal', 'Failed to verify code due to a server error. Please try again.');
     }
-
-    step = 'mark_verified_server_side';
-    // Success: mark as verified in verifiedEmails collection for 30 minutes
-    const verifiedUntil = admin.firestore.Timestamp.fromDate(new Date(now + 30 * 60 * 1000));
-    await db.collection('verifiedEmails').doc(email).set({
-      email,
-      verified: true,
-      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      verifiedUntil,
-    });
-
-    // Delete the active OTP record so it cannot be reused
-    await otpDocRef.delete();
-
-    console.log(`[OTP TestMode] OTP verified for emailHash=${emailHash}`);
-
-    // Return { verified: true } only per specification
-    return {
-      verified: true,
-    };
-  } catch (err) {
-    if (err instanceof functions.https.HttpsError) {
-      throw err;
-    }
-    console.error(`[verifyEmailOtp] Unhandled error at step=${step} for emailHash=${emailHash}:`, err);
-    throw new functions.https.HttpsError(
-      'internal',
-      'Failed to verify code due to a server error. Please try again.'
-    );
   }
-});
+);
 
-/**
- * In-memory rate limiting map for resolveLoginId
- * Key: IP or identifier -> { count, windowStart }
- */
+// =========================================================================
+// 3. RESELLER LOGIN ID RESOLUTION & REGISTRATION FINALIZATION
+// =========================================================================
+
 const resolveIdRateLimitMap = new Map();
 
-/**
- * 8. Reseller Login - Resolve Reseller ID to Email
- * Allows users to login using their sequential Reseller ID (e.g. RSB-000001 or legacy SGR-XXXX).
- * Has rate limiting and returns ONLY the email for Firebase Auth, or a generic error.
- */
-exports.resolveLoginId = functions.https.onCall(async (data, context) => {
-  const rawId = (data?.loginId || '').trim();
+exports.resolveLoginId = onCall({ region: REGION, cors: true }, async (request) => {
+  const rawId = String(request.data?.loginId || '').trim();
   if (!rawId) {
-    throw new functions.https.HttpsError('invalid-argument', 'Invalid ID or password');
+    throw new HttpsError('invalid-argument', 'Invalid ID or password');
   }
 
-  // Rate Limiting (max 15 attempts per minute per IP / caller)
-  const callerKey = context.rawRequest?.ip || context.auth?.uid || 'anonymous';
+  const callerKey = request.rawRequest?.ip || request.auth?.uid || 'anonymous';
   const now = Date.now();
   const limitWindow = 60 * 1000;
   const maxAttempts = 15;
@@ -695,39 +734,25 @@ exports.resolveLoginId = functions.https.onCall(async (data, context) => {
   resolveIdRateLimitMap.set(callerKey, currentRate);
 
   if (currentRate.count > maxAttempts) {
-    throw new functions.https.HttpsError(
-      'resource-exhausted',
-      'Too many login attempts. Please wait a moment and try again.'
-    );
+    throw new HttpsError('resource-exhausted', 'Too many login attempts. Please wait a moment and try again.');
   }
 
   const cleanId = rawId.toUpperCase();
+  const db = getDb();
 
   try {
-    // 1. Search by resellerId
-    let userSnap = await admin.firestore()
-      .collection('users')
-      .where('resellerId', '==', cleanId)
-      .limit(1)
-      .get();
-
-    // 2. Fallback to resellerCode if not found
+    let userSnap = await db.collection('users').where('resellerId', '==', cleanId).limit(1).get();
     if (userSnap.empty) {
-      userSnap = await admin.firestore()
-        .collection('users')
-        .where('resellerCode', '==', cleanId)
-        .limit(1)
-        .get();
+      userSnap = await db.collection('users').where('resellerCode', '==', cleanId).limit(1).get();
     }
 
     if (userSnap.empty) {
-      // Generic error so IDs cannot be enumerated
-      throw new functions.https.HttpsError('not-found', 'Invalid ID or password');
+      throw new HttpsError('not-found', 'Invalid ID or password');
     }
 
     const userData = userSnap.docs[0].data();
     if (!userData.email) {
-      throw new functions.https.HttpsError('not-found', 'Invalid ID or password');
+      throw new HttpsError('not-found', 'Invalid ID or password');
     }
 
     return {
@@ -735,22 +760,12 @@ exports.resolveLoginId = functions.https.onCall(async (data, context) => {
       email: userData.email,
     };
   } catch (err) {
-    if (err instanceof functions.https.HttpsError) {
-      throw err;
-    }
+    if (err instanceof HttpsError) throw err;
     console.error('Error resolving reseller login ID:', err);
-    throw new functions.https.HttpsError('not-found', 'Invalid ID or password');
+    throw new HttpsError('not-found', 'Invalid ID or password');
   }
 });
 
-/**
- * Normalizes a shop name for strict uniqueness checking across all resellers:
- * - trim leading and trailing spaces
- * - collapse multiple spaces into one
- * - lowercase
- * - ignore punctuation and symbols (so "Sky  Gadget!", "sky gadget" and "SKY-GADGET" count as the SAME name)
- * - Supports both English and Bengali (\p{L}\p{M}\p{N})
- */
 function normalizeShopName(name) {
   if (!name || typeof name !== 'string') return '';
   return name
@@ -760,7 +775,6 @@ function normalizeShopName(name) {
     .replace(/\s+/g, ' ');
 }
 
-// In-memory rate limiting map for live shop name checks (per IP)
 const checkShopNameRateLimits = new Map();
 function isRateLimited(key, limit = 60, windowMs = 60000) {
   const now = Date.now();
@@ -776,21 +790,17 @@ function isRateLimited(key, limit = 60, windowMs = 60000) {
   return record.count > limit;
 }
 
-/**
- * 8b. Live Shop Name Availability Check (Pre-Auth Callable)
- * Returns { available: boolean, shopNameKey: string, message?: string }
- * Keeps the 'users' and 'shopNames' collections private and enforces simple rate limiting.
- */
-exports.checkShopName = functions.https.onCall(async (data, context) => {
-  const ip = context.rawRequest?.headers['x-forwarded-for'] ||
-    context.rawRequest?.connection?.remoteAddress ||
+exports.checkShopName = onCall({ region: REGION, cors: true }, async (request) => {
+  const ip =
+    request.rawRequest?.headers?.['x-forwarded-for'] ||
+    request.rawRequest?.ip ||
     'unknown_ip';
 
-  if (isRateLimited(ip, 60, 60000)) {
-    throw new functions.https.HttpsError('resource-exhausted', 'Too many requests. Please wait a moment before trying again.');
+  if (isRateLimited(String(ip), 60, 60000)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Please wait a moment before trying again.');
   }
 
-  const rawName = (data?.name || data?.shopName || '').trim();
+  const rawName = String(request.data?.name || request.data?.shopName || '').trim();
   const shopNameKey = normalizeShopName(rawName);
 
   if (!shopNameKey || shopNameKey.length < 2) {
@@ -801,9 +811,9 @@ exports.checkShopName = functions.https.onCall(async (data, context) => {
     };
   }
 
-  const excludeUid = data?.excludeUid || context.auth?.uid;
-  const firestore = admin.firestore();
-  const snap = await firestore.collection('shopNames').doc(shopNameKey).get();
+  const excludeUid = request.data?.excludeUid || request.auth?.uid;
+  const db = getDb();
+  const snap = await db.collection('shopNames').doc(shopNameKey).get();
 
   if (!snap.exists) {
     return {
@@ -830,79 +840,65 @@ exports.checkShopName = functions.https.onCall(async (data, context) => {
   };
 });
 
-/**
- * 9. Reseller Registration - Finalize Registration & Assign Reseller ID
- * Performs atomic Firestore transaction on counters/resellerId and shopNames/{shopNameKey}
- * to strictly guarantee shop name uniqueness across all resellers.
- * Writes trusted fields (role, status: 'pending', resellerId, shopNameKey, emailVerified, termsAcceptedAt).
- * Dispatches push notification to Admins.
- */
-exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
-  const uid = data?.uid || context.auth?.uid;
+exports.finalizeRegistration = onCall({ region: REGION, cors: true }, async (request) => {
+  const uid = request.data?.uid || request.auth?.uid;
   if (!uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
   }
 
-  const formData = data?.formData || {};
-  const email = (data?.email || formData.email || '').trim().toLowerCase();
-  const rawShopName = (formData.shopName || '').trim();
+  const formData = request.data?.formData || {};
+  const email = normalizeEmail(request.data?.email || formData.email);
+  const rawShopName = String(formData.shopName || '').trim();
   const shopNameKey = normalizeShopName(rawShopName);
 
   if (!shopNameKey || shopNameKey.length < 2) {
-    throw new functions.https.HttpsError('invalid-argument', 'Shop name must be at least 2 characters long.');
+    throw new HttpsError('invalid-argument', 'Shop name must be at least 2 characters long.');
   }
 
-  const firestore = admin.firestore();
-  const counterRef = firestore.collection('counters').doc('resellerId');
-  const userRef = firestore.collection('users').doc(uid);
-  const shopNameReservationRef = firestore.collection('shopNames').doc(shopNameKey);
-  const emailOtpRef = firestore.collection('emailOtps').doc(email);
+  const db = getDb();
+  const counterRef = db.collection('counters').doc('resellerId');
+  const userRef = db.collection('users').doc(uid);
+  const shopNameReservationRef = db.collection('shopNames').doc(shopNameKey);
+  const emailOtpRef = db.collection('emailOtps').doc(email);
+  const verifiedEmailRef = db.collection('verifiedEmails').doc(email);
 
   let assignedResellerId = '';
 
   try {
-    // Atomic transaction to safely verify & reserve unique shop name and assign sequential reseller ID
-    await firestore.runTransaction(async (t) => {
-      // 0. Enforce server-side email OTP verification
-      const verifiedEmailRef = firestore.collection('verifiedEmails').doc(email);
+    await db.runTransaction(async (t) => {
       const verifiedEmailSnap = await t.get(verifiedEmailRef);
       const emailOtpSnap = await t.get(emailOtpRef);
 
-      const vData = verifiedEmailSnap.exists ? verifiedEmailSnap.data() : (emailOtpSnap.exists ? emailOtpSnap.data() : null);
-      if (!vData) {
-        throw new functions.https.HttpsError(
+      const vData = verifiedEmailSnap.exists ? verifiedEmailSnap.data() : null;
+      if (!vData || !vData.verified) {
+        throw new HttpsError(
           'failed-precondition',
           'Email verification is required before finalizing registration.'
         );
       }
-      const verifiedUntil = vData?.verifiedUntil?.toDate
-        ? vData.verifiedUntil.toDate().getTime()
-        : (vData?.verifiedUntil || 0);
 
-      if (!vData?.verified || (verifiedUntil && Date.now() > verifiedUntil)) {
-        throw new functions.https.HttpsError(
+      const verifiedUntil = parseTimestampMs(vData.verifiedUntil);
+      if (verifiedUntil && Date.now() > verifiedUntil) {
+        throw new HttpsError(
           'failed-precondition',
-          'Email verification has expired or has not been completed. Please verify your email.'
+          'Email verification has expired. Please verify your email again.'
         );
       }
 
-      // Consume OTP and verified email records so they cannot be re-used
       if (verifiedEmailSnap.exists) t.delete(verifiedEmailRef);
       if (emailOtpSnap.exists) t.delete(emailOtpRef);
 
-      // 1. Enforce shop name uniqueness
       const shopNameSnap = await t.get(shopNameReservationRef);
       if (shopNameSnap.exists) {
         const existingReservation = shopNameSnap.data();
         if (existingReservation && existingReservation.uid !== uid) {
-          throw new functions.https.HttpsError(
+          throw new HttpsError(
             'already-exists',
             'This shop name is already taken. Please choose a different name.'
           );
         }
       }
 
-      // 2. Increment sequential resellerId
       const counterDoc = await t.get(counterRef);
       let currentCount = 0;
       if (counterDoc.exists) {
@@ -911,21 +907,22 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
       const nextCount = currentCount + 1;
       assignedResellerId = `RSB-${String(nextCount).padStart(6, '0')}`;
 
-      // Update counter
-      t.set(counterRef, {
-        lastCount: nextCount,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      t.set(
+        counterRef,
+        {
+          lastCount: nextCount,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-      // Reserve shop name atomically
       t.set(shopNameReservationRef, {
         uid,
         shopName: rawShopName,
         shopNameKey,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
 
-      // Build trusted profile payload
       const userPayload = {
         uid,
         resellerId: assignedResellerId,
@@ -934,23 +931,21 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
         status: 'pending',
         rejectReason: null,
         emailVerified: true,
-        termsVersion: data?.termsVersion || '1.0',
-        termsAcceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-        privacyAcceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        termsVersion: request.data?.termsVersion || '1.0',
+        termsAcceptedAt: FieldValue.serverTimestamp(),
+        privacyAcceptedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
 
-        // Form Fields
-        fullName: (formData.fullName || '').trim(),
+        fullName: String(formData.fullName || '').trim(),
         shopName: rawShopName,
         shopNameKey,
-        mobile: (formData.mobile || '').trim(),
-        whatsappNumber: (formData.whatsappNumber || formData.mobile || '').trim(),
-        whatsapp: (formData.whatsappNumber || formData.mobile || '').trim(),
+        mobile: String(formData.mobile || '').trim(),
+        whatsappNumber: String(formData.whatsappNumber || formData.mobile || '').trim(),
+        whatsapp: String(formData.whatsappNumber || formData.mobile || '').trim(),
         email,
         dob: formData.dob || '',
         gender: formData.gender || 'male',
 
-        // Address
         division: formData.division || formData.customDivision || '',
         divisionId: formData.divisionId || '',
         district: formData.district || formData.customDistrict || '',
@@ -960,14 +955,13 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
         union: formData.union || formData.customUnion || '',
         unionId: formData.unionId || '',
         ward: formData.ward || '',
-        postalCode: (formData.postalCode || '').trim(),
-        address: (formData.address || '').trim(),
+        postalCode: String(formData.postalCode || '').trim(),
+        address: String(formData.address || '').trim(),
 
-        // Payout Information
         payoutMethod: formData.payoutMethod || 'bkash',
         payoutMethods: formData.payoutMethods || [],
-        accountHolderName: (formData.accountHolderName || formData.fullName || '').trim(),
-        accountNumber: (formData.accountNumber || '').trim(),
+        accountHolderName: String(formData.accountHolderName || formData.fullName || '').trim(),
+        accountNumber: String(formData.accountNumber || '').trim(),
         bkashNumber: formData.payoutMethod === 'bkash' ? formData.accountNumber : '',
         nagadNumber: formData.payoutMethod === 'nagad' ? formData.accountNumber : '',
         rocketNumber: formData.payoutMethod === 'rocket' ? formData.accountNumber : '',
@@ -976,20 +970,17 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
         branchName: formData.branchName || '',
         routingNumber: formData.routingNumber || '',
 
-        // Business Information
-        facebookPage: (formData.facebookPage || '').trim(),
-        tiktokUrl: (formData.tiktokUrl || '').trim(),
-        instagramUrl: (formData.instagramUrl || '').trim(),
-        youtubeUrl: (formData.youtubeUrl || '').trim(),
+        facebookPage: String(formData.facebookPage || '').trim(),
+        tiktokUrl: String(formData.tiktokUrl || '').trim(),
+        instagramUrl: String(formData.instagramUrl || '').trim(),
+        youtubeUrl: String(formData.youtubeUrl || '').trim(),
 
-        // Photography & Documents
         shopLogoUrl: formData.shopLogoUrl || '',
         documentType: formData.documentType || 'nid',
         nidFrontUrl: formData.nidFrontUrl || '',
         nidBackUrl: formData.nidBackUrl || '',
         birthCertificateUrl: formData.birthCertificateUrl || '',
 
-        // Legacy compatibility
         profilePhotoUrl: formData.shopLogoUrl || '',
         shopPhotoUrl: formData.shopLogoUrl || '',
         nidUrl: formData.nidFrontUrl || formData.birthCertificateUrl || '',
@@ -999,15 +990,8 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
       t.set(userRef, userPayload, { merge: true });
     });
 
-    console.log(`[ReSellBD Registration] Successfully assigned ${assignedResellerId} with shopNameKey "${shopNameKey}" to user ${uid}`);
-
-    // Send push notification to all Admins & Super Admins
     try {
-      const adminSnap = await firestore
-        .collection('users')
-        .where('role', 'in', ['admin', 'super_admin'])
-        .get();
-
+      const adminSnap = await db.collection('users').where('role', 'in', ['admin', 'super_admin']).get();
       const tokens = [];
       adminSnap.forEach((d) => {
         const u = d.data();
@@ -1017,8 +1001,7 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
       });
 
       if (tokens.length > 0) {
-        const uniqueTokens = [...new Set(tokens)];
-        const payload = {
+        await sendPushToTokens(tokens, {
           notification: {
             title: 'New Reseller Pending Approval',
             body: `${rawShopName || 'New Reseller'} (${assignedResellerId}) has applied and is waiting for review.`,
@@ -1029,9 +1012,7 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
             resellerId: assignedResellerId,
             shopName: rawShopName,
           },
-        };
-        await admin.messaging().sendToDevice(uniqueTokens, payload);
-        console.log(`Sent registration approval push notification to ${uniqueTokens.length} admin devices.`);
+        });
       }
     } catch (notifErr) {
       console.warn('Could not dispatch admin registration push notification:', notifErr);
@@ -1044,85 +1025,78 @@ exports.finalizeRegistration = functions.https.onCall(async (data, context) => {
       message: 'Registration finalized successfully! Your account is pending admin approval.',
     };
   } catch (err) {
-    if (err instanceof functions.https.HttpsError) {
-      throw err;
-    }
+    if (err instanceof HttpsError) throw err;
     console.error('Error finalizing registration:', err);
-    throw new functions.https.HttpsError('internal', err.message || 'Failed to finalize registration.');
+    throw new HttpsError('internal', err.message || 'Failed to finalize registration.');
   }
 });
 
-/**
- * 9b. Atomic Shop Name Update
- * Updates shop name in Reseller Settings, Edit & Resubmit, or Admin User Edit.
- * Releases old reservation and creates new reservation in a single Firestore transaction.
- */
-exports.updateShopName = functions.https.onCall(async (data, context) => {
-  const callerUid = context.auth?.uid;
+exports.updateShopName = onCall({ region: REGION, cors: true }, async (request) => {
+  const callerUid = request.auth?.uid;
   if (!callerUid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
   }
 
-  const rawShopName = (data?.shopName || data?.newShopName || '').trim();
+  const rawShopName = String(request.data?.shopName || request.data?.newShopName || '').trim();
   const newKey = normalizeShopName(rawShopName);
 
   if (!newKey || newKey.length < 2) {
-    throw new functions.https.HttpsError('invalid-argument', 'Shop name must be at least 2 characters long.');
+    throw new HttpsError('invalid-argument', 'Shop name must be at least 2 characters long.');
   }
 
-  const firestore = admin.firestore();
-  const callerDoc = await firestore.collection('users').doc(callerUid).get();
+  const db = getDb();
+  const callerDoc = await db.collection('users').doc(callerUid).get();
   if (!callerDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'Caller user record not found.');
+    throw new HttpsError('not-found', 'Caller user record not found.');
   }
   const callerData = callerDoc.data();
   const isCallerAdmin = callerData.role === 'admin' || callerData.role === 'super_admin';
 
-  const targetUid = (isCallerAdmin && data?.targetUid) ? data.targetUid : callerUid;
-  const targetUserRef = firestore.collection('users').doc(targetUid);
+  const targetUid = isCallerAdmin && request.data?.targetUid ? request.data.targetUid : callerUid;
+  const targetUserRef = db.collection('users').doc(targetUid);
 
   try {
-    await firestore.runTransaction(async (t) => {
+    await db.runTransaction(async (t) => {
       const targetUserSnap = await t.get(targetUserRef);
       if (!targetUserSnap.exists) {
-        throw new functions.https.HttpsError('not-found', 'Target user does not exist.');
+        throw new HttpsError('not-found', 'Target user does not exist.');
       }
       const targetUserData = targetUserSnap.data();
       const oldKey = targetUserData.shopNameKey || normalizeShopName(targetUserData.shopName || '');
 
-      const newReservationRef = firestore.collection('shopNames').doc(newKey);
+      const newReservationRef = db.collection('shopNames').doc(newKey);
       const newReservationSnap = await t.get(newReservationRef);
 
       if (newReservationSnap.exists) {
         const reservationData = newReservationSnap.data();
         if (reservationData?.uid !== targetUid) {
-          throw new functions.https.HttpsError(
+          throw new HttpsError(
             'already-exists',
             'This shop name is already taken. Please choose a different name.'
           );
         }
       }
 
-      // If the normalized key changed, release the old reservation
       if (oldKey && oldKey !== newKey) {
-        const oldReservationRef = firestore.collection('shopNames').doc(oldKey);
-        t.delete(oldReservationRef);
+        t.delete(db.collection('shopNames').doc(oldKey));
       }
 
-      // Set new reservation
-      t.set(newReservationRef, {
-        uid: targetUid,
-        shopName: rawShopName,
-        shopNameKey: newKey,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      t.set(
+        newReservationRef,
+        {
+          uid: targetUid,
+          shopName: rawShopName,
+          shopNameKey: newKey,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-      // Update user document
       t.update(targetUserRef, {
         shopName: rawShopName,
         shopNameKey: newKey,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
     });
 
@@ -1133,38 +1107,29 @@ exports.updateShopName = functions.https.onCall(async (data, context) => {
       message: 'Shop name updated successfully!',
     };
   } catch (err) {
-    if (err instanceof functions.https.HttpsError) {
-      throw err;
-    }
+    if (err instanceof HttpsError) throw err;
     console.error('Error updating shop name:', err);
-    throw new functions.https.HttpsError('internal', err.message || 'Failed to update shop name.');
+    throw new HttpsError('internal', err.message || 'Failed to update shop name.');
   }
 });
 
-/**
- * 9c. Existing Resellers Migration (Admin Only)
- * Backfills shopNameKey on user docs and creates reservations in shopNames/{shopNameKey}.
- * If duplicate shop names are found:
- * DO NOT delete or rename anything.
- * Lists all duplicates (shop name + reseller IDs + emails) so Admin can fix manually.
- */
-exports.migrateShopNames = functions.https.onCall(async (data, context) => {
-  const callerUid = context.auth?.uid;
+exports.migrateShopNames = onCall({ region: REGION, cors: true }, async (request) => {
+  const callerUid = request.auth?.uid;
   if (!callerUid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
   }
 
-  const firestore = admin.firestore();
-  const callerDoc = await firestore.collection('users').doc(callerUid).get();
+  const db = getDb();
+  const callerDoc = await db.collection('users').doc(callerUid).get();
   if (!callerDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'User record not found.');
+    throw new HttpsError('not-found', 'User record not found.');
   }
   const callerData = callerDoc.data();
   if (callerData.role !== 'admin' && callerData.role !== 'super_admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Only Admins can run the shop name migration.');
+    throw new HttpsError('permission-denied', 'Only Admins can run the shop name migration.');
   }
 
-  const usersSnap = await firestore.collection('users').get();
+  const usersSnap = await db.collection('users').get();
   const resellers = [];
 
   usersSnap.forEach((docSnap) => {
@@ -1180,28 +1145,22 @@ exports.migrateShopNames = functions.https.onCall(async (data, context) => {
     }
   });
 
-  // Group by normalized key
   const groups = new Map();
   for (const r of resellers) {
     if (!r.shopName) continue;
     const key = normalizeShopName(r.shopName);
     if (!key) continue;
-    if (!groups.has(key)) {
-      groups.set(key, []);
-    }
+    if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
 
   const duplicates = [];
   let migratedCount = 0;
-  const batch = firestore.batch();
   let opsCount = 0;
-  const batches = [batch];
+  const batches = [db.batch()];
 
   for (const [key, list] of groups.entries()) {
     if (list.length > 1) {
-      // DUPLICATE FOUND!
-      // Requirement: DO NOT delete or rename anything. List for manual admin resolution.
       duplicates.push({
         shopNameKey: key,
         shopName: list[0].shopName,
@@ -1215,28 +1174,29 @@ exports.migrateShopNames = functions.https.onCall(async (data, context) => {
       continue;
     }
 
-    // Unique reseller: Reserve shopName and update user document
     const single = list[0];
     const currentBatch = batches[batches.length - 1];
 
-    const reservationRef = firestore.collection('shopNames').doc(key);
-    currentBatch.set(reservationRef, {
-      uid: single.uid,
-      shopName: single.shopName,
-      shopNameKey: key,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    currentBatch.set(
+      db.collection('shopNames').doc(key),
+      {
+        uid: single.uid,
+        shopName: single.shopName,
+        shopNameKey: key,
+        createdAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
 
-    const userRef = firestore.collection('users').doc(single.uid);
-    currentBatch.update(userRef, {
+    currentBatch.update(db.collection('users').doc(single.uid), {
       shopNameKey: key,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     migratedCount++;
     opsCount += 2;
     if (opsCount >= 400) {
-      batches.push(firestore.batch());
+      batches.push(db.batch());
       opsCount = 0;
     }
   }
@@ -1254,379 +1214,468 @@ exports.migrateShopNames = functions.https.onCall(async (data, context) => {
   };
 });
 
+// =========================================================================
+// 4. SCHEDULED FUNCTIONS (2nd-Gen, asia-south1)
+// =========================================================================
 
 /**
- * 10. Check Pending Approvals - 1-hour SLA Reminder
+ * Scheduled Hourly Cleanup:
+ * Deletes expired OTP records from `emailOtps` (preserving active 15-min security locks)
+ * and expired verification markers from `verifiedEmails`.
  */
-exports.checkPendingApprovals = functions.pubsub.schedule('every 10 minutes').onRun(async (context) => {
-  const db = admin.firestore();
-  const now = new Date();
-  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+exports.cleanupExpiredEmailOtps = onSchedule(
+  {
+    schedule: 'every 1 hours',
+    region: REGION,
+  },
+  async () => {
+    const db = getDb();
+    const nowTs = Timestamp.now();
+    const nowMs = nowTs.toMillis();
+    let deletedOtps = 0;
+    let deletedVerified = 0;
 
-  const pendingResellers = await db.collection('users')
-    .where('status', '==', 'pending')
-    .where('createdAt', '<', admin.firestore.Timestamp.fromDate(oneHourAgo))
-    .get();
+    // 1. Delete expired `emailOtps` documents in batches
+    const expiredOtpsSnap = await db
+      .collection('emailOtps')
+      .where('expiresAt', '<', nowTs)
+      .limit(450)
+      .get();
 
-  const batch = db.batch();
-  const adminTokens = [];
-  const adminSnap = await db.collection('users').where('role', 'in', ['admin', 'super_admin']).get();
-  adminSnap.forEach(d => {
-    const u = d.data();
-    if (Array.isArray(u.fcmTokens)) adminTokens.push(...u.fcmTokens);
-  });
-  const uniqueAdminTokens = [...new Set(adminTokens)];
-
-  for (const doc of pendingResellers.docs) {
-    const reseller = doc.data();
-    if (reseller.slaNotified === true) continue;
-
-    // Notify Admin
-    if (uniqueAdminTokens.length > 0) {
-      try {
-        await admin.messaging().sendToDevice(uniqueAdminTokens, {
-          notification: { title: 'Registration Pending > 1h', body: `Registration pending for: ${reseller.shopName || 'Reseller'} (${reseller.resellerId})` }
-        });
-      } catch (e) { console.error(e); }
+    if (!expiredOtpsSnap.empty) {
+      const batch = db.batch();
+      expiredOtpsSnap.docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        const lockedUntilMs = parseTimestampMs(data.lockedUntil);
+        // Preserve records still under an active 15-minute brute-force lockout
+        if (!lockedUntilMs || lockedUntilMs < nowMs) {
+          batch.delete(docSnap.ref);
+          deletedOtps++;
+        }
+      });
+      if (deletedOtps > 0) {
+        await batch.commit();
+      }
     }
 
-    // Notify Reseller
-    if (Array.isArray(reseller.fcmTokens) && reseller.fcmTokens.length > 0) {
-      try {
-        await admin.messaging().sendToDevice(reseller.fcmTokens, {
-          notification: { title: 'Review in Progress', body: 'Your approval is taking a little longer than usual. We are reviewing it — thank you for your patience.' }
-        });
-      } catch (e) { console.error(e); }
+    // 2. Delete expired `verifiedEmails` markers
+    const expiredVerifiedSnap = await db
+      .collection('verifiedEmails')
+      .where('verifiedUntil', '<', nowTs)
+      .limit(450)
+      .get();
+
+    if (!expiredVerifiedSnap.empty) {
+      const batch = db.batch();
+      expiredVerifiedSnap.docs.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+        deletedVerified++;
+      });
+      await batch.commit();
     }
 
-    batch.update(doc.ref, { slaNotified: true });
+    console.log(
+      `[cleanupExpiredEmailOtps] Deleted ${deletedOtps} expired emailOtps and ${deletedVerified} expired verifiedEmails.`
+    );
   }
-
-  await batch.commit();
-  return null;
-});
+);
 
 /**
- * ========================================================
- * 11. SUPER ADMIN TWO-STEP VERIFICATION (MANDATORY OTP LOGIN)
- * ========================================================
+ * Scheduled 10-minute SLA check for pending reseller approvals.
  */
+exports.checkPendingApprovals = onSchedule(
+  {
+    schedule: 'every 10 minutes',
+    region: REGION,
+  },
+  async () => {
+    const db = getDb();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-// Easy-to-edit duration constant: session validity in hours (12 hours)
+    const pendingResellers = await db
+      .collection('users')
+      .where('status', '==', 'pending')
+      .where('createdAt', '<', Timestamp.fromDate(oneHourAgo))
+      .get();
+
+    if (pendingResellers.empty) return;
+
+    const batch = db.batch();
+    const adminTokens = [];
+    const adminSnap = await db.collection('users').where('role', 'in', ['admin', 'super_admin']).get();
+    adminSnap.forEach((d) => {
+      const u = d.data();
+      if (Array.isArray(u.fcmTokens)) adminTokens.push(...u.fcmTokens);
+    });
+
+    let updates = 0;
+    for (const docSnap of pendingResellers.docs) {
+      const reseller = docSnap.data();
+      if (reseller.slaNotified === true) continue;
+
+      if (adminTokens.length > 0) {
+        try {
+          await sendPushToTokens(adminTokens, {
+            notification: {
+              title: 'Registration Pending > 1h',
+              body: `Registration pending for: ${reseller.shopName || 'Reseller'} (${reseller.resellerId})`,
+            },
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      if (Array.isArray(reseller.fcmTokens) && reseller.fcmTokens.length > 0) {
+        try {
+          await sendPushToTokens(reseller.fcmTokens, {
+            notification: {
+              title: 'Review in Progress',
+              body: 'Your approval is taking a little longer than usual. We are reviewing it — thank you for your patience.',
+            },
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      batch.update(docSnap.ref, { slaNotified: true });
+      updates++;
+    }
+
+    if (updates > 0) {
+      await batch.commit();
+    }
+  }
+);
+
+// =========================================================================
+// 5. SUPER ADMIN TWO-STEP VERIFICATION (Firestore `emailOtps` only)
+// =========================================================================
+
 const SUPER_ADMIN_OTP_SESSION_HOURS = 12;
-
-// Easy-to-edit role constant: roles that require mandatory 2-step OTP
 const OTP_ENFORCED_ROLES = ['super_admin'];
 
-/**
- * 11a. Start Super Admin Login (Callable)
- * - Requires caller to be signed in with a role in OTP_ENFORCED_ROLES (super_admin).
- * - CLEARS any previous OTP-verified session custom claims.
- * - Enforces 15-minute lock if 5 attempts were previously exceeded.
- * - Enforces 60-second rate-limiting cooldown.
- * - Generates cryptographically secure 6-digit OTP, stores hashed code in adminLoginOtps/{uid}.
- * - Sends transactional email via Gmail SMTP (skyautomationtech@gmail.com).
- * - Logs security entry in auditLogs.
- * - NEVER leaks or returns code to client.
- */
-exports.startSuperAdminLogin = functions.https.onCall(async (data, context) => {
-  const uid = context.auth?.uid;
-  if (!uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-  }
+function superAdminOtpDocId(email) {
+  return `superadmin:${normalizeEmail(email)}`;
+}
 
-  const firestore = admin.firestore();
-  const userDoc = await firestore.collection('users').doc(uid).get();
-  if (!userDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'User record not found.');
-  }
-
-  const userData = userDoc.data();
-  const userRole = userData.role;
-  const email = (userData.email || context.auth.token?.email || data?.email || '').trim().toLowerCase();
-
-  // Validate that user role requires OTP
-  if (!OTP_ENFORCED_ROLES.includes(userRole)) {
-    throw new functions.https.HttpsError('failed-precondition', 'Two-step verification is not required for this role.');
-  }
-
-  // 1. Immediately CLEAR any previous OTP-verified session custom claims
-  await admin.auth().setCustomUserClaims(uid, {
-    role: userRole,
-    otpSession: null,
-    otpExpiresAt: null,
-  });
-
-  const otpDocRef = firestore.collection('adminLoginOtps').doc(uid);
-  const otpDocSnap = await otpDocRef.get();
-  const now = Date.now();
-
-  // 2. Enforce 15-minute lockout if previously triggered
-  if (otpDocSnap.exists) {
-    const existing = otpDocSnap.data();
-    const lockedUntil = existing?.lockedUntil?.toDate ? existing.lockedUntil.toDate().getTime() : (existing?.lockedUntil || 0);
-    if (lockedUntil && now < lockedUntil) {
-      const waitMinutes = Math.ceil((lockedUntil - now) / 60000);
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        `Account is temporarily locked for ${waitMinutes} minute(s) due to too many failed attempts.`
-      );
+exports.startSuperAdminLogin = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [GMAIL_USER, GMAIL_APP_PASSWORD, OTP_SECRET_SALT],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated.');
     }
 
-    // 3. Rate limiting: enforce 60-second resend cooldown
-    const lastSentAt = existing?.lastSentAt?.toDate ? existing.lastSentAt.toDate().getTime() : (existing?.lastSentAt || 0);
-    const elapsedSeconds = Math.floor((now - lastSentAt) / 1000);
-    if (elapsedSeconds < 60) {
-      const remainingSeconds = 60 - elapsedSeconds;
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        `Please wait ${remainingSeconds} seconds before requesting a new verification code.`
-      );
+    const db = getDb();
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', 'User record not found.');
     }
-  }
 
-  // 4. Generate 6-digit random code & hash it
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedCode = hashOtp(code);
-  const expiresInSeconds = 300; // 5 minutes
-  const expiresAt = admin.firestore.Timestamp.fromDate(new Date(now + expiresInSeconds * 1000));
+    const userData = userDoc.data() || {};
+    const userRole = userData.role;
+    const email = normalizeEmail(userData.email || request.auth.token?.email || request.data?.email);
+    const emailHash = hashEmailForLog(email);
 
-  // 5. Save hashed record to private Firestore collection first
-  await otpDocRef.set({
-    uid,
-    email,
-    hashedCode,
-    expiresAt,
-    attemptsLeft: 5,
-    lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-    lockedUntil: null,
-  });
+    if (!OTP_ENFORCED_ROLES.includes(userRole)) {
+      throw new HttpsError('failed-precondition', 'Two-step verification is not required for this role.');
+    }
+    if (!email) {
+      throw new HttpsError('failed-precondition', 'Super Admin email address is missing.');
+    }
 
-  // Emergency OTP record for super admin recovery
-  try {
-    await firestore.collection('systemSettings').doc('superAdminOtp').set({
-      email,
-      code,
-      expiresAt,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-  } catch (sysErr) {
-    console.warn('[SuperAdmin 2-Step OTP] systemSettings write note:', sysErr);
-  }
+    // Validate secrets up front before altering claims or writing OTP records
+    const otpSalt = getOtpSalt();
+    const { transporter, gmailUser } = createGmailTransporter();
 
-  // 6. Send Email via Gmail SMTP
-  try {
-    const nodemailer = require('nodemailer');
-    const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
-    const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
-
-    const gmailTransporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: gmailUser,
-        pass: gmailPass,
-      },
-    });
-
-    await gmailTransporter.sendMail({
-      from: `"ReSellBD Security" <${gmailUser}>`,
-      to: email,
-      subject: `${code} is your Super Admin Two-Step Verification Code`,
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; background: #050B1A; color: #ffffff; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <h1 style="color: #3DD055; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">ReSellBD Security</h1>
-            <p style="color: #0E9AA7; font-size: 13px; margin: 6px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Super Admin Two-Step Verification (দ্বি-স্তরীয় নিরাপত্তা)</p>
-          </div>
-          <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 20px;">
-            <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit Super Admin verification code is:</p>
-            <div style="font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #3DD055; padding: 14px 20px; background: rgba(0,0,0,0.4); border-radius: 12px; display: inline-block; font-family: monospace;">
-              ${code}
-            </div>
-            <p style="margin: 16px 0 0 0; color: #cbd5e1; font-size: 13px;">This code will expire in <strong>5 minutes</strong>. Maximum 5 verification attempts are allowed before a 15-minute security lock.</p>
-          </div>
-          <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 12px; color: #fde68a;">
-            ⚠️ <strong>Security Notice:</strong> If you did not initiate this login attempt, someone entered your password. Please change your password immediately.
-          </div>
-          <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
-            Sent automatically by ReSellBD via Sky Automation Tech.
-          </p>
-        </div>
-      `,
-    });
-    console.log(`[SuperAdmin 2-Step OTP] Dispatched verification email to: ${email}`);
-  } catch (err) {
-    console.warn('[SuperAdmin 2-Step OTP] SMTP send note (OTP stored and valid for verification):', err?.message || err);
-  }
-
-  // 7. Security audit log entry
-  try {
-    await firestore.collection('auditLogs').add({
-      action: 'super_admin_otp_requested',
-      userId: uid,
-      userEmail: email,
+    // Immediately clear any previous OTP-verified session custom claims
+    await admin.auth().setCustomUserClaims(uid, {
       role: userRole,
-      ip: context.rawRequest?.headers['x-forwarded-for'] || context.rawRequest?.connection?.remoteAddress || 'unknown',
-      userAgent: context.rawRequest?.headers['user-agent'] || 'unknown',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      otpSession: null,
+      otpExpiresAt: null,
     });
-  } catch (logErr) {
-    console.warn('Could not record audit log:', logErr);
-  }
 
-  return {
-    success: true,
-    message: 'Verification code sent to your registered Super Admin email.',
-    email,
-    code,
-    expiresInSeconds,
-    cooldownSeconds: 60,
-  };
-});
+    const otpDocRef = db.collection('emailOtps').doc(superAdminOtpDocId(email));
+    const otpDocSnap = await otpDocRef.get();
+    const now = Date.now();
 
-/**
- * 11b. Verify Super Admin OTP (Callable)
- * - Checks hashed code, 5-minute expiry, and max 5 attempts.
- * - On 5 wrong attempts, locks account for 15 minutes.
- * - On success: sets custom claim (otpSession: <uuid>, otpExpiresAt: now + 12h),
- *   clears OTP record, writes login audit log, and notifies Super Admin by push notification.
- */
-exports.verifySuperAdminOtp = functions.https.onCall(async (data, context) => {
-  const uid = context.auth?.uid;
-  if (!uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-  }
+    if (otpDocSnap.exists) {
+      const existing = otpDocSnap.data() || {};
 
-  const code = (data?.code || '').trim();
-  if (!code || code.length !== 6) {
-    throw new functions.https.HttpsError('invalid-argument', 'Please enter the full 6-digit code.');
-  }
+      const lockedUntil = parseTimestampMs(existing.lockedUntil);
+      if (lockedUntil > now) {
+        const waitMinutes = Math.ceil((lockedUntil - now) / 60000);
+        throw new HttpsError(
+          'resource-exhausted',
+          `Account is temporarily locked for ${waitMinutes} more minute${waitMinutes === 1 ? '' : 's'} due to too many failed attempts.`
+        );
+      }
 
-  const firestore = admin.firestore();
-  const otpDocRef = firestore.collection('adminLoginOtps').doc(uid);
-  const otpDocSnap = await otpDocRef.get();
+      const lastSentAt = parseTimestampMs(existing.lastSentAt);
+      const elapsedSeconds = Math.floor((now - lastSentAt) / 1000);
+      if (lastSentAt > 0 && elapsedSeconds < 60) {
+        const remainingSeconds = 60 - elapsedSeconds;
+        throw new HttpsError(
+          'resource-exhausted',
+          `Please wait ${remainingSeconds} seconds before requesting a new verification code.`
+        );
+      }
+    }
 
-  if (!otpDocSnap.exists) {
-    throw new functions.https.HttpsError('not-found', 'No active verification code found. Please request a new code.');
-  }
+    const code = generateSixDigitOtp();
+    const hashedCode = hashOtp(code, otpSalt);
+    const expiresInSeconds = 300; // 5 minutes
+    const expiresAt = Timestamp.fromDate(new Date(now + expiresInSeconds * 1000));
 
-  const otpData = otpDocSnap.data();
-  const now = Date.now();
+    // Replace previous Super Admin OTP record in `emailOtps`
+    await otpDocRef.set({
+      uid,
+      email,
+      type: 'super_admin_login',
+      hashedCode,
+      expiresAt,
+      attemptsLeft: 5,
+      lastSentAt: FieldValue.serverTimestamp(),
+      lockedUntil: null,
+    });
 
-  // 1. Check 15-minute lock
-  const lockedUntil = otpData?.lockedUntil?.toDate ? otpData.lockedUntil.toDate().getTime() : (otpData?.lockedUntil || 0);
-  if (lockedUntil && now < lockedUntil) {
-    const waitMinutes = Math.ceil((lockedUntil - now) / 60000);
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      `Account is temporarily locked for ${waitMinutes} minute(s) due to too many failed attempts.`
-    );
-  }
-
-  // 2. Check 5-minute expiration
-  const expiresAt = otpData?.expiresAt?.toDate ? otpData.expiresAt.toDate().getTime() : (otpData?.expiresAt || 0);
-  if (now > expiresAt) {
-    await otpDocRef.delete();
-    throw new functions.https.HttpsError(
-      'deadline-exceeded',
-      'Verification code has expired. Please request a new code.'
-    );
-  }
-
-  // 3. Verify Hash
-  const inputHash = hashOtp(code);
-  if (inputHash !== otpData.hashedCode) {
-    const attemptsLeft = (otpData.attemptsLeft !== undefined ? otpData.attemptsLeft : 5) - 1;
-
-    // Log failure in auditLogs
     try {
-      await firestore.collection('auditLogs').add({
-        action: 'super_admin_otp_failed_attempt',
-        userId: uid,
-        userEmail: otpData.email || '',
-        attemptsRemaining: attemptsLeft,
-        ip: context.rawRequest?.headers['x-forwarded-for'] || context.rawRequest?.connection?.remoteAddress || 'unknown',
-        userAgent: context.rawRequest?.headers['user-agent'] || 'unknown',
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      await transporter.sendMail({
+        from: `"ReSellBD Security" <${gmailUser}>`,
+        to: email,
+        subject: `${code} is your Super Admin Two-Step Verification Code`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; background: #050B1A; color: #ffffff; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h1 style="color: #3DD055; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">ReSellBD Security</h1>
+              <p style="color: #0E9AA7; font-size: 13px; margin: 6px 0 0 0; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">Super Admin Two-Step Verification (দ্বি-স্তরীয় নিরাপত্তা)</p>
+            </div>
+            <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 20px;">
+              <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 14px;">Your 6-digit Super Admin verification code is:</p>
+              <div style="font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #3DD055; padding: 14px 20px; background: rgba(0,0,0,0.4); border-radius: 12px; display: inline-block; font-family: monospace;">
+                ${code}
+              </div>
+              <p style="margin: 16px 0 0 0; color: #cbd5e1; font-size: 13px;">This code will expire in <strong>5 minutes</strong>. Maximum 5 verification attempts are allowed before a 15-minute security lock.</p>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 12px; color: #fde68a;">
+              ⚠️ <strong>Security Notice:</strong> If you did not initiate this login attempt, someone entered your password. Please change your password immediately.
+            </div>
+            <p style="color: #64748b; font-size: 11px; text-align: center; margin: 0;">
+              Sent automatically by ReSellBD via Sky Automation Tech.
+            </p>
+          </div>
+        `,
       });
-    } catch (_) {}
+      console.log(`[startSuperAdminLogin] Dispatched 2-Step OTP email for emailHash=${emailHash}`);
+    } catch (mailErr) {
+      console.error(
+        `[startSuperAdminLogin] SMTP delivery failed for emailHash=${emailHash}:`,
+        mailErr?.message || mailErr
+      );
+      await otpDocRef.delete().catch(() => {});
+      throw new HttpsError(
+        'internal',
+        'Could not deliver Super Admin verification email. Please check mail configuration and try again.'
+      );
+    }
 
+    try {
+      await db.collection('auditLogs').add({
+        action: 'super_admin_otp_requested',
+        userId: uid,
+        userEmail: email,
+        role: userRole,
+        ip:
+          request.rawRequest?.headers?.['x-forwarded-for'] ||
+          request.rawRequest?.ip ||
+          'unknown',
+        userAgent: request.rawRequest?.headers?.['user-agent'] || 'unknown',
+        timestamp: FieldValue.serverTimestamp(),
+      });
+    } catch (logErr) {
+      console.warn('Could not record audit log:', logErr);
+    }
+
+    return {
+      success: true,
+      message: 'Verification code sent to your registered Super Admin email.',
+      email,
+      expiresInSeconds,
+      cooldownSeconds: 60,
+    };
+  }
+);
+
+exports.verifySuperAdminOtp = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [OTP_SECRET_SALT],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated.');
+    }
+
+    const code = String(request.data?.code ?? '').trim();
+    if (!/^\d{6}$/.test(code)) {
+      throw new HttpsError('invalid-argument', 'Please enter the full 6-digit code.');
+    }
+
+    const otpSalt = getOtpSalt();
+    const db = getDb();
+
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', 'User record not found.');
+    }
+
+    const userData = userDoc.data() || {};
+    if (!OTP_ENFORCED_ROLES.includes(userData.role)) {
+      throw new HttpsError('permission-denied', 'Unauthorized role for Super Admin OTP verification.');
+    }
+
+    const email = normalizeEmail(userData.email || request.auth.token?.email || request.data?.email);
+    const otpDocRef = db.collection('emailOtps').doc(superAdminOtpDocId(email));
+    const otpDocSnap = await otpDocRef.get();
+
+    if (!otpDocSnap.exists) {
+      throw new HttpsError('not-found', 'No active verification code found. Please request a new code.');
+    }
+
+    const otpData = otpDocSnap.data() || {};
+    if (otpData.uid && otpData.uid !== uid) {
+      throw new HttpsError('permission-denied', 'Verification record does not match the signed-in account.');
+    }
+
+    const now = Date.now();
+    const lockedUntil = parseTimestampMs(otpData.lockedUntil);
+    if (lockedUntil > now) {
+      const waitMinutes = Math.ceil((lockedUntil - now) / 60000);
+      throw new HttpsError(
+        'resource-exhausted',
+        `Account is temporarily locked for ${waitMinutes} more minute${waitMinutes === 1 ? '' : 's'} due to too many failed attempts.`
+      );
+    }
+
+    const expiresAt = parseTimestampMs(otpData.expiresAt);
+    if (!expiresAt || now > expiresAt) {
+      await otpDocRef.delete();
+      throw new HttpsError('deadline-exceeded', 'Verification code has expired. Please request a new code.');
+    }
+
+    const attemptsLeft = typeof otpData.attemptsLeft === 'number' ? otpData.attemptsLeft : 5;
     if (attemptsLeft <= 0) {
-      const lockDuration = 15 * 60 * 1000; // 15 minutes
-      const lockUntilDate = new Date(now + lockDuration);
       await otpDocRef.update({
         attemptsLeft: 0,
-        lockedUntil: admin.firestore.Timestamp.fromDate(lockUntilDate),
+        lockedUntil: Timestamp.fromDate(new Date(now + 15 * 60 * 1000)),
       });
-
-      // Clear any custom claims to ensure lock
-      await admin.auth().setCustomUserClaims(uid, {
-        role: 'super_admin',
-        otpSession: null,
-        otpExpiresAt: null,
-      });
-
-      throw new functions.https.HttpsError(
-        'permission-denied',
+      throw new HttpsError(
+        'resource-exhausted',
         'Account is temporarily locked for 15 minutes due to too many failed attempts.'
       );
     }
 
-    await otpDocRef.update({ attemptsLeft });
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      `Incorrect code. You have ${attemptsLeft} attempt(s) remaining.`
-    );
-  }
+    const inputHash = hashOtp(code, otpSalt);
+    if (!otpData.hashedCode || inputHash !== otpData.hashedCode) {
+      const remaining = attemptsLeft - 1;
 
-  // 4. Verification Successful!
-  // Generate random session ID & 12-hour expiration
-  const cryptoModule = require('crypto');
-  const sessionId = cryptoModule.randomUUID ? cryptoModule.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
-  const sessionDurationMs = SUPER_ADMIN_OTP_SESSION_HOURS * 60 * 60 * 1000; // 12 hours
-  const sessionExpiresAt = now + sessionDurationMs;
+      try {
+        await db.collection('auditLogs').add({
+          action: 'super_admin_otp_failed_attempt',
+          userId: uid,
+          userEmail: otpData.email || email,
+          attemptsRemaining: remaining,
+          ip:
+            request.rawRequest?.headers?.['x-forwarded-for'] ||
+            request.rawRequest?.ip ||
+            'unknown',
+          userAgent: request.rawRequest?.headers?.['user-agent'] || 'unknown',
+          timestamp: FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
 
-  // Set trusted Custom User Claims in Firebase Auth
-  await admin.auth().setCustomUserClaims(uid, {
-    role: 'super_admin',
-    otpSession: sessionId,
-    otpExpiresAt: sessionExpiresAt,
-  });
+      if (remaining <= 0) {
+        await otpDocRef.update({
+          attemptsLeft: 0,
+          lockedUntil: Timestamp.fromDate(new Date(now + 15 * 60 * 1000)),
+        });
 
-  // Delete the OTP document so it cannot be reused
-  await otpDocRef.delete();
+        await admin.auth().setCustomUserClaims(uid, {
+          role: 'super_admin',
+          otpSession: null,
+          otpExpiresAt: null,
+        });
 
-  // Write success security audit log
-  const clientIp = context.rawRequest?.headers['x-forwarded-for'] || context.rawRequest?.connection?.remoteAddress || 'unknown';
-  const clientUserAgent = context.rawRequest?.headers['user-agent'] || 'unknown';
+        throw new HttpsError(
+          'resource-exhausted',
+          'Account is temporarily locked for 15 minutes due to too many failed attempts.'
+        );
+      }
 
-  try {
-    await firestore.collection('auditLogs').add({
-      action: 'super_admin_otp_login_success',
-      userId: uid,
-      userEmail: otpData.email || '',
+      // Count attempts ONLY on wrong codes
+      await otpDocRef.update({ attemptsLeft: remaining });
+      throw new HttpsError(
+        'permission-denied',
+        `Incorrect code. You have ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining.`
+      );
+    }
+
+    // Verification successful
+    const sessionId = crypto.randomUUID();
+    const sessionExpiresAt = now + SUPER_ADMIN_OTP_SESSION_HOURS * 60 * 60 * 1000;
+
+    await admin.auth().setCustomUserClaims(uid, {
       role: 'super_admin',
-      sessionId,
-      sessionExpiresAt,
-      ip: clientIp,
-      userAgent: clientUserAgent,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      otpSession: sessionId,
+      otpExpiresAt: sessionExpiresAt,
     });
-  } catch (logErr) {
-    console.warn('Could not record login success audit log:', logErr);
-  }
 
-  // Notify Super Admin by push notification that a new session was authenticated
-  try {
-    const userDoc = await firestore.collection('users').doc(uid).get();
-    if (userDoc.exists) {
-      const uData = userDoc.data();
-      if (Array.isArray(uData.fcmTokens) && uData.fcmTokens.length > 0) {
-        const uniqueTokens = [...new Set(uData.fcmTokens)];
-        await admin.messaging().sendToDevice(uniqueTokens, {
+    await db.collection('adminSessions').doc(uid).set({
+      uid,
+      email,
+      verified: true,
+      sessionId,
+      expiresAt: sessionExpiresAt,
+      verifiedAt: FieldValue.serverTimestamp(),
+    });
+
+    // Delete the OTP record immediately after verification
+    await otpDocRef.delete();
+
+    const clientIp =
+      request.rawRequest?.headers?.['x-forwarded-for'] || request.rawRequest?.ip || 'unknown';
+    const clientUserAgent = request.rawRequest?.headers?.['user-agent'] || 'unknown';
+
+    try {
+      await db.collection('auditLogs').add({
+        action: 'super_admin_otp_login_success',
+        userId: uid,
+        userEmail: email,
+        role: 'super_admin',
+        sessionId,
+        sessionExpiresAt,
+        ip: clientIp,
+        userAgent: clientUserAgent,
+        timestamp: FieldValue.serverTimestamp(),
+      });
+    } catch (logErr) {
+      console.warn('Could not record login success audit log:', logErr);
+    }
+
+    try {
+      if (Array.isArray(userData.fcmTokens) && userData.fcmTokens.length > 0) {
+        await sendPushToTokens(userData.fcmTokens, {
           notification: {
             title: 'Security Alert: Super Admin Login',
-            body: `Your Super Admin account was authenticated via two-step verification from a new session.`,
+            body: 'Your Super Admin account was authenticated via two-step verification from a new session.',
           },
           data: {
             type: 'security_alert',
@@ -1636,38 +1685,36 @@ exports.verifySuperAdminOtp = functions.https.onCall(async (data, context) => {
           },
         });
       }
+    } catch (pushErr) {
+      console.warn('Could not dispatch security push notification:', pushErr);
     }
-  } catch (pushErr) {
-    console.warn('Could not dispatch security push notification:', pushErr);
+
+    console.log(`[verifySuperAdminOtp] Verified and granted 12-hour session to uid: ${uid}`);
+
+    return {
+      success: true,
+      verified: true,
+      expiresAt: sessionExpiresAt,
+      message: 'Two-step verification completed successfully!',
+    };
   }
+);
 
-  console.log(`[SuperAdmin 2-Step OTP] Successfully verified and granted 12-hour session to uid: ${uid}`);
-
-  return {
-    success: true,
-    verified: true,
-    expiresAt: sessionExpiresAt,
-    message: 'Two-step verification completed successfully!',
-  };
-});
-
-/**
- * 11c. Clear Super Admin OTP Session (Callable)
- * Clears the custom claim on Sign Out so OTP is strictly required on next login.
- */
-exports.clearSuperAdminOtpSession = functions.https.onCall(async (data, context) => {
-  const uid = context.auth?.uid;
+exports.clearSuperAdminOtpSession = onCall({ region: REGION, cors: true }, async (request) => {
+  const uid = request.auth?.uid;
   if (!uid) {
     return { success: true };
   }
 
+  const db = getDb();
   try {
     await admin.auth().setCustomUserClaims(uid, {
       role: 'super_admin',
       otpSession: null,
       otpExpiresAt: null,
     });
-    console.log(`[SuperAdmin 2-Step OTP] Cleared OTP session claims for uid: ${uid}`);
+    await db.collection('adminSessions').doc(uid).delete().catch(() => {});
+    console.log(`[clearSuperAdminOtpSession] Cleared OTP session for uid: ${uid}`);
   } catch (err) {
     console.warn('Could not clear custom claims on logout:', err);
   }
@@ -1675,35 +1722,33 @@ exports.clearSuperAdminOtpSession = functions.https.onCall(async (data, context)
   return { success: true };
 });
 
-// In-memory rate limiting map for logout actions (key: uid, value: lastActionTimestampMs)
+// =========================================================================
+// 6. REMOTE DEVICE LOGOUT FUNCTIONS
+// =========================================================================
+
 const logoutRateLimits = new Map();
 
-/**
- * 12. logoutDevice(deviceId) (Callable)
- * Marks a specific device as signed_out, sends a high-priority force_logout FCM data message,
- * and clears the device token.
- */
-exports.logoutDevice = functions.https.onCall(async (data, context) => {
-  const uid = context.auth?.uid;
+exports.logoutDevice = onCall({ region: REGION, cors: true }, async (request) => {
+  const uid = request.auth?.uid;
   if (!uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
   }
 
-  const deviceId = data?.deviceId;
+  const deviceId = request.data?.deviceId;
   if (!deviceId) {
-    throw new functions.https.HttpsError('invalid-argument', 'Device ID is required.');
+    throw new HttpsError('invalid-argument', 'Device ID is required.');
   }
 
-  // Rate Limiting: 3 seconds per user
   const now = Date.now();
   const lastAction = logoutRateLimits.get(`${uid}_single`) || 0;
   if (now - lastAction < 3000) {
-    throw new functions.https.HttpsError('resource-exhausted', 'Please wait a few seconds before another logout action.');
+    throw new HttpsError('resource-exhausted', 'Please wait a few seconds before another logout action.');
   }
   logoutRateLimits.set(`${uid}_single`, now);
 
+  const db = getDb();
   try {
-    const devRef = admin.firestore().collection('users').doc(uid).collection('devices').doc(deviceId);
+    const devRef = db.collection('users').doc(uid).collection('devices').doc(deviceId);
     const devSnap = await devRef.get();
 
     let removedFcmToken = null;
@@ -1717,43 +1762,37 @@ exports.logoutDevice = functions.https.onCall(async (data, context) => {
       await devRef.update({
         status: 'signed_out',
         fcmToken: null,
-        signedOutAt: admin.firestore.FieldValue.serverTimestamp(),
+        signedOutAt: FieldValue.serverTimestamp(),
         signedOutBy: uid,
       });
     }
 
-    // Send high-priority FCM DATA message { type: "force_logout", deviceId }
     if (removedFcmToken) {
-      const dataMessage = {
-        data: {
-          type: 'force_logout',
-          deviceId: String(deviceId),
-          timestamp: String(now),
-        },
-      };
-      const options = {
-        priority: 'high',
-        contentAvailable: true,
-      };
-
       try {
-        await admin.messaging().sendToDevice(removedFcmToken, dataMessage, options);
-        console.log(`[Security] Sent force_logout data message to device ${deviceId}`);
+        await sendPushToTokens([removedFcmToken], {
+          data: {
+            type: 'force_logout',
+            deviceId: String(deviceId),
+            timestamp: String(now),
+          },
+        });
       } catch (fcmErr) {
         console.warn(`[Security] Could not deliver force_logout FCM data message to ${deviceId}:`, fcmErr);
       }
 
-      // Remove from user document fcmTokens array
-      await admin.firestore().collection('users').doc(uid).update({
-        fcmTokens: admin.firestore.FieldValue.arrayRemove(removedFcmToken),
-      }).catch(() => {});
+      await db
+        .collection('users')
+        .doc(uid)
+        .update({
+          fcmTokens: FieldValue.arrayRemove(removedFcmToken),
+        })
+        .catch(() => {});
     }
 
-    // Security audit log
-    await admin.firestore().collection('auditLogs').add({
+    await db.collection('auditLogs').add({
       userId: uid,
       action: 'LOGOUT_DEVICE',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
       details: {
         deviceId,
         deviceName: devName,
@@ -1769,55 +1808,43 @@ exports.logoutDevice = functions.https.onCall(async (data, context) => {
     };
   } catch (err) {
     console.error('Error logging out device:', err);
-    throw new functions.https.HttpsError('internal', err.message || 'Failed to logout device.');
+    throw new HttpsError('internal', err.message || 'Failed to logout device.');
   }
 });
 
-/**
- * 13. logoutAllDevices() (Callable)
- * Revokes refresh tokens via Firebase Admin Auth, invalidates sessions via sessionsValidFrom,
- * marks EVERY device record as signed_out, sends a high-priority force_logout FCM data message
- * plus a push notification alert, and clears all fcmTokens.
- */
-exports.logoutAllDevices = functions.https.onCall(async (data, context) => {
-  const uid = context.auth?.uid;
+exports.logoutAllDevices = onCall({ region: REGION, cors: true }, async (request) => {
+  const uid = request.auth?.uid;
   if (!uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    throw new HttpsError('unauthenticated', 'User must be authenticated.');
   }
 
-  // Rate Limiting: 3 seconds per user
   const now = Date.now();
   const lastAction = logoutRateLimits.get(`${uid}_all`) || 0;
   if (now - lastAction < 3000) {
-    throw new functions.https.HttpsError('resource-exhausted', 'Please wait a few seconds before another logout action.');
+    throw new HttpsError('resource-exhausted', 'Please wait a few seconds before another logout action.');
   }
   logoutRateLimits.set(`${uid}_all`, now);
 
+  const db = getDb();
   try {
-    // 1. Revoke refresh tokens via Firebase Admin Auth
     await admin.auth().revokeRefreshTokens(uid);
-    console.log(`[Security] Revoked all refresh tokens for uid: ${uid}`);
 
-    // 2. Fetch all registered devices to collect tokens and update status
-    const devicesSnap = await admin.firestore().collection('users').doc(uid).collection('devices').get();
-    const batch = admin.firestore().batch();
+    const devicesSnap = await db.collection('users').doc(uid).collection('devices').get();
+    const batch = db.batch();
     const allTokens = new Set();
 
     devicesSnap.docs.forEach((devDoc) => {
       const devData = devDoc.data();
-      if (devData.fcmToken) {
-        allTokens.add(devData.fcmToken);
-      }
+      if (devData.fcmToken) allTokens.add(devData.fcmToken);
       batch.update(devDoc.ref, {
         status: 'signed_out',
         fcmToken: null,
-        signedOutAt: admin.firestore.FieldValue.serverTimestamp(),
+        signedOutAt: FieldValue.serverTimestamp(),
         signedOutBy: uid,
       });
     });
 
-    // Also collect any remaining tokens stored directly on user doc
-    const userDocRef = admin.firestore().collection('users').doc(uid);
+    const userDocRef = db.collection('users').doc(uid);
     const userSnap = await userDocRef.get();
     if (userSnap.exists && Array.isArray(userSnap.data()?.fcmTokens)) {
       userSnap.data().fcmTokens.forEach((t) => {
@@ -1825,47 +1852,37 @@ exports.logoutAllDevices = functions.https.onCall(async (data, context) => {
       });
     }
 
-    // 3. Set users/{uid}.sessionsValidFrom = serverTimestamp and wipe tokens
     batch.update(userDocRef, {
-      sessionsValidFrom: admin.firestore.FieldValue.serverTimestamp(),
+      sessionsValidFrom: FieldValue.serverTimestamp(),
       fcmTokens: [],
       fcmToken: null,
     });
 
     await batch.commit();
 
-    // 4. Send high-priority force_logout data message + push notification to all device tokens
     const tokenList = Array.from(allTokens);
     if (tokenList.length > 0) {
-      const payload = {
-        notification: {
-          title: 'Security Alert: Signed Out',
-          body: 'You were signed out from all devices.',
-        },
-        data: {
-          type: 'force_logout',
-          reason: 'logout_all',
-          timestamp: String(now),
-        },
-      };
-      const options = {
-        priority: 'high',
-        contentAvailable: true,
-      };
-
       try {
-        await admin.messaging().sendToDevice(tokenList, payload, options);
-        console.log(`[Security] Dispatched logout_all alerts to ${tokenList.length} device tokens.`);
+        await sendPushToTokens(tokenList, {
+          notification: {
+            title: 'Security Alert: Signed Out',
+            body: 'You were signed out from all devices.',
+          },
+          data: {
+            type: 'force_logout',
+            reason: 'logout_all',
+            timestamp: String(now),
+          },
+        });
       } catch (fcmErr) {
         console.warn('[Security] Error sending logout_all push notification:', fcmErr);
       }
     }
 
-    // 5. Security audit log
-    await admin.firestore().collection('auditLogs').add({
+    await db.collection('auditLogs').add({
       userId: uid,
       action: 'LOGOUT_ALL_DEVICES',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
       details: {
         signedOutBy: uid,
         reason: 'User requested remote logout of all devices',
@@ -1879,16 +1896,15 @@ exports.logoutAllDevices = functions.https.onCall(async (data, context) => {
     };
   } catch (err) {
     console.error('Error logging out all devices:', err);
-    throw new functions.https.HttpsError('internal', err.message || 'Failed to logout all devices.');
+    throw new HttpsError('internal', err.message || 'Failed to logout all devices.');
   }
 });
 
-// Backward-compatible aliases for legacy callers
 exports.revokeSingleDeviceSession = exports.logoutDevice;
 exports.revokeAllUserSessions = exports.logoutAllDevices;
 
 // =========================================================================
-// 8. SECURE ADMIN MANAGEMENT SYSTEM (Super Admin Exclusive)
+// 7. SECURE ADMIN MANAGEMENT SYSTEM (Super Admin Exclusive)
 // =========================================================================
 
 const ALLOWED_ADMIN_PERMISSIONS = [
@@ -1905,42 +1921,24 @@ const ALLOWED_ADMIN_PERMISSIONS = [
 
 const MAX_ADMINS_LIMIT = 10;
 
-/**
- * Validates password meets security rules:
- * Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 symbol
- */
 function isValidPassword(pwd) {
   if (typeof pwd !== 'string' || pwd.length < 8) return false;
-  const hasUpper = /[A-Z]/.test(pwd);
-  const hasLower = /[a-z]/.test(pwd);
-  const hasNumber = /[0-9]/.test(pwd);
-  const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd);
-  return hasUpper && hasLower && hasNumber && hasSymbol;
+  return (
+    /[A-Z]/.test(pwd) &&
+    /[a-z]/.test(pwd) &&
+    /[0-9]/.test(pwd) &&
+    /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)
+  );
 }
 
-/**
- * Sends branded HTML welcome email to the newly created admin.
- * Does NOT include the temporary password.
- */
 async function sendAdminWelcomeEmailHtml(email, fullName, adminId, resetLink) {
-  const nodemailer = require('nodemailer');
-  const gmailUser = process.env.GMAIL_USER || 'skyautomationtech@gmail.com';
-  const gmailPass = (process.env.GMAIL_APP_PASSWORD || 'ealgyihwwtcxrsuz').replace(/\s+/g, '');
-
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: gmailUser,
-      pass: gmailPass,
-    },
-  });
-
-  const appLoginUrl = process.env.APP_URL || 'https://ais-dev-6hdag5jt6lsfpxduigdl4r-698042614411.asia-southeast1.run.app';
+  const { transporter, gmailUser } = createGmailTransporter();
+  const appLoginUrl = process.env.APP_URL || 'https://re-sellbd.vercel.app';
 
   await transporter.sendMail({
     from: `"ReSellBD Security" <${gmailUser}>`,
     to: email,
-    subject: `আপনার ReSellBD Admin অ্যাকাউন্ট তৈরি হয়েছে / Your ReSellBD Admin account is ready`,
+    subject: 'আপনার ReSellBD Admin অ্যাকাউন্ট তৈরি হয়েছে / Your ReSellBD Admin account is ready',
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 28px; background: #050B1A; color: #ffffff; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
         <div style="text-align: center; margin-bottom: 24px;">
@@ -2000,315 +1998,308 @@ async function sendAdminWelcomeEmailHtml(email, fullName, adminId, resetLink) {
   });
 }
 
-/**
- * 8.1 Create Admin (Super Admin Only)
- */
-exports.createAdmin = functions.https.onCall(async (data, context) => {
-  // 1. Check caller is authenticated
-  if (!context.auth || !context.auth.uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required to create an admin.');
-  }
-
-  const callerUid = context.auth.uid;
-  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
-
-  // 2. Validate caller role strictly from Firestore database (never rely on client payload)
-  const db = getOtpDb();
-  const callerDoc = await db.collection('users').doc(callerUid).get();
-  if (!callerDoc.exists) {
-    throw new functions.https.HttpsError('permission-denied', 'Caller account profile not found.');
-  }
-
-  const callerData = callerDoc.data() || {};
-  const isSoleSuperAdmin = callerEmail === 'skyautomationtech@gmail.com' && callerData.role === 'super_admin';
-  if (!isSoleSuperAdmin) {
-    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin (owner) can create Admin accounts.');
-  }
-
-  // 3. Validate input parameters
-  const fullName = String(data?.fullName || '').trim();
-  const email = String(data?.email || '').toLowerCase().trim();
-  const mobile = String(data?.mobile || '').trim();
-  const password = String(data?.password || '');
-  const requestedPermissions = Array.isArray(data?.permissions) ? data.permissions : [];
-  const profilePhotoUrl = String(data?.profilePhotoUrl || '').trim();
-  const internalNote = String(data?.internalNote || '').trim();
-
-  if (!fullName || fullName.length < 2 || fullName.length > 100) {
-    throw new functions.https.HttpsError('invalid-argument', 'Please provide a valid full name (2-100 characters).');
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!email || !emailRegex.test(email)) {
-    throw new functions.https.HttpsError('invalid-argument', 'Please provide a valid email address.');
-  }
-
-  const bdMobileRegex = /^01[3-9]\d{8}$/;
-  if (!mobile || !bdMobileRegex.test(mobile)) {
-    throw new functions.https.HttpsError('invalid-argument', 'Please provide a valid Bangladeshi mobile number (01[3-9]XXXXXXXX).');
-  }
-
-  if (!isValidPassword(password)) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.'
-    );
-  }
-
-  // Sanitize permissions - allow ONLY allowed administrative permissions
-  const sanitizedPermissions = requestedPermissions.filter((p) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
-  if (sanitizedPermissions.length === 0) {
-    throw new functions.https.HttpsError('invalid-argument', 'At least one operational permission must be selected.');
-  }
-
-  // 4. Enforce MAX_ADMINS limit
-  const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
-  let activeAdminCount = 0;
-  adminsSnap.forEach((doc) => {
-    if (doc.data()?.status !== 'deleted') {
-      activeAdminCount++;
+exports.createAdmin = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [GMAIL_USER, GMAIL_APP_PASSWORD],
+  },
+  async (request) => {
+    if (!request.auth || !request.auth.uid) {
+      throw new HttpsError('unauthenticated', 'Sign-in required to create an admin.');
     }
-  });
 
-  if (activeAdminCount >= MAX_ADMINS_LIMIT) {
-    throw new functions.https.HttpsError(
-      'resource-exhausted',
-      `Administrator limit reached (maximum ${MAX_ADMINS_LIMIT} active admins allowed). Please suspend or remove an existing admin.`
-    );
-  }
+    const callerUid = request.auth.uid;
+    const callerEmail = normalizeEmail(request.auth.token?.email);
+    const db = getDb();
 
-  // 5. Check if email already in use
-  const existingFsUser = await db.collection('users').where('email', '==', email).limit(1).get();
-  if (!existingFsUser.empty) {
-    throw new functions.https.HttpsError('already-exists', 'An account with this email address already exists in the system.');
-  }
-
-  try {
-    const existingAuth = await admin.auth().getUserByEmail(email);
-    if (existingAuth) {
-      throw new functions.https.HttpsError('already-exists', 'An account with this email address already exists in Firebase Authentication.');
+    const callerDoc = await db.collection('users').doc(callerUid).get();
+    if (!callerDoc.exists) {
+      throw new HttpsError('permission-denied', 'Caller account profile not found.');
     }
-  } catch (err) {
-    if (err.code !== 'auth/user-not-found') {
-      if (err instanceof functions.https.HttpsError) throw err;
-    }
-  }
 
-  // 6. Create Firebase Auth user using Admin SDK (keeps Super Admin signed in)
-  let newAuthUser;
-  try {
-    newAuthUser = await admin.auth().createUser({
-      email,
-      password,
-      displayName: fullName,
-      emailVerified: false,
+    const callerData = callerDoc.data() || {};
+    const isSoleSuperAdmin = callerEmail === 'skyautomationtech@gmail.com' && callerData.role === 'super_admin';
+    if (!isSoleSuperAdmin) {
+      throw new HttpsError('permission-denied', 'Only the Super Admin (owner) can create Admin accounts.');
+    }
+
+    const fullName = String(request.data?.fullName || '').trim();
+    const email = normalizeEmail(request.data?.email);
+    const mobile = String(request.data?.mobile || '').trim();
+    const password = String(request.data?.password || '');
+    const requestedPermissions = Array.isArray(request.data?.permissions) ? request.data.permissions : [];
+    const profilePhotoUrl = String(request.data?.profilePhotoUrl || '').trim();
+    const internalNote = String(request.data?.internalNote || '').trim();
+
+    if (!fullName || fullName.length < 2 || fullName.length > 100) {
+      throw new HttpsError('invalid-argument', 'Please provide a valid full name (2-100 characters).');
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      throw new HttpsError('invalid-argument', 'Please provide a valid email address.');
+    }
+
+    const bdMobileRegex = /^01[3-9]\d{8}$/;
+    if (!mobile || !bdMobileRegex.test(mobile)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Please provide a valid Bangladeshi mobile number (01[3-9]XXXXXXXX).'
+      );
+    }
+
+    if (!isValidPassword(password)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.'
+      );
+    }
+
+    const sanitizedPermissions = requestedPermissions.filter((p) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
+    if (sanitizedPermissions.length === 0) {
+      throw new HttpsError('invalid-argument', 'At least one operational permission must be selected.');
+    }
+
+    const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
+    let activeAdminCount = 0;
+    adminsSnap.forEach((docSnap) => {
+      if (docSnap.data()?.status !== 'deleted') activeAdminCount++;
     });
-  } catch (authCreateErr) {
-    console.error('[createAdmin] Auth user creation error:', authCreateErr);
-    if (authCreateErr.code === 'auth/email-already-exists') {
-      throw new functions.https.HttpsError('already-exists', 'An account with this email address already exists.');
+
+    if (activeAdminCount >= MAX_ADMINS_LIMIT) {
+      throw new HttpsError(
+        'resource-exhausted',
+        `Administrator limit reached (maximum ${MAX_ADMINS_LIMIT} active admins allowed). Please suspend or remove an existing admin.`
+      );
     }
-    throw new functions.https.HttpsError('invalid-argument', authCreateErr.message || 'Failed to create auth user.');
-  }
 
-  const newUid = newAuthUser.uid;
-  let assignedAdminId = 'ADM-0001';
+    const existingFsUser = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (!existingFsUser.empty) {
+      throw new HttpsError('already-exists', 'An account with this email address already exists in the system.');
+    }
 
-  // 7. Atomic transaction to allocate sequential adminId and write profile
-  try {
-    await db.runTransaction(async (t) => {
-      const counterRef = db.collection('counters').doc('adminId');
-      const counterDoc = await t.get(counterRef);
-      let nextCount = 1;
-      if (counterDoc.exists) {
-        nextCount = (counterDoc.data()?.lastCount || 0) + 1;
+    try {
+      const existingAuth = await admin.auth().getUserByEmail(email);
+      if (existingAuth) {
+        throw new HttpsError(
+          'already-exists',
+          'An account with this email address already exists in Firebase Authentication.'
+        );
       }
-      assignedAdminId = `ADM-${String(nextCount).padStart(4, '0')}`;
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+    }
 
-      t.set(counterRef, {
-        lastCount: nextCount,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-
-      const newAdminRef = db.collection('users').doc(newUid);
-      t.set(newAdminRef, {
-        uid: newUid,
-        adminId: assignedAdminId,
-        fullName,
+    let newAuthUser;
+    try {
+      newAuthUser = await admin.auth().createUser({
         email,
-        mobile,
-        role: 'admin', // Strictly refused to create any other role
-        status: 'approved',
-        permissions: sanitizedPermissions,
-        createdBy: callerUid,
-        createdByName: callerData.fullName || 'Super Admin',
-        mustChangePassword: true,
+        password,
+        displayName: fullName,
         emailVerified: false,
-        profilePhotoUrl: profilePhotoUrl || '',
-        internalNote: internalNote || '',
-        shopName: 'ReSellBD HQ',
-        division: 'Dhaka',
-        district: 'Dhaka',
-        upazila: 'Tejgaon',
-        address: 'Headquarters, Dhaka',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-    });
-  } catch (txErr) {
-    console.error('[createAdmin] Transaction failed. Rolling back Auth user:', txErr);
-    await admin.auth().deleteUser(newUid).catch((delErr) => console.error('Rollback deleteUser failed:', delErr));
-    throw new functions.https.HttpsError('internal', 'Database error creating admin record. Rolled back successfully.');
-  }
+    } catch (authCreateErr) {
+      if (authCreateErr.code === 'auth/email-already-exists') {
+        throw new HttpsError('already-exists', 'An account with this email address already exists.');
+      }
+      throw new HttpsError('invalid-argument', authCreateErr.message || 'Failed to create auth user.');
+    }
 
-  // 8. Write audit log entry
-  try {
+    const newUid = newAuthUser.uid;
+    let assignedAdminId = 'ADM-0001';
+
+    try {
+      await db.runTransaction(async (t) => {
+        const counterRef = db.collection('counters').doc('adminId');
+        const counterDoc = await t.get(counterRef);
+        let nextCount = 1;
+        if (counterDoc.exists) {
+          nextCount = (counterDoc.data()?.lastCount || 0) + 1;
+        }
+        assignedAdminId = `ADM-${String(nextCount).padStart(4, '0')}`;
+
+        t.set(
+          counterRef,
+          {
+            lastCount: nextCount,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        t.set(db.collection('users').doc(newUid), {
+          uid: newUid,
+          adminId: assignedAdminId,
+          fullName,
+          email,
+          mobile,
+          role: 'admin',
+          status: 'approved',
+          permissions: sanitizedPermissions,
+          createdBy: callerUid,
+          createdByName: callerData.fullName || 'Super Admin',
+          mustChangePassword: true,
+          emailVerified: false,
+          profilePhotoUrl: profilePhotoUrl || '',
+          internalNote: internalNote || '',
+          shopName: 'ReSellBD HQ',
+          division: 'Dhaka',
+          district: 'Dhaka',
+          upazila: 'Tejgaon',
+          address: 'Headquarters, Dhaka',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
+    } catch (txErr) {
+      console.error('[createAdmin] Transaction failed. Rolling back Auth user:', txErr);
+      await admin.auth().deleteUser(newUid).catch(() => {});
+      throw new HttpsError('internal', 'Database error creating admin record. Rolled back successfully.');
+    }
+
+    try {
+      await db.collection('auditLogs').add({
+        action: 'admin_created',
+        actorUid: callerUid,
+        actorEmail: callerEmail,
+        targetUid: newUid,
+        targetEmail: email,
+        adminId: assignedAdminId,
+        permissions: sanitizedPermissions,
+        timestamp: FieldValue.serverTimestamp(),
+      });
+    } catch (auditErr) {
+      console.warn('[createAdmin] Could not record audit log:', auditErr);
+    }
+
+    let resetLink = '';
+    try {
+      resetLink = await admin.auth().generatePasswordResetLink(email);
+    } catch (_linkErr) {
+      resetLink = process.env.APP_URL || 'https://re-sellbd.vercel.app';
+    }
+
+    try {
+      await sendAdminWelcomeEmailHtml(email, fullName, assignedAdminId, resetLink);
+    } catch (emailErr) {
+      console.error('[createAdmin] Welcome email send error:', emailErr?.message || emailErr);
+    }
+
+    return {
+      success: true,
+      adminId: assignedAdminId,
+      uid: newUid,
+      email,
+      fullName,
+      message: `Admin account (${assignedAdminId}) successfully created for ${fullName}. Welcome email sent.`,
+    };
+  }
+);
+
+exports.resendAdminWelcomeEmail = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [GMAIL_USER, GMAIL_APP_PASSWORD],
+  },
+  async (request) => {
+    if (!request.auth || !request.auth.uid) {
+      throw new HttpsError('unauthenticated', 'Sign-in required.');
+    }
+
+    const callerUid = request.auth.uid;
+    const callerEmail = normalizeEmail(request.auth.token?.email);
+    const db = getDb();
+
+    const callerDoc = await db.collection('users').doc(callerUid).get();
+    if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
+      throw new HttpsError('permission-denied', 'Only the Super Admin can resend welcome emails.');
+    }
+
+    const adminUid = String(request.data?.adminUid || '').trim();
+    if (!adminUid) {
+      throw new HttpsError('invalid-argument', 'Target admin UID is required.');
+    }
+
+    const targetDoc = await db.collection('users').doc(adminUid).get();
+    if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
+      throw new HttpsError('not-found', 'Admin profile not found.');
+    }
+
+    const targetData = targetDoc.data();
+    const resetLink = await admin.auth().generatePasswordResetLink(targetData.email);
+
+    await sendAdminWelcomeEmailHtml(
+      targetData.email,
+      targetData.fullName,
+      targetData.adminId || 'Admin',
+      resetLink
+    );
+
     await db.collection('auditLogs').add({
-      action: 'admin_created',
+      action: 'admin_welcome_email_resent',
       actorUid: callerUid,
       actorEmail: callerEmail,
-      targetUid: newUid,
-      targetEmail: email,
-      adminId: assignedAdminId,
-      permissions: sanitizedPermissions,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      targetUid: adminUid,
+      targetEmail: targetData.email,
+      timestamp: FieldValue.serverTimestamp(),
     });
-  } catch (auditErr) {
-    console.warn('[createAdmin] Could not record audit log:', auditErr);
+
+    return {
+      success: true,
+      message: `Welcome email successfully resent to ${targetData.email}.`,
+    };
+  }
+);
+
+exports.changeAdminPassword = onCall({ region: REGION, cors: true }, async (request) => {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
   }
 
-  // 9. Generate password reset link & send welcome email
-  let resetLink = '';
-  try {
-    resetLink = await admin.auth().generatePasswordResetLink(email);
-  } catch (linkErr) {
-    console.warn('[createAdmin] Could not generate reset link:', linkErr);
-    resetLink = 'https://skyautomationtech.com';
-  }
-
-  try {
-    await sendAdminWelcomeEmailHtml(email, fullName, assignedAdminId, resetLink);
-    console.log(`[createAdmin] Dispatched welcome email to ${email}`);
-  } catch (emailErr) {
-    console.error('[createAdmin] Welcome email send error:', emailErr);
-  }
-
-  return {
-    success: true,
-    adminId: assignedAdminId,
-    uid: newUid,
-    email,
-    fullName,
-    message: `Admin account (${assignedAdminId}) successfully created for ${fullName}. Welcome email sent.`,
-  };
-});
-
-/**
- * 8.2 Resend Admin Welcome Email (Super Admin Only)
- */
-exports.resendAdminWelcomeEmail = functions.https.onCall(async (data, context) => {
-  if (!context.auth || !context.auth.uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
-  }
-
-  const callerUid = context.auth.uid;
-  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
-  const db = getOtpDb();
-
-  const callerDoc = await db.collection('users').doc(callerUid).get();
-  if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin can resend welcome emails.');
-  }
-
-  const adminUid = String(data?.adminUid || '').trim();
-  if (!adminUid) {
-    throw new functions.https.HttpsError('invalid-argument', 'Target admin UID is required.');
-  }
-
-  const targetDoc = await db.collection('users').doc(adminUid).get();
-  if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
-    throw new functions.https.HttpsError('not-found', 'Admin profile not found.');
-  }
-
-  const targetData = targetDoc.data();
-  const resetLink = await admin.auth().generatePasswordResetLink(targetData.email);
-
-  await sendAdminWelcomeEmailHtml(
-    targetData.email,
-    targetData.fullName,
-    targetData.adminId || 'Admin',
-    resetLink
-  );
-
-  await db.collection('auditLogs').add({
-    action: 'admin_welcome_email_resent',
-    actorUid: callerUid,
-    actorEmail: callerEmail,
-    targetUid: adminUid,
-    targetEmail: targetData.email,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  return {
-    success: true,
-    message: `Welcome email successfully resent to ${targetData.email}.`,
-  };
-});
-
-/**
- * 8.3 Change Admin Password (First Login / Forced Password Change)
- */
-exports.changeAdminPassword = functions.https.onCall(async (data, context) => {
-  if (!context.auth || !context.auth.uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
-  }
-
-  const uid = context.auth.uid;
-  const db = getOtpDb();
+  const uid = request.auth.uid;
+  const db = getDb();
   const userDocRef = db.collection('users').doc(uid);
   const userDoc = await userDocRef.get();
 
   if (!userDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'User profile not found.');
+    throw new HttpsError('not-found', 'User profile not found.');
   }
 
   const userData = userDoc.data() || {};
   if (userData.role !== 'admin') {
-    throw new functions.https.HttpsError('permission-denied', 'This function is only for admin accounts.');
+    throw new HttpsError('permission-denied', 'This function is only for admin accounts.');
   }
 
-  const newPassword = String(data?.newPassword || '');
+  const newPassword = String(request.data?.newPassword || '');
   if (!isValidPassword(newPassword)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       'New password must be at least 8 characters and contain uppercase, lowercase, numbers, and symbols.'
     );
   }
 
-  // Update password in Firebase Auth
   try {
     await admin.auth().updateUser(uid, { password: newPassword });
   } catch (pErr) {
     console.error('[changeAdminPassword] Error updating Auth password:', pErr);
-    throw new functions.https.HttpsError('internal', 'Could not update password. Please try again.');
+    throw new HttpsError('internal', 'Could not update password. Please try again.');
   }
 
-  // Clear mustChangePassword flag
   await userDocRef.update({
     mustChangePassword: false,
-    passwordChangedAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    passwordChangedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
-  // Audit log
   await db.collection('auditLogs').add({
     action: 'admin_first_login_password_changed',
     actorUid: uid,
     actorEmail: userData.email,
     adminId: userData.adminId || 'Admin',
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    timestamp: FieldValue.serverTimestamp(),
   });
 
-  // Notify Super Admin (in-app notification + FCM push)
   try {
     await db.collection('notifications').add({
       title: 'Admin First Login & Password Updated',
@@ -2317,19 +2308,17 @@ exports.changeAdminPassword = functions.https.onCall(async (data, context) => {
       targetRole: 'super_admin',
       userId: uid,
       read: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
 
-    // FCM push notification to Super Admin devices
     const superAdminSnap = await db.collection('users').where('role', '==', 'super_admin').get();
     const tokens = [];
     superAdminSnap.forEach((d) => {
       const u = d.data();
       if (Array.isArray(u.fcmTokens)) tokens.push(...u.fcmTokens);
     });
-    const uniqueTokens = [...new Set(tokens)];
-    if (uniqueTokens.length > 0) {
-      await admin.messaging().sendToDevice(uniqueTokens, {
+    if (tokens.length > 0) {
+      await sendPushToTokens(tokens, {
         notification: {
           title: 'Admin Password Set',
           body: `Admin ${userData.fullName} has updated their password and accessed the portal.`,
@@ -2346,47 +2335,42 @@ exports.changeAdminPassword = functions.https.onCall(async (data, context) => {
   };
 });
 
-/**
- * 8.4 Toggle Admin Status (Suspend / Activate - Super Admin Only)
- */
-exports.toggleAdminStatus = functions.https.onCall(async (data, context) => {
-  if (!context.auth || !context.auth.uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
+exports.toggleAdminStatus = onCall({ region: REGION, cors: true }, async (request) => {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
   }
 
-  const callerUid = context.auth.uid;
-  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
-  const db = getOtpDb();
+  const callerUid = request.auth.uid;
+  const callerEmail = normalizeEmail(request.auth.token?.email);
+  const db = getDb();
 
   const callerDoc = await db.collection('users').doc(callerUid).get();
   if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin can suspend or activate admin accounts.');
+    throw new HttpsError('permission-denied', 'Only the Super Admin can suspend or activate admin accounts.');
   }
 
-  const adminUid = String(data?.adminUid || '').trim();
-  const newStatus = data?.status === 'suspended' ? 'suspended' : 'approved';
-  const reason = String(data?.reason || '').trim();
+  const adminUid = String(request.data?.adminUid || '').trim();
+  const newStatus = request.data?.status === 'suspended' ? 'suspended' : 'approved';
+  const reason = String(request.data?.reason || '').trim();
 
   const targetDoc = await db.collection('users').doc(adminUid).get();
   if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
-    throw new functions.https.HttpsError('not-found', 'Admin profile not found.');
+    throw new HttpsError('not-found', 'Admin profile not found.');
   }
 
   const targetData = targetDoc.data();
-  // Prevent any action on Super Admin
-  if (targetData.email?.toLowerCase() === 'skyautomationtech@gmail.com' || targetData.role === 'super_admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Super Admin account cannot be suspended or modified.');
+  if (normalizeEmail(targetData.email) === 'skyautomationtech@gmail.com' || targetData.role === 'super_admin') {
+    throw new HttpsError('permission-denied', 'Super Admin account cannot be suspended or modified.');
   }
 
-  // If suspending, revoke refresh tokens so their session expires immediately
   if (newStatus === 'suspended') {
-    await admin.auth().revokeRefreshTokens(adminUid).catch((rErr) => console.warn('Could not revoke refresh tokens:', rErr));
+    await admin.auth().revokeRefreshTokens(adminUid).catch(() => {});
   }
 
   await db.collection('users').doc(adminUid).update({
     status: newStatus,
     suspensionReason: newStatus === 'suspended' ? (reason || 'Administrative suspension by Super Admin') : null,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
   await db.collection('auditLogs').add({
@@ -2396,7 +2380,7 @@ exports.toggleAdminStatus = functions.https.onCall(async (data, context) => {
     targetUid: adminUid,
     targetEmail: targetData.email,
     reason,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    timestamp: FieldValue.serverTimestamp(),
   });
 
   return {
@@ -2406,35 +2390,32 @@ exports.toggleAdminStatus = functions.https.onCall(async (data, context) => {
   };
 });
 
-/**
- * 8.5 Update Admin Permissions (Super Admin Only)
- */
-exports.updateAdminPermissions = functions.https.onCall(async (data, context) => {
-  if (!context.auth || !context.auth.uid) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign-in required.');
+exports.updateAdminPermissions = onCall({ region: REGION, cors: true }, async (request) => {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
   }
 
-  const callerUid = context.auth.uid;
-  const callerEmail = String(context.auth.token?.email || '').toLowerCase().trim();
-  const db = getOtpDb();
+  const callerUid = request.auth.uid;
+  const callerEmail = normalizeEmail(request.auth.token?.email);
+  const db = getDb();
 
   const callerDoc = await db.collection('users').doc(callerUid).get();
   if (!callerDoc.exists || callerEmail !== 'skyautomationtech@gmail.com' || callerDoc.data()?.role !== 'super_admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Only the Super Admin can update admin permissions.');
+    throw new HttpsError('permission-denied', 'Only the Super Admin can update admin permissions.');
   }
 
-  const adminUid = String(data?.adminUid || '').trim();
-  const requestedPermissions = Array.isArray(data?.permissions) ? data.permissions : [];
+  const adminUid = String(request.data?.adminUid || '').trim();
+  const requestedPermissions = Array.isArray(request.data?.permissions) ? request.data.permissions : [];
   const sanitizedPermissions = requestedPermissions.filter((p) => ALLOWED_ADMIN_PERMISSIONS.includes(p));
 
   const targetDoc = await db.collection('users').doc(adminUid).get();
   if (!targetDoc.exists || targetDoc.data()?.role !== 'admin') {
-    throw new functions.https.HttpsError('not-found', 'Admin profile not found.');
+    throw new HttpsError('not-found', 'Admin profile not found.');
   }
 
   await db.collection('users').doc(adminUid).update({
     permissions: sanitizedPermissions,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
   await db.collection('auditLogs').add({
@@ -2443,7 +2424,7 @@ exports.updateAdminPermissions = functions.https.onCall(async (data, context) =>
     actorEmail: callerEmail,
     targetUid: adminUid,
     permissions: sanitizedPermissions,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    timestamp: FieldValue.serverTimestamp(),
   });
 
   return {
@@ -2452,6 +2433,3 @@ exports.updateAdminPermissions = functions.https.onCall(async (data, context) =>
     message: 'Admin permissions updated successfully.',
   };
 });
-
-
-
