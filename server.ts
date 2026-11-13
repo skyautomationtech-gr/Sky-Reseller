@@ -1,11 +1,16 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { getApps, getApp, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import {
+  handleSendOtpRequest,
+  handleVerifyOtpRequest,
+  handleClearSuperAdminSession,
+  verifyFirebaseCallerIdToken,
+} from './api/_otp';
 
 const admin = {
   get apps() { return getApps(); },
@@ -22,10 +27,6 @@ if (!admin.apps.length) {
     console.warn('[Server] Firebase Admin initialization note:', initErr?.message || initErr);
   }
 }
-
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
@@ -65,8 +66,47 @@ async function startServer() {
     });
   });
 
-  // Note: All OTP (emailOtps, Super Admin 2-Step) and Admin management flows
-  // are handled exclusively by Firebase 2nd-gen Cloud Functions in asia-south1.
+  // Stateless HMAC-signed + Nodemailer OTP routes (works in Preview, Vercel Free, & Spark Plan)
+  app.post('/api/send-email-otp', async (req, res) => {
+    await handleSendOtpRequest(req, res, 'register');
+  });
+
+  app.post('/api/verify-email-otp', async (req, res) => {
+    await handleVerifyOtpRequest(req, res, 'register');
+  });
+
+  app.post('/api/super-admin/start-login', async (req, res) => {
+    try {
+      const caller = await verifyFirebaseCallerIdToken(req);
+      await handleSendOtpRequest(req, res, 'super_admin', caller.email);
+    } catch (err: any) {
+      res.status(err?.status || 401).json({
+        error: err?.message || 'Unauthorized',
+        code: err?.code || 'unauthenticated',
+      });
+    }
+  });
+
+  app.post('/api/super-admin/verify-otp', async (req, res) => {
+    try {
+      const caller = await verifyFirebaseCallerIdToken(req);
+      await handleVerifyOtpRequest(req, res, 'super_admin', caller.email);
+    } catch (err: any) {
+      res.status(err?.status || 401).json({
+        error: err?.message || 'Unauthorized',
+        code: err?.code || 'unauthenticated',
+      });
+    }
+  });
+
+  app.post('/api/super-admin/clear-session', async (req, res) => {
+    try {
+      const caller = await verifyFirebaseCallerIdToken(req);
+      handleClearSuperAdminSession(req, res, caller.email);
+    } catch {
+      handleClearSuperAdminSession(req, res, String(req.body?.email || ''));
+    }
+  });
 
 
 

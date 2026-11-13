@@ -7,6 +7,7 @@ import { db } from '../../lib/firebase';
 import { UserProfile, CompanySettings } from '../../types';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { useScrollToTop } from '../../utils/scrollToTop';
 import { 
   FileText, Shield, Scale, CreditCard, DollarSign, 
   HelpCircle, ChevronRight, ArrowLeft, Search, Plus, 
@@ -470,6 +471,16 @@ export const AccountInfoSection: React.FC<AccountInfoSectionProps> = ({
     if (timestamp.toDate) return timestamp.toDate().toLocaleDateString();
     if (timestamp instanceof Date) return timestamp.toLocaleDateString();
     return String(timestamp);
+  };
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    try {
+      const d = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return isNaN(d.getTime()) ? String(timestamp) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return String(timestamp);
+    }
   };
 
   // ==========================================

@@ -26,8 +26,8 @@ import { RegistrationSuccessScreen } from './register/RegistrationSuccessScreen'
 import { DEFAULT_TERMS_POLICY, DEFAULT_PRIVACY_POLICY, PolicyDoc } from '../../data/defaultPolicies';
 import { finalizeResellerRegistration } from '../../lib/resellerRegistrationService';
 import { 
-  getDivisions, getDistricts, getUpazilas, getUnions,
-  BdDivision, BdDistrict, BdUpazila, BdUnion 
+  getDivisions, getDistricts, getUpazilasAndThanas, getUnionsOrWards,
+  BdDivision, BdDistrict, BdUpazilaThana as BdUpazila, BdUnionWard as BdUnion 
 } from '../../data/bd/geocodeService';
 import { BANGLADESH_BANKS } from '../../data/bangladeshBanks';
 import { PayoutMethod, UserProfile } from '../../types';

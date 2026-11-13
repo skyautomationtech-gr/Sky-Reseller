@@ -25,6 +25,7 @@ import { UserProfile } from '../../types';
 import { logAuditAction } from '../../lib/auditLogger';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { useScrollToTop } from '../../utils/scrollToTop';
 import { 
   subscribeUserLoginHistory, 
   subscribeUserDevices,

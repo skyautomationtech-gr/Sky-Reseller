@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { useScrollToTop } from '../../utils/scrollToTop';
 import { AccountProfileSection } from './AccountProfileSection';
 import { PayoutSettingsSection } from './PayoutSettingsSection';
 import { SecuritySection } from './SecuritySection';

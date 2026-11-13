@@ -31,7 +31,29 @@ export async function checkShopNameAvailability(
     };
   }
 
-  // 1. Try Cloud Function first
+  // 1. Try server Express / Vercel API first (avoids Cloud Functions 404 on Spark Free Plan)
+  try {
+    const res = await fetch('/api/check-shop-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shopName: cleanName, excludeUid }),
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json') && res.ok) {
+      const data = await res.json();
+      return {
+        available: !!data.available,
+        shopNameKey,
+        message: data.message,
+        isOwn: data.isOwn,
+      };
+    }
+  } catch (proxyErr) {
+    console.warn('API /api/check-shop-name check failed:', proxyErr);
+  }
+
+  // 2. Try Cloud Function fallback (if deployed on Blaze)
   try {
     const checkCallable = httpsCallable<
       { name: string; excludeUid?: string },
@@ -43,7 +65,6 @@ export async function checkShopNameAvailability(
       return res.data;
     }
   } catch (fnErr: any) {
-    // If explicit already taken or bad request, don't fall back, return directly
     if (fnErr.code === 'already-exists') {
       return {
         available: false,
@@ -51,28 +72,6 @@ export async function checkShopNameAvailability(
         message: 'This shop name is already taken. Please choose a different name.',
       };
     }
-    console.warn('Cloud Function checkShopName not reachable, trying server proxy endpoint:', fnErr?.message || fnErr);
-  }
-
-  // 2. Try server Express API fallback
-  try {
-    const res = await fetch('/api/check-shop-name', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shopName: cleanName, excludeUid }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        available: !!data.available,
-        shopNameKey,
-        message: data.message,
-        isOwn: data.isOwn,
-      };
-    }
-  } catch (proxyErr) {
-    console.warn('Local proxy /api/check-shop-name error:', proxyErr);
   }
 
   // 3. Fail-safe trigger: throw so the caller displays the fail-safe message

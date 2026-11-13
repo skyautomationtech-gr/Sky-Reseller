@@ -4,6 +4,7 @@ import { db } from '../../lib/firebase';
 import { UserProfile, CompanySettings, SupportTicket, TicketCategory } from '../../types';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { useScrollToTop } from '../../utils/scrollToTop';
 import { 
   Phone, MessageSquare, Mail, Send, AlertTriangle, 
   LifeBuoy, ChevronRight, Clock, ExternalLink, Plus, 

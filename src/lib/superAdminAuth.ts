@@ -1,8 +1,14 @@
 import { httpsCallable } from 'firebase/functions';
 import { User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { functions, db, auth } from './firebase';
-import { formatOtpErrorMessage } from './emailOtpService';
+import {
+  formatOtpErrorMessage,
+  getApiBaseUrl,
+  getOtpChallengeState,
+  saveOtpChallengeState,
+  clearOtpChallengeState,
+} from './emailOtpService';
 import { OTP_REQUIRED_ROLES } from '../config/authSecurity';
 
 export interface StartSuperAdminLoginResponse {
@@ -85,98 +91,265 @@ export async function checkSuperAdminOtpStatus(
 }
 
 /**
- * Initiates the 2-step Super Admin login flow exclusively via the Firebase Cloud Function 'startSuperAdminLogin' (asia-south1).
- * Never uses local/in-memory API fallbacks or returns fake success on failure.
+ * Initiates the 2-step Super Admin login flow via stateless /api/super-admin/start-login
+ * (works on Firebase Spark Free Plan, Vercel Hobby, and AI Studio Preview),
+ * falling back to Cloud Function 'startSuperAdminLogin' only if /api route is unreachable.
  */
 export async function startSuperAdminLoginCall(email?: string): Promise<StartSuperAdminLoginResponse> {
-  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanEmail = String(email || auth.currentUser?.email || '').trim().toLowerCase();
+  const state = getOtpChallengeState('super_admin', cleanEmail);
+  const apiUrl = `${getApiBaseUrl()}/api/super-admin/start-login`;
+
+  let shouldTryCloudFunctionFallback = false;
 
   try {
-    const startCallable = httpsCallable<{ email?: string }, StartSuperAdminLoginResponse>(
-      functions,
-      'startSuperAdminLogin'
-    );
-    const result = await startCallable({ email: cleanEmail });
-    if (result.data && result.data.success) {
-      return result.data;
-    }
-    throw new Error('Could not send Super Admin verification email.');
-  } catch (fnErr: any) {
-    const rawCode = String(fnErr?.code || '').toLowerCase();
-    const rawMsg = String(fnErr?.message || '');
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        email: cleanEmail,
+        otpToken: state.otpToken,
+        attemptToken: state.attemptToken,
+        lockoutToken: state.lockoutToken,
+      }),
+    });
 
-    // Preserve active 60-second cooldown cleanly without flagging as an error
-    if (
-      (rawCode.includes('resource-exhausted') || rawMsg.toLowerCase().includes('wait')) &&
-      rawMsg.toLowerCase().includes('second')
-    ) {
-      const cooldownMatch = rawMsg.match(/wait\s+(\d+)\s+second/i);
-      const remaining = cooldownMatch && cooldownMatch[1] ? parseInt(cooldownMatch[1], 10) : 60;
-      return {
-        success: true,
-        message: rawMsg,
-        cooldownSeconds: remaining,
-      };
-    }
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      shouldTryCloudFunctionFallback = true;
+    } else {
+      const data = await response.json();
 
-    const formatted = formatOtpErrorMessage(fnErr);
-    const customErr: any = new Error(formatted.message);
-    customErr.isLocked = formatted.isLocked;
-    customErr.code = formatted.code;
-    throw customErr;
+      if (response.ok && data?.success) {
+        if (data.otpToken || data.attemptToken) {
+          saveOtpChallengeState('super_admin', cleanEmail, {
+            otpToken: data.otpToken,
+            attemptToken: data.attemptToken,
+          });
+        }
+        return data as StartSuperAdminLoginResponse;
+      }
+
+      const apiErr: any = new Error(data?.error || 'Could not send Super Admin verification email.');
+      apiErr.code = data?.code || 'internal';
+      apiErr.isLocked = !!data?.isLocked;
+      throw apiErr;
+    }
+  } catch (apiErr: any) {
+    if (apiErr?.code && apiErr.code !== 'network') {
+      const rawCode = String(apiErr.code || '').toLowerCase();
+      const rawMsg = String(apiErr.message || '');
+
+      if (
+        !apiErr.isLocked &&
+        (rawCode.includes('resource-exhausted') || rawMsg.toLowerCase().includes('wait')) &&
+        rawMsg.toLowerCase().includes('second')
+      ) {
+        const cooldownMatch = rawMsg.match(/wait\s+(\d+)\s+second/i);
+        const remaining = cooldownMatch && cooldownMatch[1] ? parseInt(cooldownMatch[1], 10) : 60;
+        return {
+          success: true,
+          message: rawMsg,
+          cooldownSeconds: remaining,
+        };
+      }
+
+      const formatted = formatOtpErrorMessage(apiErr);
+      const customErr: any = new Error(formatted.message);
+      customErr.isLocked = formatted.isLocked;
+      customErr.code = formatted.code;
+      throw customErr;
+    }
+    shouldTryCloudFunctionFallback = true;
   }
+
+  if (shouldTryCloudFunctionFallback) {
+    try {
+      const startCallable = httpsCallable<{ email?: string }, StartSuperAdminLoginResponse>(
+        functions,
+        'startSuperAdminLogin'
+      );
+      const result = await startCallable({ email: cleanEmail });
+      if (result.data && result.data.success) {
+        return result.data;
+      }
+      throw new Error('Could not send Super Admin verification email.');
+    } catch (fnErr: any) {
+      const rawCode = String(fnErr?.code || '').toLowerCase();
+      const rawMsg = String(fnErr?.message || '');
+
+      if (
+        (rawCode.includes('resource-exhausted') || rawMsg.toLowerCase().includes('wait')) &&
+        rawMsg.toLowerCase().includes('second')
+      ) {
+        const cooldownMatch = rawMsg.match(/wait\s+(\d+)\s+second/i);
+        const remaining = cooldownMatch && cooldownMatch[1] ? parseInt(cooldownMatch[1], 10) : 60;
+        return {
+          success: true,
+          message: rawMsg,
+          cooldownSeconds: remaining,
+        };
+      }
+
+      const formatted = formatOtpErrorMessage(fnErr);
+      const customErr: any = new Error(formatted.message);
+      customErr.isLocked = formatted.isLocked;
+      customErr.code = formatted.code;
+      throw customErr;
+    }
+  }
+
+  const fallbackErr = formatOtpErrorMessage({ code: 'internal' });
+  const customErr: any = new Error(fallbackErr.message);
+  customErr.code = fallbackErr.code;
+  throw customErr;
 }
 
 /**
- * Verifies the 6-digit Super Admin OTP exclusively via the Firebase Cloud Function 'verifySuperAdminOtp' (asia-south1).
- * Refreshes the Firebase ID token on success so custom claims take effect immediately.
+ * Verifies the 6-digit Super Admin OTP via stateless /api/super-admin/verify-otp
+ * (works on Firebase Spark Free Plan, Vercel Hobby, and AI Studio Preview),
+ * falling back to Cloud Function 'verifySuperAdminOtp' only if /api route is unreachable.
  */
 export async function verifySuperAdminOtpCall(
   code: string,
   email?: string
 ): Promise<VerifySuperAdminOtpResponse> {
   const cleanCode = String(code || '').trim();
-  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanEmail = String(email || auth.currentUser?.email || '').trim().toLowerCase();
 
   if (!/^\d{6}$/.test(cleanCode)) {
     throw new Error('দয়া করে সম্পূর্ণ ৬ সংখ্যার কোডটি লিখুন। (Please enter the full 6-digit verification code.)');
   }
 
+  const state = getOtpChallengeState('super_admin', cleanEmail);
+  const apiUrl = `${getApiBaseUrl()}/api/super-admin/verify-otp`;
+  let shouldTryCloudFunctionFallback = false;
+
   try {
-    const verifyCallable = httpsCallable<{ code: string; email?: string }, VerifySuperAdminOtpResponse>(
-      functions,
-      'verifySuperAdminOtp'
-    );
-    const result = await verifyCallable({ code: cleanCode, email: cleanEmail });
-    if (result.data && result.data.verified) {
-      // Force refresh ID token so the new otpSession custom claims are available immediately
-      if (auth.currentUser) {
-        await auth.currentUser.getIdToken(true).catch(() => {});
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        code: cleanCode,
+        email: cleanEmail,
+        otpToken: state.otpToken,
+        attemptToken: state.attemptToken,
+        lockoutToken: state.lockoutToken,
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      shouldTryCloudFunctionFallback = true;
+    } else {
+      const data = await response.json();
+
+      if (data?.attemptToken) {
+        saveOtpChallengeState('super_admin', cleanEmail, { attemptToken: data.attemptToken });
       }
-      return result.data;
+      if (data?.lockoutToken) {
+        saveOtpChallengeState('super_admin', cleanEmail, { lockoutToken: data.lockoutToken });
+        clearOtpChallengeState('super_admin', cleanEmail, true);
+      }
+
+      if (response.ok && data?.verified) {
+        clearOtpChallengeState('super_admin', cleanEmail, false);
+        return data as VerifySuperAdminOtpResponse;
+      }
+
+      const apiErr: any = new Error(data?.error || 'Verification did not succeed.');
+      apiErr.code = data?.code || 'internal';
+      apiErr.attemptsLeft = data?.attemptsLeft;
+      apiErr.isLocked = !!data?.isLocked;
+      throw apiErr;
     }
-    throw new Error('Verification did not succeed.');
-  } catch (fnErr: any) {
-    const formatted = formatOtpErrorMessage(fnErr);
-    const customErr: any = new Error(formatted.message);
-    customErr.isWrongCode = formatted.isWrongCode;
-    customErr.attemptsLeft = formatted.attemptsLeft;
-    customErr.isLocked = formatted.isLocked;
-    customErr.code = formatted.code;
-    throw customErr;
+  } catch (apiErr: any) {
+    if (apiErr?.code && apiErr.code !== 'network') {
+      const formatted = formatOtpErrorMessage(apiErr);
+      const customErr: any = new Error(formatted.message);
+      customErr.isWrongCode = formatted.isWrongCode;
+      customErr.attemptsLeft =
+        typeof apiErr.attemptsLeft === 'number' ? apiErr.attemptsLeft : formatted.attemptsLeft;
+      customErr.isLocked = formatted.isLocked;
+      customErr.code = formatted.code;
+      throw customErr;
+    }
+    shouldTryCloudFunctionFallback = true;
   }
+
+  if (shouldTryCloudFunctionFallback) {
+    try {
+      const verifyCallable = httpsCallable<{ code: string; email?: string }, VerifySuperAdminOtpResponse>(
+        functions,
+        'verifySuperAdminOtp'
+      );
+      const result = await verifyCallable({ code: cleanCode, email: cleanEmail });
+      if (result.data && result.data.verified) {
+        if (auth.currentUser) {
+          await auth.currentUser.getIdToken(true).catch(() => {});
+        }
+        return result.data;
+      }
+      throw new Error('Verification did not succeed.');
+    } catch (fnErr: any) {
+      const formatted = formatOtpErrorMessage(fnErr);
+      const customErr: any = new Error(formatted.message);
+      customErr.isWrongCode = formatted.isWrongCode;
+      customErr.attemptsLeft = formatted.attemptsLeft;
+      customErr.isLocked = formatted.isLocked;
+      customErr.code = formatted.code;
+      throw customErr;
+    }
+  }
+
+  const fallbackErr = formatOtpErrorMessage({ code: 'internal' });
+  const customErr: any = new Error(fallbackErr.message);
+  customErr.code = fallbackErr.code;
+  throw customErr;
 }
 
 /**
- * Clears the Super Admin OTP custom claims and Firestore session on sign out.
+ * Clears the Super Admin OTP session in Firestore, sessionStorage, and server cookies on sign out.
  */
 export async function clearSuperAdminOtpSessionCall(email?: string): Promise<void> {
-  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanEmail = String(email || auth.currentUser?.email || '').trim().toLowerCase();
 
   if (cleanEmail) {
+    clearOtpChallengeState('super_admin', cleanEmail, false);
     try {
       sessionStorage.removeItem(`sky_super_admin_session_${cleanEmail}`);
     } catch (_) {}
+  }
+
+  if (auth.currentUser) {
+    try {
+      await deleteDoc(doc(db, 'adminSessions', auth.currentUser.uid));
+    } catch (_) {}
+  }
+
+  try {
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => '') : '';
+    await fetch(`${getApiBaseUrl()}/api/super-admin/clear-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ email: cleanEmail }),
+    });
+  } catch {
+    // Ignore cleanup errors
   }
 
   try {
@@ -185,7 +358,7 @@ export async function clearSuperAdminOtpSessionCall(email?: string): Promise<voi
       'clearSuperAdminOtpSession'
     );
     await clearCallable({ email: cleanEmail });
-  } catch (err) {
-    console.warn('[superAdminAuth] Could not clear OTP session via Cloud Function:', err);
+  } catch {
+    // Ignore if Cloud Functions are not deployed on Spark plan
   }
 }

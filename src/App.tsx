@@ -19,7 +19,7 @@ import { OTP_REQUIRED_ROLES } from './config/authSecurity';
 import { checkSuperAdminOtpStatus, clearSuperAdminOtpSessionCall } from './lib/superAdminAuth';
 import { AppLockScreen } from './components/common/AppLockScreen';
 import { logUserSession } from './lib/auditLogger';
-import { verifyCurrentDeviceSession, setupSessionEnforcementListener } from './lib/deviceSecurity';
+import { verifyCurrentDeviceSession, setupSessionEnforcementListener, recordLoginHistory } from './lib/deviceSecurity';
 import { getCurrentAppVersion, getChangelogs, updateUserLastSeenVersion } from './lib/versionService';
 import { WhatsNewModal } from './components/version/WhatsNewModal';
 import { SplashLoadingScreen } from './components/common/SplashLoadingScreen';
@@ -364,7 +364,6 @@ function AppContent() {
           nidUrl: '',
           role: isSoleSuperAdmin ? 'super_admin' : 'reseller',
           status: isSoleSuperAdmin ? 'approved' : 'pending',
-          rejectReason: null,
           createdAt: new Date().toISOString(),
         };
         try {

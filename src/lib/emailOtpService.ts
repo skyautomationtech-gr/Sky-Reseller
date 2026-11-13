@@ -95,7 +95,7 @@ export function formatOtpErrorMessage(err: any): FormattedOtpError {
   }
 
   // 4. Cooldown (resend too fast)
-  if (rawCode.includes('resource-exhausted') && (rawMsg.includes('wait') || rawMsg.includes('seconds'))) {
+  if ((rawCode.includes('resource-exhausted') || rawMsg.includes('wait')) && rawMsg.includes('second')) {
     const secMatch = rawMsg.match(/(\d+)\s+second/i);
     const sec = secMatch ? secMatch[1] : '60';
     return {
@@ -106,7 +106,7 @@ export function formatOtpErrorMessage(err: any): FormattedOtpError {
   }
 
   // 5. Server configuration missing
-  if (rawCode.includes('failed-precondition') && (rawMsg.includes('configuration') || rawMsg.includes('missing'))) {
+  if (rawCode.includes('failed-precondition') && (rawMsg.includes('configuration') || rawMsg.includes('missing') || rawMsg.includes('delivery'))) {
     return {
       message: 'ইমেইল বা OTP সার্ভার কনফিগারেশন সম্পূর্ণ নয়। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন। (Server email configuration is missing.)',
       isWrongCode: false,
@@ -166,32 +166,150 @@ export function formatOtpErrorMessage(err: any): FormattedOtpError {
   };
 }
 
-/**
- * Sends a 6-digit OTP code exclusively via the Firebase Cloud Function 'sendEmailOtp' (asia-south1).
- * Never uses local/in-memory API fallbacks or returns fake success on failure.
- */
-export async function sendEmailOtpCall(email: string): Promise<SendOtpResponse> {
-  const cleanEmail = String(email || '').trim().toLowerCase();
+export interface StoredOtpChallengeState {
+  otpToken?: string;
+  attemptToken?: string;
+  lockoutToken?: string;
+}
 
+const memoryOtpState = new Map<string, StoredOtpChallengeState>();
+
+export function getApiBaseUrl(): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE_URL;
+  return typeof envBase === 'string' && envBase.trim() ? envBase.trim().replace(/\/+$/, '') : '';
+}
+
+export function getOtpChallengeState(scope: 'register' | 'super_admin', email: string): StoredOtpChallengeState {
+  const key = `resellbd_otp_state_${scope}_${email}`;
+  const mem = memoryOtpState.get(key) || {};
   try {
-    const sendFn = httpsCallable<{ email: string }, SendOtpResponse>(functions, 'sendEmailOtp');
-    const result = await sendFn({ email: cleanEmail });
-    if (result.data && result.data.success) {
-      return result.data;
+    const raw = sessionStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredOtpChallengeState;
+      return { ...parsed, ...mem };
     }
-    throw new Error('Could not send verification email.');
-  } catch (fnErr: any) {
-    const formatted = formatOtpErrorMessage(fnErr);
-    const errOut: any = new Error(formatted.message);
-    errOut.code = formatted.code;
-    errOut.isLocked = formatted.isLocked;
-    throw errOut;
+  } catch {
+    // Ignore storage access issues
+  }
+  return mem;
+}
+
+export function saveOtpChallengeState(
+  scope: 'register' | 'super_admin',
+  email: string,
+  patch: StoredOtpChallengeState
+): void {
+  const key = `resellbd_otp_state_${scope}_${email}`;
+  const current = getOtpChallengeState(scope, email);
+  const next: StoredOtpChallengeState = { ...current };
+
+  if (patch.otpToken !== undefined) next.otpToken = patch.otpToken || undefined;
+  if (patch.attemptToken !== undefined) next.attemptToken = patch.attemptToken || undefined;
+  if (patch.lockoutToken !== undefined) next.lockoutToken = patch.lockoutToken || undefined;
+
+  memoryOtpState.set(key, next);
+  try {
+    sessionStorage.setItem(key, JSON.stringify(next));
+  } catch {
+    // Ignore storage access issues
+  }
+}
+
+export function clearOtpChallengeState(scope: 'register' | 'super_admin', email: string, keepLockout = true): void {
+  const key = `resellbd_otp_state_${scope}_${email}`;
+  const current = getOtpChallengeState(scope, email);
+  const next: StoredOtpChallengeState = keepLockout && current.lockoutToken ? { lockoutToken: current.lockoutToken } : {};
+
+  memoryOtpState.set(key, next);
+  try {
+    if (Object.keys(next).length > 0) {
+      sessionStorage.setItem(key, JSON.stringify(next));
+    } else {
+      sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore
   }
 }
 
 /**
- * Verifies the 6-digit code exclusively via the Firebase Cloud Function 'verifyEmailOtp' (asia-south1).
- * Never uses local/in-memory API fallbacks or client-side verification.
+ * Sends a 6-digit registration email OTP via stateless /api/send-email-otp (works on Free Plan & Preview),
+ * falling back to Firebase Cloud Function 'sendEmailOtp' only if /api route is unreachable.
+ */
+export async function sendEmailOtpCall(email: string): Promise<SendOtpResponse> {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const state = getOtpChallengeState('register', cleanEmail);
+  const apiUrl = `${getApiBaseUrl()}/api/send-email-otp`;
+
+  let shouldTryCloudFunctionFallback = false;
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        email: cleanEmail,
+        otpToken: state.otpToken,
+        attemptToken: state.attemptToken,
+        lockoutToken: state.lockoutToken,
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      shouldTryCloudFunctionFallback = true;
+    } else {
+      const data = await response.json();
+      if (response.ok && data?.success) {
+        saveOtpChallengeState('register', cleanEmail, {
+          otpToken: data.otpToken,
+          attemptToken: data.attemptToken,
+        });
+        return data as SendOtpResponse;
+      }
+
+      const apiErr: any = new Error(data?.error || 'Could not send verification email.');
+      apiErr.code = data?.code || (response.status === 429 ? 'resource-exhausted' : 'internal');
+      apiErr.isLocked = !!data?.isLocked;
+      throw apiErr;
+    }
+  } catch (apiErr: any) {
+    if (apiErr?.code && apiErr.code !== 'network') {
+      const formatted = formatOtpErrorMessage(apiErr);
+      const errOut: any = new Error(formatted.message);
+      errOut.code = formatted.code;
+      errOut.isLocked = formatted.isLocked;
+      throw errOut;
+    }
+    shouldTryCloudFunctionFallback = true;
+  }
+
+  if (shouldTryCloudFunctionFallback) {
+    try {
+      const sendFn = httpsCallable<{ email: string }, SendOtpResponse>(functions, 'sendEmailOtp');
+      const result = await sendFn({ email: cleanEmail });
+      if (result.data && result.data.success) {
+        return result.data;
+      }
+    } catch (fnErr: any) {
+      const formatted = formatOtpErrorMessage(fnErr);
+      const errOut: any = new Error(formatted.message);
+      errOut.code = formatted.code;
+      errOut.isLocked = formatted.isLocked;
+      throw errOut;
+    }
+  }
+
+  const fallbackErr = formatOtpErrorMessage({ code: 'internal' });
+  const out: any = new Error(fallbackErr.message);
+  out.code = fallbackErr.code;
+  throw out;
+}
+
+/**
+ * Verifies the 6-digit registration email OTP via stateless /api/verify-email-otp (works on Free Plan & Preview),
+ * falling back to Firebase Cloud Function 'verifyEmailOtp' only if /api route is unreachable.
  */
 export async function verifyEmailOtpCall(email: string, code: string): Promise<VerifyOtpResponse> {
   const cleanEmail = String(email || '').trim().toLowerCase();
@@ -201,27 +319,94 @@ export async function verifyEmailOtpCall(email: string, code: string): Promise<V
     throw new Error('দয়া করে সম্পূর্ণ ৬ সংখ্যার কোডটি লিখুন। (Please enter the full 6-digit code.)');
   }
 
+  const state = getOtpChallengeState('register', cleanEmail);
+  const apiUrl = `${getApiBaseUrl()}/api/verify-email-otp`;
+  let shouldTryCloudFunctionFallback = false;
+
   try {
-    const verifyFn = httpsCallable<{ email: string; code: string }, VerifyOtpResponse>(
-      functions,
-      'verifyEmailOtp'
-    );
-    const result = await verifyFn({ email: cleanEmail, code: cleanCode });
-    if (result.data && result.data.verified) {
-      return {
-        success: true,
-        verified: true,
-        message: 'ইমেইল সফলভাবে যাচাই হয়েছে! (Email address verified successfully!)',
-      };
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        email: cleanEmail,
+        code: cleanCode,
+        otpToken: state.otpToken,
+        attemptToken: state.attemptToken,
+        lockoutToken: state.lockoutToken,
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      shouldTryCloudFunctionFallback = true;
+    } else {
+      const data = await response.json();
+
+      if (data?.attemptToken) {
+        saveOtpChallengeState('register', cleanEmail, { attemptToken: data.attemptToken });
+      }
+      if (data?.lockoutToken) {
+        saveOtpChallengeState('register', cleanEmail, { lockoutToken: data.lockoutToken });
+        clearOtpChallengeState('register', cleanEmail, true);
+      }
+
+      if (response.ok && data?.verified) {
+        clearOtpChallengeState('register', cleanEmail, false);
+        return {
+          success: true,
+          verified: true,
+          message: 'ইমেইল সফলভাবে যাচাই হয়েছে! (Email address verified successfully!)',
+        };
+      }
+
+      const apiErr: any = new Error(data?.error || 'Verification did not succeed.');
+      apiErr.code = data?.code || 'internal';
+      apiErr.attemptsLeft = data?.attemptsLeft;
+      apiErr.isLocked = !!data?.isLocked;
+      throw apiErr;
     }
-    throw new Error('Verification did not succeed.');
-  } catch (fnErr: any) {
-    const formatted = formatOtpErrorMessage(fnErr);
-    const customErr: any = new Error(formatted.message);
-    customErr.isWrongCode = formatted.isWrongCode;
-    customErr.attemptsLeft = formatted.attemptsLeft;
-    customErr.isLocked = formatted.isLocked;
-    customErr.code = formatted.code;
-    throw customErr;
+  } catch (apiErr: any) {
+    if (apiErr?.code && apiErr.code !== 'network') {
+      const formatted = formatOtpErrorMessage(apiErr);
+      const customErr: any = new Error(formatted.message);
+      customErr.isWrongCode = formatted.isWrongCode;
+      customErr.attemptsLeft =
+        typeof apiErr.attemptsLeft === 'number' ? apiErr.attemptsLeft : formatted.attemptsLeft;
+      customErr.isLocked = formatted.isLocked;
+      customErr.code = formatted.code;
+      throw customErr;
+    }
+    shouldTryCloudFunctionFallback = true;
   }
+
+  if (shouldTryCloudFunctionFallback) {
+    try {
+      const verifyFn = httpsCallable<{ email: string; code: string }, VerifyOtpResponse>(
+        functions,
+        'verifyEmailOtp'
+      );
+      const result = await verifyFn({ email: cleanEmail, code: cleanCode });
+      if (result.data && result.data.verified) {
+        return {
+          success: true,
+          verified: true,
+          message: 'ইমেইল সফলভাবে যাচাই হয়েছে! (Email address verified successfully!)',
+        };
+      }
+    } catch (fnErr: any) {
+      const formatted = formatOtpErrorMessage(fnErr);
+      const customErr: any = new Error(formatted.message);
+      customErr.isWrongCode = formatted.isWrongCode;
+      customErr.attemptsLeft = formatted.attemptsLeft;
+      customErr.isLocked = formatted.isLocked;
+      customErr.code = formatted.code;
+      throw customErr;
+    }
+  }
+
+  const fallbackErr = formatOtpErrorMessage({ code: 'internal' });
+  const customErr: any = new Error(fallbackErr.message);
+  customErr.code = fallbackErr.code;
+  throw customErr;
 }

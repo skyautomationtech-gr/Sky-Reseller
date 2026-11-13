@@ -6,6 +6,7 @@ import { BANGLADESH_BANKS } from '../../data/bangladeshBanks';
 import { logAuditAction } from '../../lib/auditLogger';
 import { triggerHaptic } from '../../lib/nativeFeedback';
 import { DENSITY_TOKENS as DT } from '../../utils/densityTokens';
+import { useScrollToTop } from '../../utils/scrollToTop';
 import { 
   CreditCard, Plus, CheckCircle2, AlertCircle, Clock, Trash2, Edit3, 
   Eye, EyeOff, ShieldCheck, ChevronRight, X, Loader2, Check, 

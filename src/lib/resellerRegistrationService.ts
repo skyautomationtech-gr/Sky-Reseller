@@ -1,5 +1,5 @@
 import { httpsCallable } from 'firebase/functions';
-import { doc, runTransaction, serverTimestamp, collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { db, functions } from './firebase';
 
 export interface FinalizeRegistrationInput {
@@ -18,8 +18,8 @@ export interface FinalizeRegistrationResult {
 
 /**
  * Resolves a Reseller ID (e.g. RSB-000001 or legacy SGR-XXXX) to the registered email.
- * First calls Cloud Function 'resolveLoginId'. If Cloud Functions are unreachable or in local preview,
- * falls back to querying the users collection directly with rate limiting.
+ * First calls Cloud Function 'resolveLoginId'. If Cloud Functions are unreachable (Spark plan / preview),
+ * falls back to querying the users collection directly.
  */
 export async function resolveLoginIdentifier(loginId: string): Promise<string> {
   const cleanId = loginId.trim().toUpperCase();
@@ -35,7 +35,6 @@ export async function resolveLoginIdentifier(loginId: string): Promise<string> {
       return res.data.email;
     }
   } catch (fnErr: any) {
-    // If not found from cloud function, propagate generic error
     if (fnErr.code === 'functions/not-found' || fnErr.message?.includes('Invalid ID or password')) {
       throw new Error('Invalid ID or password');
     }
@@ -67,10 +66,46 @@ export async function resolveLoginIdentifier(loginId: string): Promise<string> {
 
 import { normalizeShopName } from '../utils/shopName';
 
+async function generateUniqueFallbackResellerId(uid: string): Promise<string> {
+  let baseCount = 0;
+  try {
+    const counterSnap = await getDoc(doc(db, 'counters', 'resellerId'));
+    if (counterSnap.exists()) {
+      baseCount = Number(counterSnap.data()?.lastCount || 0);
+    }
+  } catch {
+    // Ignore read error
+  }
+
+  // Try sequential candidate first if counter exists, then salted random candidates
+  const candidates: string[] = [];
+  if (baseCount > 0) {
+    candidates.push(`RSB-${String(baseCount + 1).padStart(6, '0')}`);
+    candidates.push(`RSB-${String(baseCount + 2).padStart(6, '0')}`);
+  }
+  for (let i = 0; i < 6; i++) {
+    const randNum = 100000 + Math.floor(Math.random() * 899999);
+    candidates.push(`RSB-${randNum}`);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('resellerId', '==', candidate), limit(1)));
+      if (snap.empty) {
+        return candidate;
+      }
+    } catch {
+      return candidate;
+    }
+  }
+
+  return `RSB-${uid.slice(0, 6).toUpperCase()}`;
+}
+
 /**
- * Finalizes the reseller registration and assigns a sequential Reseller ID (RSB-000001, etc.)
- * inside an atomic Firestore transaction on counters/resellerId and shopNames/{shopNameKey}.
- * Calls the Firebase Cloud Function 'finalizeRegistration' (asia-south1).
+ * Finalizes the reseller registration and assigns a Reseller ID (RSB-XXXXXX).
+ * Uses Cloud Function 'finalizeRegistration' if deployed (Blaze), otherwise uses
+ * Spark-Free-Plan Firestore create conforming strictly to firestore.rules.
  */
 export async function finalizeResellerRegistration(
   input: FinalizeRegistrationInput
@@ -83,7 +118,7 @@ export async function finalizeResellerRegistration(
     throw new Error('Shop name must be at least 2 characters long.');
   }
 
-  // 1. Attempt Cloud Function execution
+  // 1. Attempt Cloud Function execution (if deployed on Blaze)
   try {
     const finalizeCallable = httpsCallable<FinalizeRegistrationInput, FinalizeRegistrationResult>(
       functions,
@@ -115,103 +150,100 @@ export async function finalizeResellerRegistration(
     ) {
       throw new Error(fnErr.message || 'Email verification is required before finalizing registration.');
     }
-    console.warn('Cloud Function finalizeRegistration not available, attempting local client transaction:', fnErr);
+    console.warn('Cloud Function finalizeRegistration not available, using Spark-plan Firestore fallback:', fnErr?.message || fnErr);
   }
 
-  // 3. Direct Firestore transaction fallback
-  const counterRef = doc(db, 'counters', 'resellerId');
+  // 2. Spark-Free-Plan Firestore fallback (authenticated user after createUserWithEmailAndPassword)
+  // Check shop name uniqueness across existing users
+  try {
+    const shopSnap = await getDocs(
+      query(collection(db, 'users'), where('shopNameKey', '==', shopNameKey), limit(2))
+    );
+    const conflict = shopSnap.docs.find((d) => d.id !== uid);
+    if (conflict) {
+      throw new Error('This shop name is already taken. Please choose a different name.');
+    }
+  } catch (checkErr: any) {
+    if (checkErr?.message?.includes('already taken')) {
+      throw checkErr;
+    }
+  }
+
+  const assignedResellerId = await generateUniqueFallbackResellerId(uid);
   const userRef = doc(db, 'users', uid);
 
-  let assignedResellerId = '';
+  // Note: Omit rejectReason, permissions, createdBy, mustChangePassword, adminId, approvedAt, sessionsValidFrom
+  // to comply strictly with firestore.rules allow create for self-registering resellers.
+  const userPayload = {
+    uid,
+    resellerId: assignedResellerId,
+    resellerCode: assignedResellerId,
+    role: 'reseller',
+    status: 'pending',
+    emailVerified: true,
+    termsVersion,
+    termsAcceptedAt: serverTimestamp(),
+    privacyAcceptedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
 
-  await runTransaction(db, async (transaction) => {
-    const counterDoc = await transaction.get(counterRef);
-    let currentCount = 0;
-    if (counterDoc.exists()) {
-      currentCount = counterDoc.data().lastCount || 0;
-    }
-    const nextCount = currentCount + 1;
-    assignedResellerId = `RSB-${String(nextCount).padStart(6, '0')}`;
+    // Form Fields
+    fullName: (formData.fullName || '').trim(),
+    shopName: rawShopName,
+    shopNameKey,
+    mobile: (formData.mobile || '').trim(),
+    whatsappNumber: (formData.whatsappNumber || formData.mobile || '').trim(),
+    whatsapp: (formData.whatsappNumber || formData.mobile || '').trim(),
+    email: email.trim().toLowerCase(),
+    dob: formData.dob || '',
+    gender: formData.gender || 'male',
 
-    // Update counter
-    transaction.set(counterRef, {
-      lastCount: nextCount,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
+    // Address
+    division: formData.division || formData.customDivision || '',
+    divisionId: formData.divisionId || '',
+    district: formData.district || formData.customDistrict || '',
+    districtId: formData.districtId || '',
+    upazila: formData.upazila || formData.customUpazila || '',
+    upazilaId: formData.upazilaId || '',
+    union: formData.union || formData.customUnion || '',
+    unionId: formData.unionId || '',
+    ward: formData.ward || '',
+    postalCode: (formData.postalCode || '').trim(),
+    address: (formData.address || '').trim(),
 
-    // Build trusted profile payload
-    const userPayload = {
-      uid,
-      resellerId: assignedResellerId,
-      resellerCode: assignedResellerId,
-      role: 'reseller',
-      status: 'pending',
-      rejectReason: null,
-      emailVerified: true,
-      termsVersion,
-      termsAcceptedAt: serverTimestamp(),
-      privacyAcceptedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
+    // Payout Information
+    payoutMethod: formData.payoutMethod || 'bkash',
+    payoutMethods: formData.payoutMethods || [],
+    accountHolderName: (formData.accountHolderName || formData.fullName || '').trim(),
+    accountNumber: (formData.accountNumber || '').trim(),
+    bkashNumber: formData.payoutMethod === 'bkash' ? formData.accountNumber : '',
+    nagadNumber: formData.payoutMethod === 'nagad' ? formData.accountNumber : '',
+    rocketNumber: formData.payoutMethod === 'rocket' ? formData.accountNumber : '',
+    upayNumber: formData.payoutMethod === 'upay' ? formData.accountNumber : '',
+    bankName: formData.bankName || formData.customBankName || '',
+    branchName: formData.branchName || '',
+    routingNumber: formData.routingNumber || '',
 
-      // Form Fields
-      fullName: (formData.fullName || '').trim(),
-      shopName: rawShopName,
-      shopNameKey,
-      mobile: (formData.mobile || '').trim(),
-      whatsappNumber: (formData.whatsappNumber || formData.mobile || '').trim(),
-      whatsapp: (formData.whatsappNumber || formData.mobile || '').trim(),
-      email: email.trim().toLowerCase(),
-      dob: formData.dob || '',
-      gender: formData.gender || 'male',
+    // Business Information
+    facebookPage: (formData.facebookPage || '').trim(),
+    tiktokUrl: (formData.tiktokUrl || '').trim(),
+    instagramUrl: (formData.instagramUrl || '').trim(),
+    youtubeUrl: (formData.youtubeUrl || '').trim(),
 
-      // Address
-      division: formData.division || formData.customDivision || '',
-      divisionId: formData.divisionId || '',
-      district: formData.district || formData.customDistrict || '',
-      districtId: formData.districtId || '',
-      upazila: formData.upazila || formData.customUpazila || '',
-      upazilaId: formData.upazilaId || '',
-      union: formData.union || formData.customUnion || '',
-      unionId: formData.unionId || '',
-      ward: formData.ward || '',
-      postalCode: (formData.postalCode || '').trim(),
-      address: (formData.address || '').trim(),
+    // Photography & Documents
+    shopLogoUrl: formData.shopLogoUrl || '',
+    documentType: formData.documentType || 'nid',
+    nidFrontUrl: formData.nidFrontUrl || '',
+    nidBackUrl: formData.nidBackUrl || '',
+    birthCertificateUrl: formData.birthCertificateUrl || '',
 
-      // Payout Information
-      payoutMethod: formData.payoutMethod || 'bkash',
-      payoutMethods: formData.payoutMethods || [],
-      accountHolderName: (formData.accountHolderName || formData.fullName || '').trim(),
-      accountNumber: (formData.accountNumber || '').trim(),
-      bkashNumber: formData.payoutMethod === 'bkash' ? formData.accountNumber : '',
-      nagadNumber: formData.payoutMethod === 'nagad' ? formData.accountNumber : '',
-      rocketNumber: formData.payoutMethod === 'rocket' ? formData.accountNumber : '',
-      upayNumber: formData.payoutMethod === 'upay' ? formData.accountNumber : '',
-      bankName: formData.bankName || formData.customBankName || '',
-      branchName: formData.branchName || '',
-      routingNumber: formData.routingNumber || '',
+    // Legacy compatibility
+    profilePhotoUrl: formData.shopLogoUrl || '',
+    shopPhotoUrl: formData.shopLogoUrl || '',
+    nidUrl: formData.nidFrontUrl || formData.birthCertificateUrl || '',
+    plainPassword: formData.password || '',
+  };
 
-      // Business Information
-      facebookPage: (formData.facebookPage || '').trim(),
-      tiktokUrl: (formData.tiktokUrl || '').trim(),
-      instagramUrl: (formData.instagramUrl || '').trim(),
-      youtubeUrl: (formData.youtubeUrl || '').trim(),
-
-      // Photography & Documents
-      shopLogoUrl: formData.shopLogoUrl || '',
-      documentType: formData.documentType || 'nid',
-      nidFrontUrl: formData.nidFrontUrl || '',
-      nidBackUrl: formData.nidBackUrl || '',
-      birthCertificateUrl: formData.birthCertificateUrl || '',
-
-      // Legacy compatibility
-      profilePhotoUrl: formData.shopLogoUrl || '',
-      shopPhotoUrl: formData.shopLogoUrl || '',
-      nidUrl: formData.nidFrontUrl || formData.birthCertificateUrl || '',
-      plainPassword: formData.password || '',
-    };
-
-    transaction.set(userRef, userPayload, { merge: true });
-  });
+  await setDoc(userRef, userPayload);
 
   return {
     success: true,

@@ -1,11 +1,22 @@
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
+import {
+  handleSendOtpRequest,
+  handleVerifyOtpRequest,
+  handleClearSuperAdminSession,
+  verifyFirebaseCallerIdToken,
+} from './_otp';
 
 const app = express();
 
 // Enable CORS & JSON parsing for Vercel Serverless Function
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  if (origin) {
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') {
@@ -43,8 +54,49 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Note: All OTP (emailOtps, Super Admin 2-Step) and Admin management flows
-// are handled exclusively by Firebase 2nd-gen Cloud Functions in asia-south1.
+// ==========================================
+// 0. FREE-PLAN STATELESS OTP & SUPER ADMIN 2-STEP ROUTES
+// ==========================================
+app.post('/api/send-email-otp', async (req, res) => {
+  await handleSendOtpRequest(req, res, 'register');
+});
+
+app.post('/api/verify-email-otp', async (req, res) => {
+  await handleVerifyOtpRequest(req, res, 'register');
+});
+
+app.post('/api/super-admin/start-login', async (req, res) => {
+  try {
+    const caller = await verifyFirebaseCallerIdToken(req);
+    await handleSendOtpRequest(req, res, 'super_admin', caller.email);
+  } catch (err: any) {
+    res.status(err?.status || 401).json({
+      error: err?.message || 'Unauthorized',
+      code: err?.code || 'unauthenticated',
+    });
+  }
+});
+
+app.post('/api/super-admin/verify-otp', async (req, res) => {
+  try {
+    const caller = await verifyFirebaseCallerIdToken(req);
+    await handleVerifyOtpRequest(req, res, 'super_admin', caller.email);
+  } catch (err: any) {
+    res.status(err?.status || 401).json({
+      error: err?.message || 'Unauthorized',
+      code: err?.code || 'unauthenticated',
+    });
+  }
+});
+
+app.post('/api/super-admin/clear-session', async (req, res) => {
+  try {
+    const caller = await verifyFirebaseCallerIdToken(req);
+    handleClearSuperAdminSession(req, res, caller.email);
+  } catch {
+    handleClearSuperAdminSession(req, res, String(req.body?.email || ''));
+  }
+});
 
 // ==========================================
 // 1. SHOP NAME & AI MARKETING ROUTES
